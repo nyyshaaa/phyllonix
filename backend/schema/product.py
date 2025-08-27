@@ -1,11 +1,10 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
-from sqlmodel import SQLModel, Field, Relationship
-from backend.db.schema import UserPhone
-from backend.schema.user_creds import Credential
+from sqlmodel import Column, SQLModel, Field, Relationship
 from backend.schema.utils import now
+from sqlalchemy.dialects.postgresql import JSONB
 
 class ProductCategory(str, Enum):
     FOOD = "food"
@@ -26,6 +25,11 @@ class Product(SQLModel, table=True):
     category: ProductCategory = Field(default=ProductCategory.OTHER)
     base_price: int = 0 # paise
     active: bool = True
+    specs:Optional[Dict[str, Any]] = Field(
+        sa_column=Column(JSONB, nullable=True),
+        default=None,
+        description="Flexible product specs JSON (e.g. { 'weight_g': 500, 'flavor': 'saffron' })"
+    )
     created_at: datetime = Field(default_factory=now)
     updated_at: datetime = Field(default_factory=now)
 
