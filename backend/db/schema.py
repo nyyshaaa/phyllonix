@@ -1,48 +1,49 @@
+# for future reference
 
-from datetime import datetime
-from typing import List, Optional
-import uuid
-from enum import Enum
-from sqlmodel import Field, Relationship, SQLModel
+# from datetime import datetime
+# from typing import List, Optional
+# import uuid
+# from enum import Enum
+# from sqlmodel import Field, Relationship, SQLModel
 
 
-def now() -> datetime:
-    return datetime.now(datetime.timezone.utc)
+# def now() -> datetime:
+#     return datetime.now(datetime.timezone.utc)
 
 # Enums
-class ProductCategory(str, Enum):
-    FOOD = "food"
-    LADOOS = "ladoos"
-    CHOCO = "choco"
-    ARTS = "arts"
-    OTHER = "other"
+# class ProductCategory(str, Enum):
+#     FOOD = "food"
+#     LADOOS = "ladoos"
+#     CHOCO = "choco"
+#     ARTS = "arts"
+#     OTHER = "other"
 
 
-class OrderStatus(str, Enum):
-    CREATED = "created"
-    PENDING_PAYMENT = "pending_payment"
-    PAID = "paid"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"
-    FULFILLED = "fulfilled"
+# class OrderStatus(str, Enum):
+#     CREATED = "created"
+#     PENDING_PAYMENT = "pending_payment"
+#     PAID = "paid"
+#     CANCELLED = "cancelled"
+#     REFUNDED = "refunded"
+#     FULFILLED = "fulfilled"
 
 
-class PaymentStatus(str, Enum):
-    INIT = "init"
-    SUCCESS = "success"
-    FAILED = "failed"
-    REFUNDED = "refunded"
+# class PaymentStatus(str, Enum):
+#     INIT = "init"
+#     SUCCESS = "success"
+#     FAILED = "failed"
+#     REFUNDED = "refunded"
 
 
-class CredentialType(str, Enum):
-    PASSWORD = "password"
-    OAUTH = "oauth"
+# class CredentialType(str, Enum):
+#     PASSWORD = "password"
+#     OAUTH = "oauth"
 
 
-class AuthMethod(str, Enum):
-    PHONE = "phone"
-    PASSWORD = "password"
-    OAUTH = "oauth"
+# class AuthMethod(str, Enum):
+#     PHONE = "phone"
+#     PASSWORD = "password"
+#     OAUTH = "oauth"
 
 
 

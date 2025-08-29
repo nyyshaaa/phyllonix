@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 import uuid
 from sqlmodel import SQLModel, Field, Relationship
+from backend.schema.address import Address
 from backend.schema.cart import Cart
 from backend.schema.device_session import DeviceAuthToken
 from backend.schema.user import User
@@ -19,6 +20,7 @@ class UserPhone(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
 
     user: User = Relationship(back_populates="phones") 
-    session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")
+    session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="phone")
     phone_cart: Cart = Relationship(back_populates="phone")
     phone_wishlist: Wishlist = Relationship(back_populates="phone")
+    addresses: List["Address"] = Relationship(back_populates="phone")
