@@ -46,8 +46,7 @@ class DeviceAuthToken(SQLModel, table=True):
         index=True,nullable=False))
 
     # canonical links (nullable)
-    user_id: Optional[int] = Field(foreign_key="user.id", index=True, nullable=True)
-    # userphone_id: Optional[int] = Field(foreign_key="userphone.id", index=True, nullable=True))
+    user_id: Optional[int] = Field(foreign_key="users.id", index=True, nullable=False)
 
     token_hash: str = Field(index=True, nullable=False)  #hashed storage 
     issued_at: datetime = Field(default_factory=now,
@@ -62,4 +61,4 @@ class DeviceAuthToken(SQLModel, table=True):
 
     device_session: "DeviceSession" = Relationship(back_populates="tokens")
     # phone: Optional[UserPhone] = Relationship(back_populates="session_tokens")
-    user: Optional["User"] = Relationship(back_populates="session_tokens")
+    user: "Users" = Relationship(back_populates="session_tokens")

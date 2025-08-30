@@ -14,7 +14,7 @@ class Users(SQLModel, table=True):
         sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     )
     email: Optional[str] = Field(nullable=True,unique=True)
-    is_admin: bool = Field(default=False)
+    name: Optional[str] = Field(sa_column=Column(String(128),nullable=True))
     created_at: datetime = Field(default_factory=now,
         sa_column=Column(DateTime(timezone=True), default=now))
     updated_at: datetime = Field(default_factory=now,
@@ -34,6 +34,7 @@ class Users(SQLModel, table=True):
     credentials: List["Credential"] = Relationship(back_populates="user")
     addresses: List["Address"] = Relationship(back_populates="user")
     session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")
+    roles: List["Role"] = Relationship(back_populates="user")
     # user_cart: Cart = Relationship(back_populates="user") # user -> cart (1:1)
     # wishlist: Wishlist = Relationship(back_populates="user")
     # orders: List["Order"] = Relationship(back_populates="user")

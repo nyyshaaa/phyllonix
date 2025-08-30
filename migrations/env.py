@@ -8,10 +8,11 @@ from sqlmodel import SQLModel
 
 from backend.config.settings import config_settings
 
-from backend.schema.user import User
+from backend.schema.user import Users
 from backend.schema.address import Address
 from backend.schema.user_creds import Credential
 from backend.schema.device_session import DeviceSession,DeviceAuthToken
+from backend.schema.roles import Role,Permission,UserRole,RolePermission
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

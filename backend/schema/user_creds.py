@@ -14,9 +14,9 @@ class CredentialType(str, Enum):
 class Credential(SQLModel, table=True):
     """Holds password hashes and oauth provider ids. Per-device refresh token hashes live in DeviceSession."""
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(sa_column=Column(ForeignKey("user.id", ondelete="CASCADE"),
+    user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=False))
-    type: CredentialType = Field(nullable=False) # don't give a default so integrity at db level that user for sure adds password or provider id 
+    type: CredentialType = Field(nullable=False) 
     provider: Optional[str] = None # e.g., 'google'
     provider_user_id: Optional[str] = None
     provider_email: Optional[str] = None
@@ -29,4 +29,4 @@ class Credential(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True))
 
 
-    user: "User" = Relationship(back_populates="credentials")  # every credential must be linked to user .
+    user: "Users" = Relationship(back_populates="credentials")  # every credential must be linked to user .
