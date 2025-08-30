@@ -6,7 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 from sqlmodel import SQLModel
 
-from backend.config import settings
+from backend.config.settings import config_settings
 
 from backend.schema.user import User
 from backend.schema.address import Address
@@ -21,7 +21,7 @@ config = context.config
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-    config.set_main_option("sqlalchemy.url",settings.SYNC_TEST_DB)
+    config.set_main_option("sqlalchemy.url",config_settings.SYNC_TEST_DB)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
