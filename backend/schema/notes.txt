@@ -7,3 +7,5 @@ add cmop unq to provider and provider id ?
 check tokens length
 don't create any indexes on provider stuiff for now , if yes then remove 
 check if verified at needs onupdate
+normalise email before storing
+fix email index (only for non nulls)
