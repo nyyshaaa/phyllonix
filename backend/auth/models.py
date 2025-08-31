@@ -3,7 +3,17 @@ from typing import List, Optional, Union
 from pydantic import BaseModel, Field, field_validator ,HttpUrl
 
 
-class UserSignup(BaseModel):
+class SignupIn(BaseModel):
     email: str = Field(..., example="user@example.com")
-    password: str = Field(..., min_length=8, example="strongpassword")
-    name: Optional[str] = Field(..., example="Full Name")
+    password: str = Field(..., example="StrongPassw0rd!")
+    name: Optional[str] = Field(None, example="Full Name")
+
+class SignIn(BaseModel):
+    email: str = Field(...)
+    password: str = Field(...)
+
+
+
+
+
+
