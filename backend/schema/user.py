@@ -10,27 +10,28 @@ from backend.schema.utils import now
 class Users(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)  #* optional just means for the created object before saving in db .
     public_id: uuid7 = Field(
-        default_factory=uuid7,  # Only works in Python 3.12+
+        default_factory=uuid7, 
         sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     )
-    email: Optional[str] = Field(nullable=True,unique=True)
-    name: Optional[str] = Field(sa_column=Column(String(128),nullable=True))
+    email: Optional[str] = Field(default=None,sa_column=Column(String(320), nullable=True))
+    name: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     created_at: datetime = Field(default_factory=now,
-        sa_column=Column(DateTime(timezone=True), default=now))
+        sa_column=Column(DateTime(timezone=True), nullable=False,default=now))
     updated_at: datetime = Field(default_factory=now,
-        sa_column=Column(DateTime(timezone=True), default=now, onupdate=now))
+        sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
 
     deleted_at: Optional[datetime] = Field(default=None,
         sa_column=Column(DateTime(timezone=True)))
 
     # Simple profile images (with a single predefined size)
-    profile_image_url: Optional[str] = Field(default=None, nullable=True)            # canonical/original
-    profile_image_thumb_url: Optional[str] = Field(default=None, nullable=True)     # small/thumbnail
+    profile_image_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
+    profile_image_thumb_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
+
 
 
 
     # relationships
-    # phones: List["UserPhone"] = Relationship(back_populates="user")   # user->userphone (1 to many)
+    phones: List["UserPhone"] = Relationship(back_populates="user")   # user->userphone (1 to many)
     credentials: List["Credential"] = Relationship(back_populates="user")
     addresses: List["Address"] = Relationship(back_populates="user")
     session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")

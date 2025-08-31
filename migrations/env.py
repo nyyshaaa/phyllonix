@@ -13,6 +13,7 @@ from backend.schema.address import Address
 from backend.schema.user_creds import Credential
 from backend.schema.device_session import DeviceSession,DeviceAuthToken
 from backend.schema.roles import Role,Permission,UserRole,RolePermission
+from backend.schema.user_phone import UserPhone
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
