@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     JWT_ALGO = str
     ACCESS_TOKEN_EXPIRE_MINUTES = str
     REFRESH_TOKEN_EXPIRE_DAYS = str
+    PASS_HASH_SCHEME:str
+    TOKEN_HASH_ALGO:str
+    DEFAULT_ROLE:str
 
     class Config:
         env_file = ".env"

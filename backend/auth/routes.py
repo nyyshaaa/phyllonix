@@ -11,9 +11,8 @@ auth_router = APIRouter()
 #* sign in via both mobile or email(only email for now)
 @auth_router.get("/login")
 async def login_user(payload:SignIn, session: AsyncSession = Depends(get_session)):
-    payload_dict = payload.model_dump()
 
-    await get_user_token(payload_dict,session)
+    await get_user_token(payload,session)
 
 #* make phone necessary for signup when app grows (not added now because of otp prices)
 #** check to pass payload in signup_validation

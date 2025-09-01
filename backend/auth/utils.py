@@ -1,5 +1,7 @@
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import secrets
 from fastapi import HTTPException
 from passlib.context import CryptContext
 from email_validator import validate_email, EmailNotValidError
@@ -9,9 +11,12 @@ import uuid
 from jose import jwt, JWTError
 from backend.config.settings import config_settings
 
-
+PASS_HASH_SCHEME=config_settings.PASS_HASH_SCHEME
+TOKEN_HASH_ALGO = config_settings.TOKEN_HASH_ALGO
 JWT_SECRET = config_settings.JWT_SECRET
 JWT_ALGO = config_settings.JWT_ALGO
+DEFAULT_ROLE=config_settings.DEFAULT_ROLE
+
 ACCESS_TOKEN_EXPIRE_MINUTES = int(config_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 REFRESH_TOKEN_EXPIRE_DAYS = int(config_settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
@@ -38,18 +43,33 @@ def validate_password(password: str, min_length: int = 8) -> tuple[bool, str]:
         return False, "Password must include at least one special character"
     return True, "OK"
     
-#** add sid as well
-def create_token(user_identity:dict,expires_time:timedelta=None,refresh:bool=False):
-    payload={}
-    expiry=datetime.now() + (expires_time or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-
-    payload["user"]=user_identity
-    payload["exp"]=expiry
-    payload["jti"]=str(uuid.uuid4())
-    payload["refresh"]=refresh
+def create_access_token(user_id,ds_id,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
+    now=datetime.now(timezone.utc)
+    expiry= now + (timedelta(minutes=expires_dur))
+    payload = {
+        "sub": str(user_id),
+        "sid": str(ds_id),
+        "iat": int(now.timestamp()),
+        "exp": int(expiry),
+        "jti": secrets.token_hex(32),
+        "roles": [DEFAULT_ROLE],
+    }
 
     token=jwt.encode(payload=payload,key=config_settings.JWT_SECRET,algorithm=config_settings.JWT_ALGO)
     return token
+
+def generate_plain_token(nbytes: int = 48) -> str:
+    return secrets.token_urlsafe(nbytes)
+
+def make_session_token_plain() -> str:
+    return generate_plain_token(32)
+
+def make_refresh_plain() -> str:
+    return generate_plain_token(48)
+
+def hash_token(plain:str)->str:
+    hash_func=getattr(hashlib,TOKEN_HASH_ALGO)
+    return hash_func(plain.encode()).hexdigest()
 
 
    
