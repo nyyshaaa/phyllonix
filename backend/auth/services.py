@@ -1,13 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
-from backend.auth.repository import get_user_role_names, identify_user, save_refresh_token, user_by_email, user_id_by_email
-from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_refresh_plain, make_session_token_plain, verify_password
-from backend.schema.device_session import DeviceAuthToken, DeviceSession
-from backend.schema.roles import Role, UserRole
-from backend.schema.user import Users
-from backend.schema.user_creds import Credential,CredentialType
-from sqlalchemy.ext.asyncio import IntegrityError
+from backend.auth.repository import identify_user, save_refresh_token,  user_id_by_email
+from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_password, hash_token, make_refresh_plain, make_session_token_plain, verify_password
+from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession
+from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
 
 async def link_user_role(session,user_id):
@@ -97,15 +94,16 @@ async def save_device_and_token_state(session,request,user_id,payload):
 async def issue_auth_tokens(session,request,payload):
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
+    print("user_id",user_id)
 
     # create device session , refresh token and save
     ds_id,refresh_token=await save_device_and_token_state(session,request,user_id,payload)
 
     # create access token with public_id
-    user_roles=await get_user_role_names(session,user_id)
-    access_token = create_access_token(user_id=user.public_id, ds_id=ds_id,user_roles=user_roles)
+    # user_roles=await get_user_role_names(session,user_id)
+    # access_token = create_access_token(user_id=user.public_id, ds_id=ds_id,user_roles=user_roles)
 
-    return access_token,refresh_token
+    # return access_token,refresh_token
 
 
 

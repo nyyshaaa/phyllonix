@@ -1,6 +1,6 @@
-from datetime import date
-from typing import List, Optional, Union
-from pydantic import BaseModel, Field, field_validator ,HttpUrl
+
+from typing import  Optional
+from pydantic import BaseModel, Field
 
 
 class SignupIn(BaseModel):
