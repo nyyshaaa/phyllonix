@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     PASS_HASH_SCHEME:str
     TOKEN_HASH_ALGO:str
     DEFAULT_ROLE:str
+    SELF_PROVIDER:str
+    DEVICE_SESSION_EXPIRE_DAYS:str
 
     class Config:
         env_file = ".env"

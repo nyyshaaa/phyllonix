@@ -1,11 +1,13 @@
 import http
 import dns
-
 from email_validator import validate_email, EmailNotValidError
 from fastapi import HTTPException, Request,status
 from fastapi.security import HTTPBearer
 
-from backend.auth.utils import validate_password
+from backend.auth.utils import decode_token, validate_password
+
+
+
 
 
 def normalize_email_address(email: str) -> str:
@@ -52,4 +54,6 @@ async def signup_validation(payload):
     is_valid, status = validate_password(payload.password)
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=status)
+    
+    return payload
     

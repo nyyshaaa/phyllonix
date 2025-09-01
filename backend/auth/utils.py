@@ -2,12 +2,8 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
-from fastapi import HTTPException
 from passlib.context import CryptContext
-from email_validator import validate_email, EmailNotValidError
-import dns.resolver
 from backend.auth import SPECIALS  
-import uuid
 from jose import jwt, JWTError
 from backend.config.settings import config_settings
 
@@ -43,7 +39,8 @@ def validate_password(password: str, min_length: int = 8) -> tuple[bool, str]:
         return False, "Password must include at least one special character"
     return True, "OK"
     
-def create_access_token(user_id,ds_id,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
+
+def create_access_token(user_id,ds_id,user_roles,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
     now=datetime.now(timezone.utc)
     expiry= now + (timedelta(minutes=expires_dur))
     payload = {
@@ -52,9 +49,8 @@ def create_access_token(user_id,ds_id,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
         "iat": int(now.timestamp()),
         "exp": int(expiry),
         "jti": secrets.token_hex(32),
-        "roles": [DEFAULT_ROLE],
+        "roles": user_roles,
     }
-
     token=jwt.encode(payload=payload,key=config_settings.JWT_SECRET,algorithm=config_settings.JWT_ALGO)
     return token
 
@@ -70,6 +66,18 @@ def make_refresh_plain() -> str:
 def hash_token(plain:str)->str:
     hash_func=getattr(hashlib,TOKEN_HASH_ALGO)
     return hash_func(plain.encode()).hexdigest()
+
+def decode_token(token:str):
+    """To verify the signature , expiration and user claims of token"""
+    try:
+        token_data=jwt.decode(
+        jwt=token,
+        key=config_settings.JWT_SECRET,
+        algorithms=config_settings.JWT_ALGO
+        )
+        return token_data
+    except JWTError as e:
+        return None
 
 
    
