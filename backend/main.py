@@ -22,7 +22,7 @@ def create_app():
     app.include_router(auth_router, prefix=f"{version_prefix}/auth")
     app.include_router(user_router,prefix=f"{version_prefix}/users")
 
-    # app.add_middleware(AuthenticationMiddleware,session=async_session)
+    app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth"])
     return app
 
 app=create_app()

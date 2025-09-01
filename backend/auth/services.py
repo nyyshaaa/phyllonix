@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
-from backend.auth.repository import identify_user, save_refresh_token,  user_id_by_email
-from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_password, hash_token, make_refresh_plain, make_session_token_plain, verify_password
+from backend.auth.repository import get_user_role_names, identify_user, save_refresh_token,  user_id_by_email
+from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_refresh_plain, make_session_token_plain, verify_password
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
@@ -10,13 +10,13 @@ from backend.config.settings import config_settings
 async def link_user_role(session,user_id):
     # ensure user role exists (idempotent)
     q = select(Role).where(Role.name == config_settings.DEFAULT_ROLE)
-    role = (await session.exec(q)).first()
+    role = (await session.execute(q)).first()
     if not role:
-        role = Role(name=config_settings.DEFAULT_ROLE, description="Default user role")
+        role = Role(name=config_settings.DEFAULT_ROLE)
         session.add(role)
         await session.flush()
 
-    ur = UserRole(user_id, role_id=role.id)
+    ur = UserRole(user_id=user_id, role_id=role.id)
     session.add(ur)
 
 #* promote roles via a separate endpoint 
@@ -25,22 +25,22 @@ async def link_user_role(session,user_id):
 #** create partial index on email 
 async def create_user(session,payload):
 
-    user_id = await user_id_by_email(session,payload.email)
+    user_id = await user_id_by_email(session,payload["email"])
     if user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with email already exists")
 
     # create user + credential + default role (atomic)
     try:
         # create user row
-        user = Users(email=payload.email, name=payload.name)
+        user = Users(email=payload["email"], name=payload.get("name"))
         session.add(user)
         await session.flush()  # get user.id
 
         user_id=user.id
 
-        pwd_hash = hash_password(payload.password)
+        pwd_hash = hash_password(payload["password"])
         # create password credential
-        cred = Credential(user_id, type=CredentialType.PASSWORD, provider=config_settings.SELF_PROVIDER, password_hash=pwd_hash)
+        cred = Credential(user_id=user_id, type=CredentialType.PASSWORD, provider=config_settings.SELF_PROVIDER, password_hash=pwd_hash)
         session.add(cred)
         
         # link user role
@@ -50,6 +50,7 @@ async def create_user(session,payload):
         
         await session.commit()
         await session.refresh(user)
+        return user.id
     except IntegrityError:
         await session.rollback()
         raise HTTPException(status_code=400, detail="User with that email already exists")
@@ -67,27 +68,27 @@ async def save_device_and_token_state(session,request,user_id,payload):
     device_id = payload.device_id  
 
     # create device session row + session token (opaque) and store hashed form
-    async with session.begin():
-        session_token_plain = make_session_token_plain()
-        session_token_hash = hash_token(session_token_plain)
+   
+    session_token_plain = make_session_token_plain()
+    session_token_hash = hash_token(session_token_plain)
 
-        ds = DeviceSession(
-            session_token_hash=session_token_hash,
-            device_name=device_name,
-            device_type=device_type,
-            user_agent_snippet=ua[:512],
-            device_fingerprint_hash=None if not device_id else hash_token(f"{device_id}|{ua[:200]}"),
-            ip_first_seen=ip,
-            last_seen_ip=ip,
-            last_activity_at=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
-            session_expires_at=datetime.now(timezone.utc) + timedelta(days=config_settings.DEVICE_SESSION_EXPIRE_DAYS)
-        )
-        session.add(ds)
-        await session.flush()  # get ds.id
+    ds = DeviceSession(
+        session_token_hash=session_token_hash,
+        device_name=device_name,
+        device_type=device_type,
+        user_agent_snippet=ua[:512],
+        device_fingerprint_hash=None if not device_id else hash_token(f"{device_id}|{ua[:200]}"),
+        ip_first_seen=ip,
+        last_seen_ip=ip,
+        last_activity_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        session_expires_at=datetime.now(timezone.utc) + timedelta(days=int(config_settings.DEVICE_SESSION_EXPIRE_DAYS))
+    )
+    session.add(ds)
+    await session.flush()  # get ds.id
 
-        refresh_token=await save_refresh_token(ds.id)
-    
+    refresh_token=await save_refresh_token(session,ds.id,user_id)
+
     return ds.id,refresh_token
         
 
@@ -98,12 +99,14 @@ async def issue_auth_tokens(session,request,payload):
 
     # create device session , refresh token and save
     ds_id,refresh_token=await save_device_and_token_state(session,request,user_id,payload)
-
+    
+    await session.commit()
     # create access token with public_id
-    # user_roles=await get_user_role_names(session,user_id)
-    # access_token = create_access_token(user_id=user.public_id, ds_id=ds_id,user_roles=user_roles)
+    user_roles=await get_user_role_names(session,user_id)
+    access_token = create_access_token(user_id=user.public_id, ds_id=ds_id,user_roles=user_roles)
+    
 
-    # return access_token,refresh_token
+    return access_token,refresh_token
 
 
 

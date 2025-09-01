@@ -8,15 +8,15 @@ from backend.user.repository import device_active, userid_by_public_id
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, session):
+    def __init__(self, app, *, session,paths:str):
         super().__init__(app)
         self.session = session
-        # self.paths = paths 
+        self.paths = paths 
 
     async def dispatch(self, request: Request, call_next):
-        # if any(request.url.path.startswith(p) for p in self.paths):
-        #     # Skip authentication for paths that don't require it
-        #     return await call_next(request)
+        if any(request.url.path.startswith(p) for p in self.paths):
+            # Skip authentication for paths that don't require it
+            return await call_next(request)
         
         #** chnage this to if else block later and Authentiction auto error false
         try:

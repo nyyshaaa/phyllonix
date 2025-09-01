@@ -1,7 +1,7 @@
 
 import dns
 from email_validator import validate_email, EmailNotValidError
-from fastapi import HTTPException, Request,status
+from fastapi import Body, HTTPException, Request,status
 from backend.auth.utils import  validate_password
 
 
@@ -32,21 +32,21 @@ def maybe_check_mx(domain: str) -> bool:
     except Exception:
         return False
 
-async def signup_validation(payload):
+async def signup_validation(payload=Body(...)):
     # 1) validate & normalize email
     try:
-        email = normalize_email_address(payload.email)
+        email = normalize_email_address(payload["email"])
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid email: {e}")
 
     # optional MX check (non-blocking decision)
-    domain = email.split("@", 1)[1]
-    if not maybe_check_mx(domain):
-        # MX missing doesn't always mean invalid mailboxes; warn or reject as you prefer.
-        # Here we reject to enforce stronger correctness; change to log/warn if you prefer.
-        raise HTTPException(status_code=400, detail="Email domain does not accept mail (no MX record)")
+    # domain = email.split("@", 1)[1]
+    # if not maybe_check_mx(domain):
+    #     # MX missing doesn't always mean invalid mailboxes; warn or reject as you prefer.
+    #     # Here we reject to enforce stronger correctness; change to log/warn if you prefer.
+    #     raise HTTPException(status_code=400, detail="Email domain does not accept mail (no MX record)")
 
-    is_valid, status = validate_password(payload.password)
+    is_valid, status = validate_password(payload["password"])
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=status)
     

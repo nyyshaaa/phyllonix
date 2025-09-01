@@ -18,9 +18,9 @@ async def login_user(request:Request,payload:SignIn, session: AsyncSession = Dep
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup_user(payload: SignupIn=Depends(signup_validation), session: AsyncSession = Depends(get_session)):
     
-    await create_user(session,payload)
+    user_id=await create_user(session,payload)
 
     #* do email verification via email link 
     
-    return {"message": "User created successfully."}
+    return {"message": f"User {user_id} created successfully."}
 

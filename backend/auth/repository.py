@@ -2,7 +2,7 @@
 from sqlalchemy import select
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
-from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken
+from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_token, make_refresh_plain, verify_password
 
@@ -28,7 +28,8 @@ async def identify_user(session,email,password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email provided is not valid")
     
     stmt= select(Credential.password_hash).where(Credential.user_id == user.id, Credential.type == CredentialType.PASSWORD)
-    pwd_hash = (await session.execute(stmt)).first()
+    pwd_hash = (await session.execute(stmt)).first()[0]
+    print("pwd_hash",pwd_hash)
     
     if not pwd_hash or not verify_password(password, pwd_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -43,6 +44,7 @@ async def save_refresh_token(session,ds_id,user_id):
     refresh_row = DeviceAuthToken(
         device_session_id=ds_id,
         user_id=user_id,
+        auth_method=AuthMethod.PASSWORD,
         token_hash=refresh_hash,
         issued_at=now,
         expires_at=now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
@@ -53,7 +55,7 @@ async def save_refresh_token(session,ds_id,user_id):
 
 async def get_user_role_names(session,user_id):
     stmt=select(Role.name).join(UserRole,Role.id==UserRole.role_id).where(UserRole.user_id==user_id)
-    result = await session.exec(stmt)
+    result = await session.execute(stmt)
     return result.scalars().all()
 
 

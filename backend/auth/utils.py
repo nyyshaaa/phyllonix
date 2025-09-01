@@ -47,11 +47,11 @@ def create_access_token(user_id,ds_id,user_roles,expires_dur=ACCESS_TOKEN_EXPIRE
         "sub": str(user_id),
         "sid": str(ds_id),
         "iat": int(now.timestamp()),
-        "exp": int(expiry),
+        "exp": int(expiry.timestamp()),
         "jti": secrets.token_hex(32),
         "roles": user_roles,
     }
-    token=jwt.encode(payload=payload,key=config_settings.JWT_SECRET,algorithm=config_settings.JWT_ALGO)
+    token=jwt.encode(claims=payload,key=config_settings.JWT_SECRET,algorithm=config_settings.JWT_ALGO)
     return token
 
 def generate_plain_token(nbytes: int = 48) -> str:
