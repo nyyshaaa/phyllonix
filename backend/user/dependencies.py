@@ -1,10 +1,9 @@
 
-from fastapi import Depends, Header, Request,HTTPException,status
+from fastapi import Request,HTTPException,status
 from fastapi.security import HTTPBearer , http
 
-from backend.auth.utils import decode_token
-from backend.db.dependencies import get_session
-from backend.schema.full_schema import DeviceSession,Users
+from jose import jwt, JWTError
+from backend.config.settings import config_settings
 
 
 class Authentication(HTTPBearer):
@@ -15,11 +14,23 @@ class Authentication(HTTPBearer):
         auth_creds=await super().__call__(request)
         token=auth_creds.credentials
 
-        decoded_token=decode_token(token)
+        decoded_token=self.decode_token(token)
 
         if not decoded_token:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,details="Invalid or expired token provided.")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired token provided.")
         
         return decoded_token
+    
+    def decode_token(self,token:str):
+        """To verify the signature , expiration and user claims of token"""
+        try:
+            token_data=jwt.decode(
+            token,
+            key=config_settings.JWT_SECRET,
+            algorithms=config_settings.JWT_ALGO
+            )
+            return token_data
+        except JWTError as e:
+            return None
 
 

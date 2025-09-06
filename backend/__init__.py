@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger("app")
+
 
 version1="v1"
 version=version1

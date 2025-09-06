@@ -23,11 +23,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             auth_token = await Authentication()(request)
         except Exception as e:
             return JSONResponse(
-                {"detail": "Missing or Invalid Auth Headers"},
+                {"detail": e.detail or "Missing or Invalid Auth Headers"},
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
         
-        user_pid = int(auth_token.get("sub"))
+        user_pid = auth_token.get("sub")
         ds_id = int(auth_token.get("sid"))
 
         async with self.session() as session:

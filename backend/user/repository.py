@@ -1,18 +1,54 @@
 
-from sqlalchemy import select
-from backend.schema.full_schema import DeviceSession,Users
+from fastapi import HTTPException,status
+from sqlalchemy import select, update
+from backend.schema.full_schema import DeviceSession, UserMedia,Users
+from sqlalchemy.exc import IntegrityError
 
 
 async def userid_by_public_id(session,user_pid):
     stmt=select(Users.id).where(Users.public_id==user_pid)
-    res=await session.exec(stmt)
+    res=await session.execute(stmt)
     user=res.first()
     return user
 
 async def device_active(session,ds_id):
     stmt=select(DeviceSession.id).where(DeviceSession.id==ds_id,DeviceSession.revoked_at==None)
-    res=await session.exec(stmt)
+    res=await session.execute(stmt)
     ds=res.first()
     return ds
+
+# for now only profile image exists for 1 user . there is a unique constraint on user_id fkey in user_media
+async def save_user_avatar(session, user_id: int, image_path: str,final_path:str):
+    new=UserMedia(user_id=user_id, profile_img_path=image_path)
+    session.add(new)
+    try:
+        # flush sends INSERT to DB so new.id is populated (but not committed)
+        await session.flush()
+        media_id = new.id
+        await session.commit()
+        return media_id
+    except IntegrityError:   
+        await session.rollback()
+        stmt = (
+            update(UserMedia)
+            .where(UserMedia.user_id == user_id)    # since one user has only one profile allowed and user id fkey is unique .
+            .values(
+                profile_image_url=image_path,
+                profile_image_thumb_url=None
+            ).returning(UserMedia.id)
+        )
+        res=await session.execute(stmt)
+        res=res.first()[0]
+        await session.commit()
+        print(res)
+        return res
+    except Exception as e:
+        print("save error",e)
+        final_path.unlink(missing_ok=True)
+        await session.rollback()
+        #log e 
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save avatar")
+
+
     
   

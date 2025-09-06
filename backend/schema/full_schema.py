@@ -34,29 +34,31 @@ class Users(SQLModel, table=True):
     deleted_at: Optional[datetime] = Field(default=None,
         sa_column=Column(DateTime(timezone=True)))
 
-    # Simple profile images (with a single predefined size)
-    profile_image_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
-    profile_image_thumb_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
-
-
-
-
+    
     # relationships
     phones: List["UserPhone"] = Relationship(back_populates="user")   # user->userphone (1 to many)
     credentials: List["Credential"] = Relationship(back_populates="user")
     addresses: List["Address"] = Relationship(back_populates="user")
     session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")
     roles: List["Role"] = Relationship(back_populates="user",link_model=UserRole)
+    media:"UserMedia" = Relationship(back_populates="user")
     # user_cart: Cart = Relationship(back_populates="user") # user -> cart (1:1)
     # wishlist: Wishlist = Relationship(back_populates="user")
     # orders: List["Order"] = Relationship(back_populates="user")
 
-
+class UserMedia(SQLModel,table=True):
+    id:Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(default=None, foreign_key="users.id", unique=True,nullable=False)
+    # Simple profile images (with a single predefined size)
+    profile_image_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
+    profile_image_thumb_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
+    
+    user:"Users" = Relationship(back_populates="media")
 
 class RolePermission(SQLModel, table=True):
     id:Optional[int] = Field(default=None, primary_key=True)
-    role_id: Optional[int] = Field(default=None, foreign_key="role.id", index=True,nullable=False)
-    permission_id: Optional[int] = Field(default=None, foreign_key="permission.id", index=True,nullable=False)
+    role_id: int = Field(foreign_key="role.id", index=True,nullable=False)
+    permission_id: int = Field(foreign_key="permission.id", index=True,nullable=False)
 
     __table_args__ = (UniqueConstraint("role_id", "permission_id", name="uq_role_permission_role_id_permission_id"),)
 
@@ -127,9 +129,9 @@ class Address(SQLModel, table=True):
     phone: str = Field(nullable=False)
     is_default: bool = Field(default=False)
     created_at: datetime = Field(default_factory=now,
-        sa_column=Column(DateTime(timezone=True), default=now))
+        sa_column=Column(DateTime(timezone=True), nullable=False,default=now))
     updated_at: datetime = Field(default_factory=now,
-        sa_column=Column(DateTime(timezone=True), default=now, onupdate=now))
+        sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     deleted_at: Optional[datetime] = Field(default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True))
 
