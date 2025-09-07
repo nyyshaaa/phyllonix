@@ -64,7 +64,6 @@ class FileUpload:
         start=time.time()
         format=FileUpload.FORMAT
         # tmp_norm = tmp_path.with_suffix(f".norm{format}")
-        tmp_norm="test_phase"
         with Image.open(tmp_path) as img:
             img.verify()
             # im = im.convert("RGB")        # drop alpha safely
@@ -74,6 +73,6 @@ class FileUpload:
                 
         end=time.time()
         print(f"Time taken to verify image: {(end-start)*1000} milliseconds")
-        return tmp_norm,format
+        return format
     
 

@@ -40,12 +40,12 @@ class ThumbnailWorker:
     THUMB_SIZE = (300, 300)
     FORMAT="jpeg"
 
-    async def thumbnail_worker_loop(self):
+    async def thumbnail_worker_loop(self,q):
         logger.info("Thumbnail worker started, waiting for tasks...")
         processed=0
         while True:
             try:
-                task = await constants.tasks_queue.get()
+                task = await q.get()
                 if task is None:
                     # sentinel to shutdown
                     logger.info("Thumbnail worker shutting down")
@@ -61,8 +61,9 @@ class ThumbnailWorker:
             except Exception:
                 logger.exception("[worker] unexpected error handling task: %s", task)
                 # avoid losing the item forever; mark done to prevent blocking if you've chosen to
+            finally:
                 try:
-                    constants.tasks_queue.task_done()
+                    q.task_done()
                 except Exception:
                     pass
 

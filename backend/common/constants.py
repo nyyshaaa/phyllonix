@@ -1,0 +1,1 @@
+NUM_CONSUMERS = 1
