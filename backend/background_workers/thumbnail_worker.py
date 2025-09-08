@@ -5,30 +5,13 @@ from typing import Tuple
 from sqlalchemy import text
 # from backend.user.constants import PROFILE_ROOT_PATH, MEDIA_ROOT, THUMB_ROOT_PATH, THUMB_SIZE
 from PIL import Image, UnidentifiedImageError
+from backend.background_workers.repository import MARK_FAILED_SQL, SELECT_MEDIA_ID, UPDATE_ROW_SQL
 from backend.db.connection import async_session
 from backend.user.utils import file_hash
 from backend.config.media_config import media_settings
 from backend.__init__ import logger
 
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
-
-CLAIM_BATCH_SQL = text("""
-WITH cte AS (
-  SELECT id
-  FROM usermedia
-  WHERE profile_image_url IS NOT NULL AND (profile_image_thumb_url IS NULL)
-  FOR UPDATE SKIP LOCKED
-  LIMIT :limit
-)
-UPDATE usermedia
-SET profile_image_thumb_url = :marker
-FROM cte
-WHERE usermedia.id = cte.id
-RETURNING usermedia.id, usermedia.profile_image_url
-""")
-UPDATE_ROW_SQL = text("UPDATE usermedia SET profile_image_thumb_url = :thumb_path WHERE id = :id AND user_id =:user_id")
-MARK_FAILED_SQL = text("UPDATE usermedia SET profile_image_thumb_url = NULL WHERE id = :id AND user_id =:user_id")
-SELECT_MEDIA_ID=text("SELECT usermedia.id FROM usermedia WHERE id=:id")
 
 
 class ThumbnailWorker:

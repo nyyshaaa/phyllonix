@@ -2,17 +2,14 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from backend.auth.routes import auth_router
+from backend.background_workers.specific_workers import LogWorker, NotifyWorker, ThumbnailWorker
 from backend.common.constants import NUM_CONSUMERS
 from backend.middlewares.auth_middleware import AuthenticationMiddleware
 from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
 from backend.__init__ import setup_logger, version_prefix,version
-from backend.background_workers import constants
-from backend.background_workers.dynamic_worker import DynamicWorker
-from backend.background_workers.stop_workers import ExitBgWorkers
 
 # thumbnail_worker=ThumbnailWorker()
-dynamic_worker=DynamicWorker()
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
@@ -32,12 +29,20 @@ async def app_lifespan(app: FastAPI):
     #     num_consumers=NUM_CONSUMERS,
     # )
 
-    qu_dict=constants.queue_dict
+    # create instances (one instance == one consumer loop)
+    thumb = ThumbnailWorker(name="thumb_gen")
+    logw = LogWorker(name="log_analytics")
+    notif = NotifyWorker(name="notify_admin")
 
-    for qname,qu in qu_dict:
-        # name=f"Worker-{i+1}"
-        t=asyncio.create_task(dynamic_worker.worker_loop(qu,qname))
-        constants.task_workers.append(t)
+     # attach to app.state for route access / tests
+    app.state.thumb_worker = thumb
+    app.state.log_worker_sim = logw
+    app.state.notif_worker_sim = notif
+
+    # start each worker (runs on this process event loop)
+    thumb.start()
+    logw.start()
+    notif.start()
 
     try:
         yield

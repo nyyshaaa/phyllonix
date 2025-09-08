@@ -38,6 +38,7 @@ async def get_user_profile(request:Request, session: AsyncSession = Depends(get_
 async def upload_profile_image(request:Request,file: UploadFile = File(), session = Depends(get_session)):
     
     user_identifier = request.state.user_identifier
+    app=request.app
 
     #** add more robust checks
     # cheap header check
@@ -93,7 +94,9 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
     
     task={"user_id": user_identifier.id, "media_id": media_id,"rel_path":rel_path}
     try:
-        constants.tasks_queue.put_nowait(task)
+        app.state.thumb_worker.queue.put_nowait(task)
+        app.state.log_worker_sim.queue.put_nowait(task)
+        app.state.notif_worker_sim.queue.put_nowait(task)
         # logger.info("[upload] enqueued thumbnail task for user=%s row=%s", user_identifier.id, media_id)
     except asyncio.QueueFull as e:
         print("Failed to enqueue task", e)

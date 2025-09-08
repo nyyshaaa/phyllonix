@@ -1,10 +1,13 @@
 
+
+# simple simulated workers
 import asyncio
+from typing import Any, Dict
+from backend.background_workers.base_worker import BaseWorker
 from pathlib import Path
 from typing import Tuple
-from sqlalchemy import text
-# from backend.user.constants import PROFILE_ROOT_PATH, MEDIA_ROOT, THUMB_ROOT_PATH, THUMB_SIZE
 from PIL import Image, UnidentifiedImageError
+from backend.background_workers.repository import MARK_FAILED_SQL, SELECT_MEDIA_ID, UPDATE_ROW_SQL
 from backend.db.connection import async_session
 from backend.user.utils import file_hash
 from backend.config.media_config import media_settings
@@ -12,91 +15,53 @@ from backend.__init__ import logger
 
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 
-CLAIM_BATCH_SQL = text("""
-WITH cte AS (
-  SELECT id
-  FROM usermedia
-  WHERE profile_image_url IS NOT NULL AND (profile_image_thumb_url IS NULL)
-  FOR UPDATE SKIP LOCKED
-  LIMIT :limit
-)
-UPDATE usermedia
-SET profile_image_thumb_url = :marker
-FROM cte
-WHERE usermedia.id = cte.id
-RETURNING usermedia.id, usermedia.profile_image_url
-""")
-UPDATE_ROW_SQL = text("UPDATE usermedia SET profile_image_thumb_url = :thumb_path WHERE id = :id AND user_id =:user_id")
-MARK_FAILED_SQL = text("UPDATE usermedia SET profile_image_thumb_url = NULL WHERE id = :id AND user_id =:user_id")
-SELECT_MEDIA_ID=text("SELECT usermedia.id FROM usermedia WHERE id=:id")
 
+class LogWorker(BaseWorker):
+    async def task_executor(self, task: Dict[str, Any]) -> int:
+        # simulate analytics logging
+        await asyncio.sleep(1)
+        logger.info("[%s] logged analytics %s", self.name, task)
+        return 1
 
-class DynamicWorker:
+class NotifyWorker(BaseWorker):
+    async def task_executor(self, task: Dict[str, Any]) -> int:
+        # simulate sending slack
+        await asyncio.sleep(2)
+        logger.info("[%s] sent notify %s", self.name, task)
+        return 1
+    
+
+class ThumbnailWorker(BaseWorker):
 
     MEDIA_ROOT = media_settings.MEDIA_ROOT
     PROFILE_ROOT_PATH = media_settings.PROFILE_IMG_PATH
     THUMB_ROOT_PATH=media_settings.THUMBNAIL_IMG_PATH
     THUMB_SIZE = (300, 300)
-    FORMAT="jpeg"
+    
 
-    def __init__(self,queue: asyncio.Queue): 
-        self.q = queue
-        self.current_worker=None
-
-
-    async def thumbgen(self,task,w_name):
+    async def task_executor(self,task: Dict[str, Any]):
         user_id = task["user_id"]
         media_id = task["media_id"]
         rel_path = task["rel_path"]
-
-        logger.debug("[%s] picked task user=%s media=%s rel=%s", w_name, user_id, media_id, rel_path) 
         
         await self.process_thumbnail_task(media_id, user_id,rel_path,async_session)
-        
-    async def log_analytics(self):
-        await asyncio.sleep(1)
-
-    async def notify_admin(self):
-        await asyncio.sleep(2)
-
-    
-    async def worker_loop(self,q,w_name):
-        logger.debug("[%s] started & waiting ready to receive tasks", w_name)
-        self.current_worker=w_name
-        
-        while True:
-            try:
-                task = await q.get()
-                if task is None:
-                    # sentinel to shutdown
-                    logger.debug("[%s] received sentinel, exiting", w_name)
-                    break
-                await self.current_worker(task,w_name)
-            except Exception:
-                logger.exception("[%s] error processing task: %s", w_name, task)
-                # avoid losing the item forever; mark done to prevent blocking if you've chosen to
-            finally:
-                try:
-                    q.task_done()
-                except Exception:
-                    pass
-        logger.debug("[%s] exiting " , w_name)
-
-
+        logger.info("[%s] thumbanil generated %s", self.name, task)
+                
+           
     # --- processing logic (async, but offloads blocking parts to threads) ---
     async def process_single_row_async(self,row_id: int, image_rel: str) -> Tuple[int, str]:
-        src = DynamicWorker.MEDIA_ROOT / Path(DynamicWorker.PROFILE_ROOT_PATH) / image_rel
+        src = ThumbnailWorker.MEDIA_ROOT / Path(ThumbnailWorker.PROFILE_ROOT_PATH) / image_rel
         # log(src, "processing row", row_id)
         if not src.exists():
             raise FileNotFoundError("source missing: %s" % src)
 
         # blocking open+resize in thread
-        thumb_img, fmt = await asyncio.to_thread(self._open_and_resize_sync, src, DynamicWorker.THUMB_SIZE)
+        thumb_img, fmt = await asyncio.to_thread(self._open_and_resize_sync, src, ThumbnailWorker.THUMB_SIZE)
 
         # choose thumbnail path
         rel_thumb=f"{file_hash(row_id,FILE_SECRET_KEY)}.{fmt}"
-        thumb_dir=Path(DynamicWorker.THUMB_ROOT_PATH)/rel_thumb
-        abs_thumb_dir=Path(DynamicWorker.MEDIA_ROOT)/thumb_dir
+        thumb_dir=Path(ThumbnailWorker.THUMB_ROOT_PATH)/rel_thumb
+        abs_thumb_dir=Path(ThumbnailWorker.MEDIA_ROOT)/thumb_dir
         
         # save in thread (blocking)
         await asyncio.to_thread(self._save_atomic_sync, thumb_img, abs_thumb_dir, 
@@ -156,6 +121,7 @@ class DynamicWorker:
         tmp = dest.with_suffix(dest.suffix + ".tmp")
         img.save(tmp, format=fmt, quality=quality, optimize=True)
         tmp.replace(dest)
+
 
 
 
