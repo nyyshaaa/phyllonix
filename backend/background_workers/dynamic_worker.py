@@ -31,7 +31,7 @@ MARK_FAILED_SQL = text("UPDATE usermedia SET profile_image_thumb_url = NULL WHER
 SELECT_MEDIA_ID=text("SELECT usermedia.id FROM usermedia WHERE id=:id")
 
 
-class ThumbnailWorker:
+class DynamicWorker:
 
     MEDIA_ROOT = media_settings.MEDIA_ROOT
     PROFILE_ROOT_PATH = media_settings.PROFILE_IMG_PATH
@@ -39,9 +39,31 @@ class ThumbnailWorker:
     THUMB_SIZE = (300, 300)
     FORMAT="jpeg"
 
-    async def thumbnail_worker_loop(self,q,w_name):
+    def __init__(self,queue: asyncio.Queue): 
+        self.q = queue
+        self.current_worker=None
+
+
+    async def thumbgen(self,task,w_name):
+        user_id = task["user_id"]
+        media_id = task["media_id"]
+        rel_path = task["rel_path"]
+
+        logger.debug("[%s] picked task user=%s media=%s rel=%s", w_name, user_id, media_id, rel_path) 
+        
+        await self.process_thumbnail_task(media_id, user_id,rel_path,async_session)
+        
+    async def log_analytics(self):
+        await asyncio.sleep(1)
+
+    async def notify_admin(self):
+        await asyncio.sleep(2)
+
+    
+    async def worker_loop(self,q,w_name):
         logger.debug("[%s] started & waiting ready to receive tasks", w_name)
-        processed=0
+        self.current_worker=w_name
+        
         while True:
             try:
                 task = await q.get()
@@ -49,16 +71,7 @@ class ThumbnailWorker:
                     # sentinel to shutdown
                     logger.debug("[%s] received sentinel, exiting", w_name)
                     break
-
-                user_id = task["user_id"]
-                media_id = task["media_id"]
-                rel_path = task["rel_path"]
-
-                logger.debug("[%s] picked task user=%s media=%s rel=%s", w_name, user_id, media_id, rel_path) 
-                
-                processed += await self.process_thumbnail_task(media_id, user_id,rel_path,async_session)
-                await self.simulate_log_upload()
-                await self.simulate_notify_admin()
+                await self.current_worker(task,w_name)
             except Exception:
                 logger.exception("[%s] error processing task: %s", w_name, task)
                 # avoid losing the item forever; mark done to prevent blocking if you've chosen to
@@ -67,23 +80,23 @@ class ThumbnailWorker:
                     q.task_done()
                 except Exception:
                     pass
-        logger.debug("[%s] exiting, processed=%d " , w_name, processed)
+        logger.debug("[%s] exiting " , w_name)
 
 
     # --- processing logic (async, but offloads blocking parts to threads) ---
     async def process_single_row_async(self,row_id: int, image_rel: str) -> Tuple[int, str]:
-        src = ThumbnailWorker.MEDIA_ROOT / Path(ThumbnailWorker.PROFILE_ROOT_PATH) / image_rel
+        src = DynamicWorker.MEDIA_ROOT / Path(DynamicWorker.PROFILE_ROOT_PATH) / image_rel
         # log(src, "processing row", row_id)
         if not src.exists():
             raise FileNotFoundError("source missing: %s" % src)
 
         # blocking open+resize in thread
-        thumb_img, fmt = await asyncio.to_thread(self._open_and_resize_sync, src, ThumbnailWorker.THUMB_SIZE)
+        thumb_img, fmt = await asyncio.to_thread(self._open_and_resize_sync, src, DynamicWorker.THUMB_SIZE)
 
         # choose thumbnail path
         rel_thumb=f"{file_hash(row_id,FILE_SECRET_KEY)}.{fmt}"
-        thumb_dir=Path(ThumbnailWorker.THUMB_ROOT_PATH)/rel_thumb
-        abs_thumb_dir=Path(ThumbnailWorker.MEDIA_ROOT)/thumb_dir
+        thumb_dir=Path(DynamicWorker.THUMB_ROOT_PATH)/rel_thumb
+        abs_thumb_dir=Path(DynamicWorker.MEDIA_ROOT)/thumb_dir
         
         # save in thread (blocking)
         await asyncio.to_thread(self._save_atomic_sync, thumb_img, abs_thumb_dir, 
@@ -144,11 +157,6 @@ class ThumbnailWorker:
         img.save(tmp, format=fmt, quality=quality, optimize=True)
         tmp.replace(dest)
 
-    async def simulate_log_upload(self):
-        await asyncio.sleep(1)
-
-    async def simulate_notify_admin(self):
-        await asyncio.sleep(2)
 
 
 
