@@ -1,21 +1,19 @@
 
-# backend/exit_workers.py
 import asyncio
-import logging
-from typing import Optional
+from typing import List, Optional
+from backend.__init__ import logger
 
-logger = logging.getLogger(__name__)
 
 class ExitBgWorkers:
     def __init__(self,
                  queue: asyncio.Queue,
-                 worker_loop: Optional[asyncio.Task],
+                 worker_loops: List[asyncio.Task],
                  num_consumers: int = 1,
                  drain_timeout: float = 30.0,
                  worker_wait_timeout: float = 30.0,
                  join_timeout: float = 5.0):
         self.queue = queue
-        self.worker_loop = worker_loop
+        self.worker_loops = worker_loops
         self.num_consumers = max(1, num_consumers)
         self.drain_timeout = drain_timeout
         self.worker_wait_timeout = worker_wait_timeout
@@ -29,27 +27,26 @@ class ExitBgWorkers:
         except asyncio.TimeoutError:
             logger.warning("Timeout while waiting for queue to drain; proceeding to send sentinels")
 
-    async def send_sentinels(self) -> None:
+    async def stop_sentinel_to_consumer(self) -> None:
         """Send one sentinel (None) per consumer to signal graceful exit."""
-        for _ in range(self.num_consumers):
+        for _ in range(len(self.worker_loops)):
             await self.queue.put(None)
-        logger.debug("Sentinels sent (%d)", self.num_consumers)
+        logger.debug("Sentinels sent (%d)")
 
     async def wait_for_worker(self) -> None:
         """Wait for worker task to finish; cancel if it times out."""
-        if not self.worker_loop:
-            return
 
-        try:
-            await asyncio.wait_for(self.worker_loop, timeout=self.worker_wait_timeout)
-            logger.debug("Worker finished cleanly")
-        except asyncio.TimeoutError:
-            logger.warning("Worker did not finish in time; cancelling")
-            self.worker_loop.cancel()
+        for t in self.worker_loops:
             try:
-                await asyncio.wait_for(self.worker_loop, timeout=self.join_timeout)
-            except Exception:
-                logger.exception("Worker did not shut down after cancellation")
+                await asyncio.wait_for(t, timeout=self.worker_wait_timeout)
+                logger.debug("Worker finished cleanly")
+            except asyncio.TimeoutError:
+                logger.warning("Worker did not finish in time; cancelling")
+                t.cancel()
+                try:
+                    await asyncio.wait_for(t, timeout=self.join_timeout)
+                except Exception:
+                    logger.exception("Worker did not shut down after cancellation")
 
     async def shutdown(self, *, drain_first: bool = True) -> None:
         """
@@ -61,7 +58,7 @@ class ExitBgWorkers:
             await self.drain_queue()
 
         # now tell consumers to stop
-        await self.send_sentinels()
+        await self.stop_sentinel_to_consumer()
 
         # wait for consumers to exit
         await self.wait_for_worker()

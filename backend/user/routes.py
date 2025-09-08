@@ -5,9 +5,10 @@ from pathlib import Path
 import uuid
 from PIL import UnidentifiedImageError
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile , status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
-from backend.user import constants
+from backend.background_workers import constants
 from backend.user.repository import save_user_avatar
 from backend.user.utils import FileUpload, file_hash
 from backend.config.media_config import media_settings
@@ -23,6 +24,14 @@ file_upload=FileUpload()
 @user_router.get("/me")
 async def get_user_profile(request:Request, session: AsyncSession = Depends(get_session)):
     return {"message":request.state.user_identifier}
+
+# @user_router.post("/me/test")
+# async def upload_profile_image(request:Request, pay,session = Depends(get_session)):
+    
+#     user_identifier = request.state.user_identifier
+
+#     return user_identifier,pay
+
 
 
 @user_router.post("/me/upload-profile-img")

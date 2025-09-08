@@ -27,7 +27,8 @@ async def save_user_avatar(session, user_id: int, image_path: str,final_path:str
         media_id = new.id
         await session.commit()
         return media_id
-    except IntegrityError:   
+    except IntegrityError:    #**** just for testing remove update from post endpoint  
+        print("integrity here")
         await session.rollback()
         stmt = (
             update(UserMedia)

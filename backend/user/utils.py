@@ -5,6 +5,7 @@ import time
 from backend.config.media_config import media_settings
 from PIL import Image
 from backend.config.media_config import media_settings
+from backend.__init__ import logger
 
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 
@@ -22,7 +23,7 @@ class FileUpload:
 
     THUMB_ROOT_PATH = media_settings.THUMBNAIL_IMG_PATH
 
-    FORMAT=".jpg"
+    FORMAT=".jpeg"
 
     THUMB_SIZE = (300, 300)
     PROCESSING_MARKER = "__PROCESSING__"
@@ -57,7 +58,7 @@ class FileUpload:
                     tmp_path.unlink(missing_ok=True)
                     raise ValueError("file too large")
         end=time.time()
-        print(f"Time taken to save file to disk: {(end-start)*1000} milliseconds")
+        logger.info(f"Time taken to save file to disk: {(end-start)*1000} milliseconds")
         return total
     
     def _verify_image_sync(self,tmp_path: Path) -> str:
@@ -72,7 +73,7 @@ class FileUpload:
             # tmp_norm.replace(tmp_path)
                 
         end=time.time()
-        print(f"Time taken to verify image: {(end-start)*1000} milliseconds")
+        logger.info(f"Time taken to verify image: {(end-start)*1000} milliseconds")
         return format
     
 

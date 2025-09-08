@@ -10,7 +10,7 @@ from backend.config.settings import config_settings
 async def link_user_role(session,user_id):
     # ensure user role exists (idempotent)
     q = select(Role).where(Role.name == config_settings.DEFAULT_ROLE)
-    role = (await session.execute(q)).first()
+    role = (await session.execute(q)).scalar_one_or_none()
     if not role:
         role = Role(name=config_settings.DEFAULT_ROLE)
         session.add(role)
