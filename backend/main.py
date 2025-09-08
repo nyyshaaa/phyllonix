@@ -49,6 +49,9 @@ async def app_lifespan(app: FastAPI):
     finally:
         # at this point new requests accept has been stopped already before calling shutdown
         # await app.state.exit_manager.shutdown(drain_first=True)
+        await thumb.shutdown()
+        await logw.shutdown()
+        await notif.shutdown()
         # safe to dispose DB engine after workers exit
         await async_engine.dispose()
 
