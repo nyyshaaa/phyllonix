@@ -38,6 +38,7 @@ async def get_user_profile(request:Request, session: AsyncSession = Depends(get_
 async def upload_profile_image(request:Request,file: UploadFile = File(), session = Depends(get_session)):
     
     user_identifier = request.state.user_identifier
+    app=request.app
 
     #** add more robust checks
     # cheap header check
@@ -91,9 +92,9 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
     if not media_id or type(media_id) is not int:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save avatar")
     
-    task={"user_id": user_identifier.id, "media_id": media_id,"rel_path":rel_path}
+    task={"event": "image_uploaded","data":{"user_id": user_identifier.id, "media_id": media_id,"rel_path":rel_path}}
     try:
-        constants.tasks_queue.put_nowait(task)
+        app.state.queue.put_nowait(task)
         # logger.info("[upload] enqueued thumbnail task for user=%s row=%s", user_identifier.id, media_id)
     except asyncio.QueueFull as e:
         print("Failed to enqueue task", e)

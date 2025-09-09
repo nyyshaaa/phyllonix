@@ -3,8 +3,8 @@ import asyncio
 from pathlib import Path
 from typing import Tuple
 from sqlalchemy import text
-# from backend.user.constants import PROFILE_ROOT_PATH, MEDIA_ROOT, THUMB_ROOT_PATH, THUMB_SIZE
 from PIL import Image, UnidentifiedImageError
+from backend.background_workers.repository import MARK_FAILED_SQL, SELECT_MEDIA_ID, UPDATE_ROW_SQL
 from backend.db.connection import async_session
 from backend.user.utils import file_hash
 from backend.config.media_config import media_settings
@@ -12,26 +12,7 @@ from backend.__init__ import logger
 
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 
-CLAIM_BATCH_SQL = text("""
-WITH cte AS (
-  SELECT id
-  FROM usermedia
-  WHERE profile_image_url IS NOT NULL AND (profile_image_thumb_url IS NULL)
-  FOR UPDATE SKIP LOCKED
-  LIMIT :limit
-)
-UPDATE usermedia
-SET profile_image_thumb_url = :marker
-FROM cte
-WHERE usermedia.id = cte.id
-RETURNING usermedia.id, usermedia.profile_image_url
-""")
-UPDATE_ROW_SQL = text("UPDATE usermedia SET profile_image_thumb_url = :thumb_path WHERE id = :id AND user_id =:user_id")
-MARK_FAILED_SQL = text("UPDATE usermedia SET profile_image_thumb_url = NULL WHERE id = :id AND user_id =:user_id")
-SELECT_MEDIA_ID=text("SELECT usermedia.id FROM usermedia WHERE id=:id")
-
-
-class ThumbnailWorker:
+class ThumbnailTaskHandler:
 
     MEDIA_ROOT = media_settings.MEDIA_ROOT
     PROFILE_ROOT_PATH = media_settings.PROFILE_IMG_PATH
@@ -39,48 +20,38 @@ class ThumbnailWorker:
     THUMB_SIZE = (300, 300)
     FORMAT="jpeg"
 
-    async def thumbnail_worker_loop(self,q,w_name):
-        logger.debug("[%s] started & waiting ready to receive tasks", w_name)
-        processed=0
-        while True:
-            try:
-                task = await q.get()
-                if task is None:
-                    # sentinel to shutdown
-                    logger.debug("[%s] received sentinel, exiting", w_name)
-                    break
+    async def thumbgen(self,task,w_name):
+        user_id = task["user_id"]
+        media_id = task["media_id"]
+        rel_path = task["rel_path"]
 
-                user_id = task["user_id"]
-                media_id = task["media_id"]
-                rel_path = task["rel_path"]
+        logger.debug("[%s] picked task user=%s media=%s rel=%s", w_name, user_id, media_id, rel_path) 
+        
+        await self.process_thumbnail_task(media_id, user_id,rel_path,async_session)
+        
+    async def log_analytics(self):
+        await asyncio.sleep(1)
+        return 1
 
-                logger.debug("[%s] picked task user=%s media=%s rel=%s", w_name, user_id, media_id, rel_path) 
-                
-                processed += await self.process_thumbnail_task(media_id, user_id,rel_path,async_session)
-            except Exception:
-                logger.exception("[%s] error processing task: %s", w_name, task)
-                # avoid losing the item forever; mark done to prevent blocking if you've chosen to
-            finally:
-                try:
-                    q.task_done()
-                except Exception:
-                    pass
-        logger.debug("[%s] exiting, processed=%d " , w_name, processed)
+    async def notify_admin(self):
+        await asyncio.sleep(2)
+        return 1
+
 
     # --- processing logic (async, but offloads blocking parts to threads) ---
     async def process_single_row_async(self,row_id: int, image_rel: str) -> Tuple[int, str]:
-        src = ThumbnailWorker.MEDIA_ROOT / Path(ThumbnailWorker.PROFILE_ROOT_PATH) / image_rel
+        src = ThumbnailTaskHandler.MEDIA_ROOT / Path(ThumbnailTaskHandler.PROFILE_ROOT_PATH) / image_rel
         # log(src, "processing row", row_id)
         if not src.exists():
             raise FileNotFoundError("source missing: %s" % src)
 
         # blocking open+resize in thread
-        thumb_img, fmt = await asyncio.to_thread(self._open_and_resize_sync, src, ThumbnailWorker.THUMB_SIZE)
+        thumb_img, fmt = await asyncio.to_thread(self._open_and_resize_sync, src, ThumbnailTaskHandler.THUMB_SIZE)
 
         # choose thumbnail path
         rel_thumb=f"{file_hash(row_id,FILE_SECRET_KEY)}.{fmt}"
-        thumb_dir=Path(ThumbnailWorker.THUMB_ROOT_PATH)/rel_thumb
-        abs_thumb_dir=Path(ThumbnailWorker.MEDIA_ROOT)/thumb_dir
+        thumb_dir=Path(ThumbnailTaskHandler.THUMB_ROOT_PATH)/rel_thumb
+        abs_thumb_dir=Path(ThumbnailTaskHandler.MEDIA_ROOT)/thumb_dir
         
         # save in thread (blocking)
         await asyncio.to_thread(self._save_atomic_sync, thumb_img, abs_thumb_dir, 
