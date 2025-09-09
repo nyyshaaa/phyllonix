@@ -1,8 +1,8 @@
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from backend.__init__ import logger
-from backend.background_workers.thumbnail_worker import ThumbnailTaskHandler
+from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
 
 SENTINEL = None  # queue sentinel
 
@@ -12,6 +12,7 @@ class BaseWorker():
         self.worker_loops:Dict[str, asyncio.Task] = {} 
         self.workers_count:int=workers_count
         self._processed = 0
+        self.subscribers=None
     
     async def __call__(self):
         if not self.worker_loops:
@@ -22,12 +23,10 @@ class BaseWorker():
 
                 self.worker_loops[cur_worker_name]=worker_loop
 
-
-    # def start(self):
-    #     """Start the worker loop as a Task on the current event loop."""
-    #     if self._task is None:
-    #         self._task = asyncio.create_task(self._worker_loop())
-    #         logger.info("[%s] started", self.name)
+    async def task_event_subscribers(self):
+            thumbnail_task_handler=ThumbnailTaskHandler()
+            subscribers={"image_uploaded": [thumbnail_task_handler.thumbgen, thumbnail_task_handler.log_analytics]}  # add more per task event subscribers as needed
+            self.subscribers=subscribers
 
     async def stop(self):
         """Send a sentinel to ask the worker to exit."""
@@ -84,13 +83,12 @@ class BaseWorker():
         logger.info("[%s] exiting", cur_worker_name)
 
    
-    async def task_executor(self, task: Dict[str, Any],wname) -> Optional[int]:
+    async def task_executor(self, task: Dict[str, Any],*args) -> Optional[int]:
+        await self.task_event_subscribers()
+
+        for fn in self.subscribers.get(task["event"],[]):
+            await fn(task["data"],*args)
        
-        if task["event"]=="image_uploaded":
-            thumbnail_task_handler=ThumbnailTaskHandler()
-            await thumbnail_task_handler.thumbgen(task["data"],wname)
-            await thumbnail_task_handler.log_analytics()
-            await thumbnail_task_handler.notify_admin()
             
     
 

@@ -18,6 +18,7 @@ async def device_active(session,ds_id):
     return ds
 
 # for now only profile image exists for 1 user . there is a unique constraint on user_id fkey in user_media
+#*WARN update added in same endpoint as of post just for faster testing of queue system.
 async def save_user_avatar(session, user_id: int, image_path: str,final_path:str):
     new=UserMedia(user_id=user_id, profile_img_path=image_path)
     session.add(new)

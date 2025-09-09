@@ -2,7 +2,6 @@
 import asyncio
 from pathlib import Path
 from typing import Tuple
-from sqlalchemy import text
 from PIL import Image, UnidentifiedImageError
 from backend.background_workers.repository import MARK_FAILED_SQL, SELECT_MEDIA_ID, UPDATE_ROW_SQL
 from backend.db.connection import async_session
@@ -29,12 +28,14 @@ class ThumbnailTaskHandler:
         
         await self.process_thumbnail_task(media_id, user_id,rel_path,async_session)
         
-    async def log_analytics(self):
+    async def log_analytics(self,task,w_name):
         await asyncio.sleep(1)
+        logger.debug("log upload [%s] picked task ", w_name) 
         return 1
 
-    async def notify_admin(self):
+    async def notify_admin(self,task,w_name):
         await asyncio.sleep(2)
+        logger.debug("log upload [%s] picked task ", w_name) 
         return 1
 
 
