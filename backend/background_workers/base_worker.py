@@ -16,7 +16,7 @@ class BasePubSubWorker():
         self.handlers={"image_uploaded":ThumbnailTaskHandler()}
         
     
-    def __call__(self):
+    def start(self):
         if self.worker_loops:
             return
         
@@ -34,14 +34,23 @@ class BasePubSubWorker():
         self.subscribe("image_uploaded",img_upload_handler.thumbgen)
         self.subscribe("image_uploaded",img_upload_handler.log_analytics)
         self.subscribe("image_uploaded",img_upload_handler.notify_admin)
+
+    def _handler_key(self,fn):
+        return (getattr(fn,"__self__",None),getattr(fn,"__func__",fn))
         
     def subscribe(self,event,fn):
-        self.subscribers.setdefault(event,[]).append(fn)
+        subs_list=self.subscribers.setdefault(event,[])
+        key=self._handler_key(fn)
+        if not any(self._handler_key(h)==key for h in subs_list):
+            subs_list.append(fn)
 
     def publish(self,event,data):
         task_item={"event": event, "data": data}
-        self.queue.put_nowait(task_item)
-        
+        try:
+            self.queue.put_nowait(task_item)
+        except asyncio.QueueFull:
+            # let the caller handle QueueFull (route should catch and return 503)
+            raise
 
     async def stop(self):
         """Send a sentinel to ask the worker to exit."""
@@ -99,6 +108,8 @@ class BasePubSubWorker():
 
    
     async def tasks_executor(self, task: Dict[str, Any],name) -> Optional[int]:
+
+        #** can use asyncio.gather here
         for subfn in self.subscribers.get(task["event"],[]):
             await subfn(task["data"],name)
             

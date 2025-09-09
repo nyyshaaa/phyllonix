@@ -14,9 +14,8 @@ from backend.background_workers.base_worker import BasePubSubWorker
 async def app_lifespan(app: FastAPI):
     setup_logger()
     base_pubsub=BasePubSubWorker()
-    base_pubsub()
+    base_pubsub.start()
 
-    app.state.pubsub_sub=base_pubsub.subscribe
     app.state.pubsub_pub=base_pubsub.publish
 
     try:

@@ -17,7 +17,6 @@ FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 
 file_upload=FileUpload()
 
-thumbnail_task_handler=ThumbnailTaskHandler()
 
 #* only admin can see other user's public details
 # accessible only to same user 
