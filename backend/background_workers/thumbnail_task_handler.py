@@ -35,7 +35,7 @@ class ThumbnailTaskHandler:
 
     async def notify_admin(self,task,w_name):
         await asyncio.sleep(2)
-        logger.debug("log upload [%s] picked task ", w_name) 
+        logger.debug("notify admin [%s] picked task ", w_name) 
         return 1
 
 

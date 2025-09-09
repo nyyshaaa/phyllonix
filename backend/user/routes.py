@@ -5,6 +5,7 @@ import uuid
 from PIL import UnidentifiedImageError
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile , status
 from sqlalchemy.ext.asyncio import  AsyncSession
+from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
 from backend.db.dependencies import get_session
 from backend.user.repository import save_user_avatar
 from backend.user.utils import FileUpload, file_hash
@@ -15,6 +16,8 @@ user_router = APIRouter()
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 
 file_upload=FileUpload()
+
+thumbnail_task_handler=ThumbnailTaskHandler()
 
 #* only admin can see other user's public details
 # accessible only to same user 
@@ -81,9 +84,10 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
     if not media_id or type(media_id) is not int:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save avatar")
     
-    task={"event": "image_uploaded","data":{"user_id": user_identifier.id, "media_id": media_id,"rel_path":rel_path}}
+    event="image_uploaded"
+    data={"user_id": user_identifier.id, "media_id": media_id,"rel_path":rel_path}
     try:
-        app.state.queue.put_nowait(task)
+        app.state.pubsub_pub(event,data)
         # logger.info("[upload] enqueued thumbnail task for user=%s row=%s", user_identifier.id, media_id)
     except asyncio.QueueFull as e:
         print("Failed to enqueue task", e)

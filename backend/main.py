@@ -1,4 +1,4 @@
-import asyncio
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from backend.auth.routes import auth_router
@@ -7,23 +7,23 @@ from backend.middlewares.auth_middleware import AuthenticationMiddleware
 from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
 from backend.__init__ import setup_logger, version_prefix,version
-from backend.background_workers.base_worker import BaseWorker
-
+from backend.background_workers.base_worker import BasePubSubWorker
 
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     setup_logger()
-    base_worker=BaseWorker()
-    await base_worker()
+    base_pubsub=BasePubSubWorker()
+    base_pubsub()
 
-    app.state.queue=base_worker.queue
-   
+    app.state.pubsub_sub=base_pubsub.subscribe
+    app.state.pubsub_pub=base_pubsub.publish
+
     try:
         yield
     finally:
         # at this point new requests accept has been stopped already before calling shutdown
-        await base_worker.shutdown()
+        await base_pubsub.shutdown()
         # safe to dispose DB engine after workers exit
         await async_engine.dispose()
 

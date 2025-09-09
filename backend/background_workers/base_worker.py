@@ -6,27 +6,42 @@ from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandl
 
 SENTINEL = None  # queue sentinel
 
-class BaseWorker():
+class BasePubSubWorker():
     def __init__(self, workers_count:int=2,max_queue_size: int = 1000):
         self.queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue(maxsize=max_queue_size)
         self.worker_loops:Dict[str, asyncio.Task] = {} 
         self.workers_count:int=workers_count
         self._processed = 0
-        self.subscribers=None
+        self.subscribers={}
+        self.handlers={"image_uploaded":ThumbnailTaskHandler()}
+        
     
-    async def __call__(self):
-        if not self.worker_loops:
-            for i in range(self.workers_count):
-                cur_worker_name=f"Worker:{i+1}"
-                worker_loop=asyncio.create_task(self._worker_loop(cur_worker_name))
-                logger.info("[%s] started", cur_worker_name)
+    def __call__(self):
+        if self.worker_loops:
+            return
+        
+        for i in range(self.workers_count):
+            cur_worker_name=f"Worker:{i+1}"
+            worker_loop=asyncio.create_task(self._worker_loop(cur_worker_name))
+            logger.info("[%s] started", cur_worker_name)
 
-                self.worker_loops[cur_worker_name]=worker_loop
+            self.worker_loops[cur_worker_name]=worker_loop
 
-    async def task_event_subscribers(self):
-            thumbnail_task_handler=ThumbnailTaskHandler()
-            subscribers={"image_uploaded": [thumbnail_task_handler.thumbgen, thumbnail_task_handler.log_analytics]}  # add more per task event subscribers as needed
-            self.subscribers=subscribers
+        self.register_subscribers()
+
+    def register_subscribers(self):
+        img_upload_handler=self.handlers["image_uploaded"]
+        self.subscribe("image_uploaded",img_upload_handler.thumbgen)
+        self.subscribe("image_uploaded",img_upload_handler.log_analytics)
+        self.subscribe("image_uploaded",img_upload_handler.notify_admin)
+        
+    def subscribe(self,event,fn):
+        self.subscribers.setdefault(event,[]).append(fn)
+
+    def publish(self,event,data):
+        task_item={"event": event, "data": data}
+        self.queue.put_nowait(task_item)
+        
 
     async def stop(self):
         """Send a sentinel to ask the worker to exit."""
@@ -47,16 +62,16 @@ class BaseWorker():
         # send sentinel
         await self.stop()
 
-        for w in self.worker_loops:
+        for name,w in self.worker_loops.items():
             try:
                 await asyncio.wait_for(w, timeout=wait_timeout)
             except asyncio.TimeoutError:
-                logger.warning("[%s] worker did not finish; cancelling", w["cur_worker_name"])
+                logger.warning("[%s] worker did not finish; cancelling", name)
                 w.cancel()
                 try:
                     await asyncio.wait_for(w, timeout=5.0)
                 except Exception:
-                    logger.exception("[%s] worker did not stop after cancel", w["cur_worker_name"])
+                    logger.exception("[%s] worker did not stop after cancel", name)
 
     async def _worker_loop(self,cur_worker_name):
         """Internal loop. Calls `task_executor()` for each non-sentinel task."""
@@ -70,7 +85,7 @@ class BaseWorker():
 
                 try:
                     # call the concrete task handler (should be async)
-                    await self.task_executor(qitem,cur_worker_name)
+                    await self.tasks_executor(qitem,cur_worker_name)
                 except Exception:
                     logger.exception("[%s] handler threw for task: %s", cur_worker_name, qitem)
             finally:
@@ -83,11 +98,12 @@ class BaseWorker():
         logger.info("[%s] exiting", cur_worker_name)
 
    
-    async def task_executor(self, task: Dict[str, Any],*args) -> Optional[int]:
-        await self.task_event_subscribers()
-
-        for fn in self.subscribers.get(task["event"],[]):
-            await fn(task["data"],*args)
+    async def tasks_executor(self, task: Dict[str, Any],name) -> Optional[int]:
+        for subfn in self.subscribers.get(task["event"],[]):
+            await subfn(task["data"],name)
+            
+        
+    
        
             
     
