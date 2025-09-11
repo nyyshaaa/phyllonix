@@ -4,8 +4,9 @@ from backend.auth.dependencies import signup_validation
 from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens
 from backend.db.dependencies import get_session
+from backend.api.routers import auth_router
 
-auth_router = APIRouter()
+
 
 #* sign in via both mobile or email(only email for now)
 @auth_router.get("/login")

@@ -10,8 +10,8 @@ from backend.db.dependencies import get_session
 from backend.user.repository import save_user_avatar
 from backend.user.utils import FileUpload, file_hash
 from backend.config.media_config import media_settings
+from backend.api.routers import user_router
 
-user_router = APIRouter()
 
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 
