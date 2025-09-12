@@ -2,7 +2,7 @@
 from sqlalchemy import select
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
-from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod
+from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_token, make_refresh_plain, verify_password
 
@@ -51,6 +51,8 @@ async def save_refresh_token(session,ds_id,user_id):
         revoked_at=None
     )
     session.add(refresh_row)
+    
+    print("refresh plain",refresh_plain)
     return refresh_plain
 
 async def get_user_role_names(session,user_id):
@@ -59,3 +61,8 @@ async def get_user_role_names(session,user_id):
     return result.scalars().all()
 
 
+async def identify_device_session(session,device_session):
+    device_session_hash=hash_token(device_session)
+    stmt=select(DeviceSession.id).where(DeviceSession.session_token_hash==device_session_hash)
+    res= await session.execute(stmt)
+    return res.scalar_one_or_none()

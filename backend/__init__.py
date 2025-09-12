@@ -11,6 +11,3 @@ def setup_logger():
     )
 
 
-version1="v1"
-version=version1
-version_prefix=f"/api/{version}"

@@ -1,17 +1,19 @@
-from fastapi import APIRouter, Depends, Request , status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
 from sqlalchemy.ext.asyncio import  AsyncSession
-from backend.auth.dependencies import signup_validation
+from backend.auth.dependencies import device_session_plain, signup_validation
 from backend.auth.models import SignIn, SignupIn
-from backend.auth.services import create_user, issue_auth_tokens
+from backend.auth.services import create_user, issue_auth_tokens, provide_access_token, validate_refresh_and_fetch_user
+from backend.auth.utils import create_access_token
 from backend.db.dependencies import get_session
 
-auth_router = APIRouter()
+auth_router=APIRouter()
 
 #* sign in via both mobile or email(only email for now)
 @auth_router.get("/login")
-async def login_user(request:Request,payload:SignIn, session: AsyncSession = Depends(get_session)):
-
-    access,refresh=await issue_auth_tokens(session,request,payload)
+async def login_user(request:Request,payload:SignIn, device_session: Optional[str] = Depends(device_session_plain),session: AsyncSession = Depends(get_session)):
+    
+    access,refresh=await issue_auth_tokens(session,request,payload,device_session)
     return {"message":{"access_token":access,"refresh_token":refresh}}
 
 #* make phone necessary for signup when app grows (not added now because of otp prices)
@@ -20,7 +22,23 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
     
     user_id=await create_user(session,payload)
 
-    #* do email verification via email link 
+    #** do email verification via email link 
     
     return {"message": f"User {user_id} created successfully."}
+
+
+@auth_router.post("/auth/refresh")
+async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),
+                   session=Depends(get_session)):
+    
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+    
+    claims_dict=await validate_refresh_and_fetch_user(session,refresh_token)
+
+    access=await provide_access_token(session,claims_dict)
+
+    return {"message":{"access_token":access}}
+
+
 
