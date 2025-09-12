@@ -119,7 +119,7 @@ async def issue_auth_tokens(session,request,payload,device_session):
     return access_token,refresh_token
 
 
-async def validate_refresh_fetch_user(session,plain_token):
+async def validate_refresh_and_fetch_user(session,plain_token):
 
     hashed_token=hash_token(plain_token)
     now=datetime.now(timezone.utc)

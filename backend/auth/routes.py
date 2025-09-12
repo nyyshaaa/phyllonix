@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.dependencies import device_session_plain, signup_validation
 from backend.auth.models import SignIn, SignupIn
-from backend.auth.services import create_user, issue_auth_tokens, provide_access_token, validate_refresh_fetch_user
+from backend.auth.services import create_user, issue_auth_tokens, provide_access_token, validate_refresh_and_fetch_user
 from backend.auth.utils import create_access_token
 from backend.db.dependencies import get_session
 
@@ -34,7 +34,7 @@ async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-T
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Missing refresh token")
     
-    claims_dict=await validate_refresh_fetch_user(session,refresh_token)
+    claims_dict=await validate_refresh_and_fetch_user(session,refresh_token)
 
     access=await provide_access_token(session,claims_dict)
 
