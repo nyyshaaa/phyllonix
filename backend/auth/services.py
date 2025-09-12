@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
-from backend.auth.repository import get_user_role_names, identify_user, save_refresh_token,  user_id_by_email
+from backend.auth.repository import get_user_role_names, identify_device_session, identify_user, save_refresh_token,  user_id_by_email
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_refresh_plain, make_session_token_plain, verify_password
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession
 from sqlalchemy.exc import IntegrityError
@@ -56,7 +56,8 @@ async def create_user(session,payload):
         raise HTTPException(status_code=400, detail="User with that email already exists")
 
 
-async def save_device_and_token_state(session,request,user_id,payload):
+async def save_device_state(session,request,user_id,payload):
+
     # gather device metadata
     ua = request.headers.get("user-agent", "")[:512]
     ip = None
@@ -68,8 +69,10 @@ async def save_device_and_token_state(session,request,user_id,payload):
     device_id = payload.device_id  
 
     # create device session row + session token (opaque) and store hashed form
-   
+     
+    #** check if to mix device fingerprint in creating device session 
     session_token_plain = make_session_token_plain()
+    print("plain session",session_token_plain)
     session_token_hash = hash_token(session_token_plain)
 
     ds = DeviceSession(
@@ -87,24 +90,31 @@ async def save_device_and_token_state(session,request,user_id,payload):
     session.add(ds)
     await session.flush()  # get ds.id
 
-    refresh_token=await save_refresh_token(session,ds.id,user_id)
+    print("ds_id",ds.id)
 
-    return ds.id,refresh_token
+    return ds.id
         
 
-async def issue_auth_tokens(session,request,payload):
+async def issue_auth_tokens(session,request,payload,device_session):
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
     print("user_id",user_id)
-
+    
+    session_id=None
+    if device_session:
+        session_id=await identify_device_session(session,device_session)
+    
     # create device session , refresh token and save
-    ds_id,refresh_token=await save_device_and_token_state(session,request,user_id,payload)
+    if not session_id:
+        session_id=await save_device_state(session,request,user_id,payload)
+
+    refresh_token=await save_refresh_token(session,session_id,user_id)
+    
     
     await session.commit()
     # create access token with public_id
     user_roles=await get_user_role_names(session,user_id)
-    access_token = create_access_token(user_id=user.public_id, ds_id=ds_id,user_roles=user_roles)
-    
+    access_token = create_access_token(user_id=user.public_id, ds_id=session_id,user_roles=user_roles)
 
     return access_token,refresh_token
 
