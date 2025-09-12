@@ -18,7 +18,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             # Skip authentication for paths that don't require it
             return await call_next(request)
         
-        #** chnage this to if else block later and Authentiction auto error false
         try:
             auth_token = await Authentication()(request)
         except Exception as e:
@@ -28,15 +27,19 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
         
         user_pid = auth_token.get("sub")
-        ds_id = int(auth_token.get("sid"))
+        # ds_id = int(auth_token.get("sid"))   
+    
+        #* ignore ds id for now in access token , create device session at first user interaction and use device session checks at login ,
+        # also link device session to user on login , when user logs out revoke device session and remove from browser interface / or keep it don't revoke until expiry.
+        # revoke in case of suspicious activity.
 
         async with self.session() as session:
-            ds = await device_active(session,ds_id)
-            if not ds:
-                return JSONResponse(
-                    {"detail": "Device not authorized"},
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
+            # ds = await device_active(session,ds_id)
+            # if not ds:
+            #     return JSONResponse(
+            #         {"detail": "Device not authorized"},
+            #         status_code=status.HTTP_403_FORBIDDEN,
+            #     )
             
             identifier = await userid_by_public_id(session,user_pid)
             if not identifier:
