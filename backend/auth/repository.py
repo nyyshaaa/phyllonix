@@ -7,9 +7,8 @@ from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_token, make_refresh_plain, verify_password
 
 
-#* update it as per partial index
 async def user_by_email(session,email):
-    stmt=select(Users.id,Users.public_id).where(Users.email==email)
+    stmt=select(Users.id,Users.public_id).where(Users.email==email,Users.deleted_at.is_(None))
     result=await session.execute(stmt)
     user=result.first()
     return user

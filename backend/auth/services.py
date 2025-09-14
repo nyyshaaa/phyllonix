@@ -128,6 +128,7 @@ async def validate_refresh_and_fetch_user(session,plain_token):
     stmt = (
         select(
             Users.public_id.label("public_id"),
+            Users.role_version,
             Role.name.label("role_name")
         )
         .select_from(DeviceAuthToken)
@@ -140,8 +141,10 @@ async def validate_refresh_and_fetch_user(session,plain_token):
             DeviceAuthToken.expires_at > now)
         )
     
-    res=session.execute(stmt)
+    res=await session.execute(stmt)
+    print("res",res)
     rows=res.all()
+    print("rows",rows)
 
     if not rows:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired refresh token")
@@ -150,14 +153,15 @@ async def validate_refresh_and_fetch_user(session,plain_token):
     role_names=[r[1] for r in rows]
     
     return {
-        "user_id": first.user_id,
         "user_public_id": first.public_id,
-        "role_names": role_names,
+        "role_version":first.role_version,
+        "role_names": role_names
     }
 
-async def provide_access_token(session,claims_dict):
+async def provide_access_token(claims_dict):
     
-    access_token = create_access_token(user_id=claims_dict["user_public_id"], user_roles=claims_dict["role_names"])
+    access_token = create_access_token(user_id=claims_dict["user_public_id"], 
+                                       user_roles=claims_dict["role_names"],role_version=claims_dict["role_version"])
     return access_token
     
 
