@@ -4,7 +4,7 @@ from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from backend.user.dependencies import Authentication
-from backend.user.repository import device_active, userid_by_public_id
+from backend.user.repository import userid_by_public_id
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -27,6 +27,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
         
         user_pid = auth_token.get("sub")
+        user_roles=auth_token.get("roles")
         # ds_id = int(auth_token.get("sid"))   
     
         #* ignore ds id for now in access token , create device session at first user interaction and use device session checks at login ,
@@ -50,6 +51,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
             # Attach the identifier to the request state to use in other middlewares
             request.state.user_identifier = identifier
+            request.state.user_roles=user_roles
 
 
         return await call_next(request)

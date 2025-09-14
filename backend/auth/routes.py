@@ -27,7 +27,7 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
     return {"message": f"User {user_id} created successfully."}
 
 
-@auth_router.post("/auth/refresh")
+@auth_router.post("/refresh")
 async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),
                    session=Depends(get_session)):
     
