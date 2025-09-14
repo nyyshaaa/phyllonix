@@ -36,7 +36,7 @@ async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-T
     
     claims_dict=await validate_refresh_and_fetch_user(session,refresh_token)
 
-    access=await provide_access_token(session,claims_dict)
+    access=await provide_access_token(claims_dict)
 
     return {"message":{"access_token":access}}
 

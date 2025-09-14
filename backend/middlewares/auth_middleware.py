@@ -28,6 +28,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         
         user_pid = auth_token.get("sub")
         user_roles=auth_token.get("roles")
+        role_version=auth_token.get("role_version")
         # ds_id = int(auth_token.get("sid"))   
     
         #* ignore ds id for now in access token , create device session at first user interaction and use device session checks at login ,
@@ -52,6 +53,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             # Attach the identifier to the request state to use in other middlewares
             request.state.user_identifier = identifier
             request.state.user_roles=user_roles
+            request.state.role_version=role_version
 
 
         return await call_next(request)

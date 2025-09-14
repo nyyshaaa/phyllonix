@@ -26,6 +26,7 @@ class Users(SQLModel, table=True):
     )
     email: Optional[str] = Field(default=None,sa_column=Column(String(320), nullable=True))
     name: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+    role_version:int=Field(default=0,nullable=False),
     created_at: datetime = Field(default_factory=now,
         sa_column=Column(DateTime(timezone=True), nullable=False,default=now))
     updated_at: datetime = Field(default_factory=now,
