@@ -7,12 +7,15 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
 from backend.db.dependencies import get_session
-from backend.user.repository import save_user_avatar
+from backend.products.dependency import require_permissions
+from backend.user.models import PromoteIn
+from backend.user.repository import save_user_avatar, userid_by_public_id
 from backend.user.utils import FileUpload, file_hash
 from backend.config.media_config import media_settings
 
 
 user_router=APIRouter()
+user_admin_router=APIRouter()
 
 
 FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
@@ -97,6 +100,22 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
 
     return {"message": "uploaded", "image_path": rel_path}
 
+@user_admin_router.post("/promote/{user_pid}",dependencies=[require_permissions("user:manage")])
+async def promote_user(
+    request:Request,
+    payload: PromoteIn,
+    session: AsyncSession = Depends(get_session),
+):
+    
+    user_identifier=request.state.user_identifier
+    
+    target_user_id=await userid_by_public_id(session,payload.user_pid)
 
-
-
+    if not target_user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found")
+    
+    # Prevent self-promotion (optional safety)
+    if target_user_id == user_identifier:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot change your own roles")
+    
+    # .................

@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from backend.api.__init__ import version_prefix
 from backend.auth.routes import auth_router
-from backend.user.routes import user_router
+from backend.user.routes import user_router , user_admin_router
 from backend.products.routes import prods_public_router,prods_admin_router
 
 
@@ -20,3 +20,4 @@ public_routers.include_router(prods_public_router, prefix="/products",tags=["pro
 admin_routers = APIRouter(prefix=f"{version_prefix}/admin")
 
 admin_routers.include_router(prods_admin_router, prefix="/products",tags=["products-admin"])
+admin_routers.include_router(user_admin_router, prefix="/users",tags=["users-admin"])
