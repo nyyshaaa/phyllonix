@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
+from sqlalchemy import ARRAY, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
 from uuid6 import uuid7
 from datetime import datetime
 from typing import Any, Dict, List, Optional 
@@ -290,5 +290,18 @@ class ProductCategory(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now, onupdate=now))
 
     products: List["Product"] = Relationship(back_populates="prod_categories", link_model=ProductCategoryLink)
+
+#---------------------------------------------------------------------------------------------------------
+
+class RoleAudit(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor_user_id:int = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True))
+    target_user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True))
+    old_roles: List[str] = Field(default_factory=list,sa_column=Column(ARRAY(String), nullable=False))
+    new_roles: List[str] = Field(default_factory=list,sa_column=Column(ARRAY(String), nullable=False))
+    reason: Optional[str] = Field(default=None, sa_column=Column(String(1000), nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+
 
 
