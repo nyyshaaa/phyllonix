@@ -1,9 +1,8 @@
 
-
-
 from fastapi import HTTPException
 from sqlalchemy import select, text
 from backend.schema.full_schema import Product, ProductCategory
+from sqlalchemy.exc import IntegrityError
 
 
 async def create_product_with_catgs(session,payload,user_id):
@@ -27,9 +26,15 @@ async def create_product_with_catgs(session,payload,user_id):
         owner_id=user_id
     )
 
-    session.add(product)
-    await session.flush()
-    
+    try:
+        session.add(product)
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        res = await session.execute(
+            select(Product.public_id,Product.name,Product.base_price,Product.stock_qty,Product.sku).where(Product.owner_id == user_id, Product.name == payload.name)
+        )
+        product = res.mappings().all()
 
     # Bulk insert product_category_link (single statement)
     if cat_ids:

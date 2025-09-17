@@ -225,7 +225,7 @@ class Product(SQLModel, table=True):
     )
     stock_qty:int=Field(sa_column=Column(Integer(), nullable=False))
     sku: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True)) # keep nullable for now , later when necessary create index 
-    name: str = Field(sa_column=Column(String(255), nullable=False))
+    name: str = Field(sa_column=Column(String(255), nullable=False,unique=True))
     description: Optional[str] = Field(default=None, sa_column=Column(Text(), nullable=True))
     base_price: int = Field(default=0,description="Price in paise (int)")
 
@@ -251,6 +251,10 @@ class Product(SQLModel, table=True):
 
     images: List["ProductImage"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     prod_categories: List["ProductCategory"] = Relationship(back_populates="products", link_model=ProductCategoryLink)
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_product_name_owner_id"),
+    )
 
     # price_options: List["PriceOption"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 

@@ -17,3 +17,9 @@ async def create_product(request:Request,payload: ProductCreateIn, session: Asyn
     user_identifier=request.state.user_identifier
     product_res=await create_product_with_catgs(session,payload,user_identifier)
     return product_res
+
+@prods_admin_router.put("/", dependencies=[require_permissions("product:update")])
+async def update_product(request:Request,payload: ProductCreateIn, session: AsyncSession = Depends(get_session)):
+    user_identifier=request.state.user_identifier
+    product_res=await create_product_with_catgs(session,payload,user_identifier)
+    return product_res
