@@ -1,6 +1,7 @@
 
 from fastapi import HTTPException
 from sqlalchemy import select, text
+from backend.products.repository import add_product_categories
 from backend.schema.full_schema import Product, ProductCategory
 from sqlalchemy.exc import IntegrityError
 
@@ -29,35 +30,24 @@ async def create_product_with_catgs(session,payload,user_id):
     try:
         session.add(product)
         await session.flush()
+
+        await add_product_categories(session,product.id, cat_ids)
+
+        await session.commit()
+        await session.refresh(product)
     except IntegrityError:
         await session.rollback()
         res = await session.execute(
-            select(Product.public_id,Product.name,Product.base_price,Product.stock_qty,Product.sku).where(Product.owner_id == user_id, Product.name == payload.name)
+            select(Product.id,Product.public_id,Product.name,Product.base_price,Product.stock_qty,Product.sku).where(Product.owner_id == user_id, Product.name == payload.name)
         )
-        product = res.mappings().all()
+        product = res.scalar_one_or_none()
+        if product is None:
+            # extremely unlikely; surface a retryable server error
+            raise HTTPException(status_code=500, detail="Internal error occurred")
+        await add_product_categories(session,product.id, cat_ids)
+        await session.commit()
 
-    # Bulk insert product_category_link (single statement)
-    if cat_ids:
-        # Build parameterized VALUES list
-        # e.g. VALUES (:p0_prod, :p0_cat), (:p1_prod, :p1_cat), ...
-        values_parts = []
-        params = {}
-        for i, cid in enumerate(cat_ids):
-            values_parts.append(f"(:p{i}_prod_id, :p{i}_cat_id)")
-            params[f"p{i}_prod_id"] = product.id
-            params[f"p{i}_cat_id"] = cid
 
-        values_sql = ", ".join(values_parts)
-        insert_sql = f"""
-            INSERT INTO product_category_link (product_id, prod_category_id)
-            VALUES {values_sql}
-            ON CONFLICT (product_id, prod_category_id) DO NOTHING
-        """
-        await session.execute(text(insert_sql), params)
-
-    # Commit once (atomic)
-    await session.commit()
-    await session.refresh(product)
     return {
         "public_id": str(product.public_id),
         "name": product.name,
