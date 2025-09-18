@@ -5,10 +5,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from backend.schema.full_schema import Users
 from backend.user.dependencies import Authentication
-from backend.user.repository import check_user_roles, userid_by_public_id
+from backend.user.repository import check_user_roles_version, userid_by_public_id
 
 
-class AuthenticationMiddleware(BaseHTTPMiddleware):
+class AuthorizationMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, *, session,paths:str):
         super().__init__(app)
         self.session = session
@@ -25,7 +25,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         role_version = request.state.role_version
 
         async with self.session() as session:
-            user_id=await check_user_roles(session,identifier,role_version)
+            user_id=await check_user_roles_version(session,identifier,role_version)
         
         if not user_id:
             return JSONResponse(

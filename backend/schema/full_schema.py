@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.dialects.postgresql import UUID,JSONB
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import Column, SQLModel, Field, Relationship, String
-from backend.schema.utils import now
+from backend.common.utils import now
 
 # Join tables
 class UserRole(SQLModel, table=True):

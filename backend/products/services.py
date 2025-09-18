@@ -1,21 +1,14 @@
 
 from fastapi import HTTPException
 from sqlalchemy import select, text
-from backend.products.repository import add_product_categories
+from backend.products.repository import add_product_categories, validate_catgs
 from backend.schema.full_schema import Product, ProductCategory
 from sqlalchemy.exc import IntegrityError
 
 
 async def create_product_with_catgs(session,payload,user_id):
 
-    cat_ids = payload.category_ids or []
-    if cat_ids:
-        q = await session.execute(select(ProductCategory.id).where(ProductCategory.id.in_(cat_ids)))
-        found_ids = {r[0] for r in q.all()}
-        missing = [cid for cid in cat_ids if cid not in found_ids]
-        if missing:
-            raise HTTPException(status_code=404, detail=f"Category ids not found: {missing}")
-        cat_ids = [cid for cid in cat_ids if cid in found_ids]
+    cat_ids=await validate_catgs(session,payload.category_ids)
      
     product = Product(
         name=payload.name,
@@ -30,7 +23,7 @@ async def create_product_with_catgs(session,payload,user_id):
     try:
         session.add(product)
         await session.flush()
-
+         
         await add_product_categories(session,product.id, cat_ids)
 
         await session.commit()
