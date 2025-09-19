@@ -4,7 +4,7 @@ from sqlmodel import SQLModel, Field, Relationship
 
 from backend.schema.user import User
 from backend.schema.user_phone import UserPhone
-from backend.schema.utils import now
+from backend.common.utils import now
 
 
 # WISHLISTS — Persisted like carts; typically no TTL

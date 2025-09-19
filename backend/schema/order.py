@@ -5,7 +5,7 @@ from typing import List, Optional
 import uuid
 from sqlmodel import SQLModel, Field, Relationship
 from backend.schema.payment import Payment
-from backend.schema.utils import now
+from backend.common.utils import now
 
 class OrderStatus(str, Enum):
     CREATED = "created"

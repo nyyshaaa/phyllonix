@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import Enum
 from sqlmodel import Relationship, SQLModel, Field
 from backend.schema.order import Order
-from backend.schema.utils import now
+from backend.common.utils import now
 
 class PaymentStatus(str, Enum):
     INIT = "init"

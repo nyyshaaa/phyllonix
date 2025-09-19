@@ -11,7 +11,7 @@ async def userid_by_public_id(session,user_pid):
     user=res.first()
     return user
 
-async def check_user_roles(session,identifier,role_version):
+async def check_user_roles_version(session,identifier,role_version):
     stmt=select(Users.id).where(Users.public_id==identifier,Users.role_version==role_version)
     res=await session.execute(stmt)
     user=res.first()

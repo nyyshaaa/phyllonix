@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlmodel import SQLModel, Field, Relationship
 from backend.schema.user import User
 from backend.schema.user_phone import UserPhone
-from backend.schema.utils import now
+from backend.common.utils import now
 
 
 # CARTS — Persist carts server-side (DB/Redis) so they survive page reloads and can merge on login

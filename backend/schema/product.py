@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from uuid6 import uuid7
 from sqlmodel import Column, SQLModel, Field, Relationship
-from backend.schema.utils import now
+from backend.common.utils import now
 from sqlalchemy.dialects.postgresql import JSONB,UUID
 
 # class ProductCategory(str, Enum):
