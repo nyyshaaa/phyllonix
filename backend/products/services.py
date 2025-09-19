@@ -35,8 +35,7 @@ async def create_product_with_catgs(session,payload,user_id):
         )
         product = res.scalar_one_or_none()
         if product is None:
-            # extremely unlikely; surface a retryable server error
-            raise HTTPException(status_code=500, detail="Internal error occurred")
+            raise HTTPException(status_code=500, detail="Product with this name already exists")
         await add_product_categories(session,product.id, cat_ids)
         await session.commit()
 

@@ -15,7 +15,9 @@ prods_admin_router=APIRouter()
 
 @prods_admin_router.post("/", dependencies=[require_permissions("product:create")])
 async def create_product(request:Request,payload: ProductCreateIn, session: AsyncSession = Depends(get_session)):
+    print("create prods")
     user_identifier=request.state.user_identifier
+    print(user_identifier)
     product_res=await create_product_with_catgs(session,payload,user_identifier)
     return {"message":"product created","product":product_res}
 

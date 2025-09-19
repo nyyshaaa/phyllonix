@@ -9,19 +9,19 @@ async def userid_by_public_id(session,user_pid):
     stmt=select(Users.id).where(Users.public_id==user_pid)
     res=await session.execute(stmt)
     user=res.first()
-    return user
+    return user[0] if user else None
 
 async def check_user_roles_version(session,identifier,role_version):
     stmt=select(Users.id).where(Users.public_id==identifier,Users.role_version==role_version)
     res=await session.execute(stmt)
     user=res.first()
-    return user
+    return user[0] if user else None
 
 async def device_active(session,ds_id):
     stmt=select(DeviceSession.id).where(DeviceSession.id==ds_id,DeviceSession.revoked_at==None)
     res=await session.execute(stmt)
     ds=res.first()
-    return ds
+    return ds[0] if ds else None
 
 # for now only profile image exists for 1 user . there is a unique constraint on user_id fkey in user_media
 #*WARN update added in same endpoint as of post just for faster testing of queue system.

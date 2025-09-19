@@ -10,7 +10,7 @@ from backend.db.dependencies import get_session
 auth_router=APIRouter()
 
 #* sign in via both mobile or email(only email for now)
-@auth_router.get("/login")
+@auth_router.post("/login")
 async def login_user(request:Request,payload:SignIn, device_session: Optional[str] = Depends(device_session_plain),session: AsyncSession = Depends(get_session)):
     
     access,refresh=await issue_auth_tokens(session,request,payload,device_session)
