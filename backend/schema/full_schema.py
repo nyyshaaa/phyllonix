@@ -24,7 +24,7 @@ class Users(SQLModel, table=True):
         default_factory=uuid7, 
         sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     )
-    email: Optional[str] = Field(default=None,sa_column=Column(String(320), nullable=True))
+    email: Optional[str] = Field(default=None,sa_column=Column(String(320), nullable=True,unique=True))  #* nullable allowed in case a user has only phone based account ,but usually email is necessary so make it non nullable later
     name: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     role_version:int=Field(default=0,nullable=False)
     created_at: datetime = Field(default_factory=now,
@@ -235,7 +235,7 @@ class Product(SQLModel, table=True):
         description="Flexible product specs JSON (e.g. { 'weight_g': 500, 'flavor': 'saffron' })",
     )
 
-    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True))
+    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True,unique=True))
     # audit fields(in case admin creates  a product on behalf of sa seller)
     # created_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
     # updated_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
@@ -252,9 +252,7 @@ class Product(SQLModel, table=True):
     images: List["ProductImage"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     prod_categories: List["ProductCategory"] = Relationship(back_populates="products", link_model=ProductCategoryLink)
 
-    __table_args__ = (
-        UniqueConstraint("owner_id", "name", name="uq_product_name_owner_id"),
-    )
+    
 
     # price_options: List["PriceOption"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 

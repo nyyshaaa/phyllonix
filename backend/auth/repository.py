@@ -14,7 +14,7 @@ async def user_by_email(session,email):
     return user
 
 async def user_id_by_email(session,email):
-    stmt=select(Users.id).where(Users.email==email)
+    stmt=select(Users.id).where(Users.email==email,Users.deleted_at.is_(None))
     result=await session.execute(stmt)
     user=result.first()
     return user
