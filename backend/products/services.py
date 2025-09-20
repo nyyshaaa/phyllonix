@@ -1,12 +1,16 @@
 
 import hashlib
 import hmac
+import time
 from fastapi import HTTPException , status
 from sqlalchemy import select, text
 from backend.products.repository import add_product_categories, validate_catgs
 from backend.schema.full_schema import ImageContent, ImageUploadStatus, Product, ProductCategory, ProductImage
 from sqlalchemy.exc import IntegrityError
-from backend.config.media_config import HASH_ALGO,FILE_SECRET_KEY
+from backend.config.media_config import HASH_ALGO,FILE_SECRET_KEY,CLOUDINARY_API_SECRET,CLOUDINARY_API_KEY,CLOUDINARY_CLOUD_NAME
+from cloudinary.utils import api_sign_request
+
+CLOUDINARY_UPLOAD_URL = f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload"
 
 
 async def create_product_with_catgs(session,payload,user_id):
@@ -56,14 +60,18 @@ class ImageUpload:
     MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
     ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
     FILE_SECRET_KEY = FILE_SECRET_KEY
+    FOLDER_PREFIX="images"
 
     def __init__(self,content_type,filesize,filename,checksum):
         self.content_type=content_type
         self.filesize=filesize
         self.orig_filename=filename
         self.checksum=checksum
+        self.ext = self.orig_filename.split(".")[-1].lower() if "." in self.orig_filename else "jpg"
 
-    def validate_file(self):
+        self._validate_file()
+
+    def _validate_file(self):
         if self.content_type not in ImageUpload.ALLOWED_CONTENT_TYPES:
             raise HTTPException(400, detail=f"content_type {self.content_type} not allowed")
         if self.filesize > ImageUpload.MAX_UPLOAD_BYTES:
@@ -91,12 +99,12 @@ class ImageUpload:
             return {"id":row[0],"public_id":row[1]}
         return None
     
-    async def link_image_to_product(self,session,storage_key,image_content_public_id,product_id):
+    async def link_image_to_product(self,session,img_content_ids,product_id,uniq_img_key):
         
         image = ProductImage(
             product_id=product_id,
-            public_id=image_content_public_id,
-            storage_key=storage_key,
+            content_id=img_content_ids.id,
+            storage_key=f"{ImageUpload.FOLDER_PREFIX}/{img_content_ids.public_id}/{uniq_img_key}",
             storage_provider="cloudinary",
             mime_type=self.content_type,
             file_size=self.filesize,
@@ -114,7 +122,7 @@ class ImageUpload:
 
 
 
-    def storage_key(self,image_content_public_id: str, prefix: str = "images") -> str:
+    def uniq_image_identifier_name(self,image_content_public_id: str) -> str:
         """
         Deterministic, unguessable storage key
         """
@@ -124,8 +132,29 @@ class ImageUpload:
         h = hmac.new(secret.encode(), msg, hash_func).hexdigest()
         # take first 24 hex characters (12 bytes) to keep path shorter but collision-safe
         suffix = h[:24]
-        return f"{prefix}/{image_content_public_id}/{suffix}"
+        return suffix
     
-    #* to be implemented
-    def generate_presigned_upload(self):
-        pass
+    
+    def cloudinary_upload_params(image_public_id: str,unq_img_key:str,expires_in: int = 300):
+        timestamp = int(time.time())
+        params_to_sign = {"unq_img_key": unq_img_key, "timestamp": timestamp}
+        folder=f"{ImageUpload.FOLDER_PREFIX}/{image_public_id}"
+        params_to_sign["folder"] = folder
+        signature = api_sign_request(params_to_sign, CLOUDINARY_API_SECRET)
+        response_params = {
+            "provider": "cloudinary",
+            "upload_url": CLOUDINARY_UPLOAD_URL,
+            "params": {
+                "api_key": CLOUDINARY_API_KEY,
+                "timestamp": timestamp,
+                "signature": signature,
+                "unq_img_key": unq_img_key,
+                "folder": folder,
+                # optional: tell Cloudinary not to create unique filename (we use deterministic public_id)
+                "unique_filename": False,
+                # # optional: prevent accidental overwrite (set to True or False depending on workflow)
+                # "overwrite": "true" if overwrite else "false",
+            },
+            "expires_in": expires_in
+        }
+        return response_params

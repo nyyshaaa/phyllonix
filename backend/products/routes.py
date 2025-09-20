@@ -52,18 +52,23 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update.")
     
     for img in imgs_batch.images:
-        img_upload=ImageUpload(img.content_type,img.filesize)
+        img_upload=ImageUpload(img.content_type,img.filesize,img.filename,img.checksum)
 
         img_content_ids=await img_upload.if_image_content_exists(session,img.checksum)
 
         if not img_content_ids:
             img_content_ids=await img_upload.create_image_content(session,img.checksum)
 
-        storage_key= img_upload.storage_key(img_content_ids["public_id"])
+        if not img_content_ids:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create image content record.")
 
-        await img_upload.link_image_to_product(session,storage_key,img_content_ids["public_id"],product.id)
+        uniq_img_key= img_upload.uniq_image_identifier_name(img_content_ids["public_id"])
 
-        upload_params = img_upload.generate_presigned_upload(storage_key)
+        await img_upload.link_image_to_product(session,img_content_ids,product.id,uniq_img_key)
+      
+        upload_params = img_upload.cloudinary_upload_params(img_content_ids["public_id"],uniq_img_key)
+
+        return upload_params
 
         
 
