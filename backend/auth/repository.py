@@ -8,13 +8,13 @@ from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_token, make_refre
 
 
 async def user_by_email(session,email):
-    stmt=select(Users.id,Users.public_id).where(Users.email==email,Users.deleted_at.is_(None))
+    stmt=select(Users.id,Users.public_id,Users.role_version).where(Users.email==email,Users.deleted_at.is_(None))
     result=await session.execute(stmt)
     user=result.first()
     return user
 
 async def user_id_by_email(session,email):
-    stmt=select(Users.id).where(Users.email==email)
+    stmt=select(Users.id).where(Users.email==email,Users.deleted_at.is_(None))
     result=await session.execute(stmt)
     user=result.first()
     return user

@@ -23,7 +23,7 @@ async def add_product_categories(session,product_id, cat_ids):
 
         values_sql = ", ".join(values_parts)
         insert_sql = f"""
-            INSERT INTO product_category_link (product_id, prod_category_id)
+            INSERT INTO productcategorylink (product_id, prod_category_id)
             VALUES {values_sql}
             ON CONFLICT (product_id, prod_category_id) DO NOTHING
         """

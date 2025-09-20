@@ -31,12 +31,11 @@ async def create_product_with_catgs(session,payload,user_id):
     except IntegrityError:
         await session.rollback()
         res = await session.execute(
-            select(Product.id,Product.public_id,Product.name,Product.base_price,Product.stock_qty,Product.sku).where(Product.owner_id == user_id, Product.name == payload.name)
+            select(Product).where(Product.owner_id == user_id, Product.name == payload.name)
         )
         product = res.scalar_one_or_none()
         if product is None:
-            # extremely unlikely; surface a retryable server error
-            raise HTTPException(status_code=500, detail="Internal error occurred")
+            raise HTTPException(status_code=500, detail="Product with this name already exists")
         await add_product_categories(session,product.id, cat_ids)
         await session.commit()
 

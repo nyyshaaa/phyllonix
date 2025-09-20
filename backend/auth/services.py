@@ -114,7 +114,7 @@ async def issue_auth_tokens(session,request,payload,device_session):
     await session.commit()
     # create access token with public_id
     user_roles=await get_user_role_names(session,user_id)
-    access_token = create_access_token(user_id=user.public_id, user_roles=user_roles)
+    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
 
     return access_token,refresh_token
 

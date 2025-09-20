@@ -1,21 +1,26 @@
 
-import select
+
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.dependencies import get_session
 from backend.schema.full_schema import Permission, Role, RolePermission
 
 
-async def require_permissions(perm:str):
+def require_permissions(perm:str):
     async def _checker(request: Request,
         session: AsyncSession = Depends(get_session),):
         user_roles=set(request.state.user_roles)
+
+        print("user_roles",user_roles)
         
         # check if the required permisssion belongs to any user roles .
-        stmt=select(Role.id
-            ).join(RolePermission.permission_id==Permission.id
-            ).join(Role.id==RolePermission.role_id
-            ).where(Permission.name==perm,Role.name.in_(user_roles)).limit(1) 
+        stmt=(
+            select(Role.id)
+            .join(RolePermission, Role.id == RolePermission.role_id)
+            .join(Permission, Permission.id == RolePermission.permission_id)
+            .where(Permission.name == 'product:create',Role.name.in_(list(user_roles))).limit(1)
+        )
         
         res=await session.execute(stmt)
         res=res.scalar_one_or_none()
