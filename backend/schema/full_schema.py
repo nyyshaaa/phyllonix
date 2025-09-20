@@ -290,7 +290,7 @@ class ImageContent(SQLModel, table=True):
     """
     id: Optional[int] = Field(default=None, primary_key=True)
     checksum: str = Field(sa_column=Column(String(128), nullable=False, unique=True), description="sha256 hex")
-    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True,unique=True))
+    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True))
     public_id:uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     provider_public_id: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
