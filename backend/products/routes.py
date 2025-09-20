@@ -51,24 +51,49 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
     if product.owner_id!=user_identifier:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update.")
     
+    responses=[]
+    errors=[]
+    
     for img in imgs_batch.images:
         img_upload=ImageUpload(img.content_type,img.filesize,img.filename,img.checksum)
 
-        img_content_ids=await img_upload.if_image_content_exists(session,img.checksum)
+        img_content=await img_upload.if_image_content_exists(session,img.checksum,user_identifier)
 
-        if not img_content_ids:
-            img_content_ids=await img_upload.create_image_content(session,img.checksum)
+        if img_content and img_content.owner_id!=user_identifier:
+            errors.append({
+                    "filename": img.filename,
+                    "detail": "Image belongs to another user",
+            })
+            continue
 
-        if not img_content_ids:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create image content record.")
+        if not img_content:
+            try:
+                img_content=await img_upload.create_image_content(session,user_identifier)
+            except Exception as e:
+                errors.append( {"filename": img.filename,
+                    "detail": "Internal Server Error , Retry "})
+                continue
 
-        uniq_img_key= img_upload.uniq_image_identifier_name(img_content_ids["public_id"])
+        uniq_img_key= img_upload.uniq_image_identifier_name(img_content.public_id)
 
-        await img_upload.link_image_to_product(session,img_content_ids,product.id,uniq_img_key)
+        try:
+            await img_upload.link_image_to_product(session,img_content,product.id,uniq_img_key)
+        except Exception:
+            errors.append( {"filename": img.filename,
+                "detail": "Internal Server Error , Retry "})
+            continue
       
-        upload_params = img_upload.cloudinary_upload_params(img_content_ids["public_id"],uniq_img_key)
+        upload_params = img_upload.cloudinary_upload_params(img_content.public_id,uniq_img_key)
 
-        return upload_params
+        if not upload_params:
+            errors.append( {"filename": img.filename,
+                "detail": "Couldn't generate upload signature , image added and linked , please retry "})
+            continue
+
+        responses.append(upload_params)
+    
+    return {"items": responses,"errors":errors}
+
 
         
 

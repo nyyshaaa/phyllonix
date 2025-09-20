@@ -78,33 +78,32 @@ class ImageUpload:
             raise HTTPException(413, detail=f"file too large (max {ImageUpload.MAX_UPLOAD_BYTES})")
         
     async def if_image_content_exists(self,session,checksum):
-        stmt=select(ImageContent.id,ImageContent.public_id).where(ImageContent.checksum==checksum)
+        stmt=select(ImageContent).where(ImageContent.checksum==checksum)
         row=await session.execute(stmt)
-        row=row.first()
-        if row:
-            return {"id":row[0],"public_id":row[1]}
-        return None
+        row=row.scalar_one_or_none()
+        return row
    
-    async def create_image_content(self,session):
+    async def create_image_content(self,session,user_id):
         checksum=self.checksum
-        insert_sql = text("""
-        INSERT INTO imagecontent (checksum, created_at)
-        VALUES (:checksum, now())
-        ON CONFLICT (checksum) DO NOTHING
-        RETURNING id,public_id;
-        """)
-        res = session.execute(insert_sql, {"checksum": checksum})
-        row = res.first()
-        if row:
-            return {"id":row[0],"public_id":row[1]}
-        return None
+       
+        img_content=ImageContent(
+            checksum=checksum,owner_id=user_id)
+        try:
+            session.add(img_content)
+            await session.commit()
+            await session.refresh(img_content)
+            return img_content
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry") # integrity error can happen for same user or different user 
+        
     
-    async def link_image_to_product(self,session,img_content_ids,product_id,uniq_img_key):
+    async def link_image_to_product(self,session,img_content,product_id,uniq_img_key):
         
         image = ProductImage(
             product_id=product_id,
-            content_id=img_content_ids.id,
-            storage_key=f"{ImageUpload.FOLDER_PREFIX}/{img_content_ids.public_id}/{uniq_img_key}",
+            content_id=img_content.id,
+            storage_key=f"{ImageUpload.FOLDER_PREFIX}/{img_content.public_id}/{uniq_img_key}",
             storage_provider="cloudinary",
             mime_type=self.content_type,
             file_size=self.filesize,
@@ -118,8 +117,12 @@ class ImageUpload:
             await session.refresh(image)
         except IntegrityError:
             await session.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry")  # integrity error can happen for same user or different user 
-
+            stmt = select(ProductImage).where(ProductImage.storage_key == image.storage_key)
+            res = await session.execute(stmt)
+            image = res.scalar_one_or_none()
+            if image:
+                return image
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry")  
 
 
     def uniq_image_identifier_name(self,image_content_public_id: str) -> str:

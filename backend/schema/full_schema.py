@@ -256,15 +256,15 @@ class Product(SQLModel, table=True):
 
     # price_options: List["PriceOption"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
-
+# 1 image content id can belong to many product images
 class ProductImage(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False, index=True))
-    content_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("imagecontent.id", ondelete="SET NULL"), nullable=True))
+    content_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("imagecontent.id", ondelete="CASCADE"), nullable=False))
     
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
-    storage_key: str = Field(sa_column=Column(String(1024), nullable=False), description="bucket key (not public URL)")
+    storage_key: str = Field(sa_column=Column(String(1024), nullable=False,unique=True), description="bucket key (not public URL)")
     storage_provider: str = Field(default="cloudinary", sa_column=Column(String(64), nullable=False))
     bucket: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
     mime_type: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
@@ -282,6 +282,7 @@ class ProductImage(SQLModel, table=True):
     # uploaded_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
 
     product: "Product" = Relationship(back_populates="images")
+    img_content : "ImageContent" = Relationship(back_populates="product_imgs")
 
 class ImageContent(SQLModel, table=True):
     """
@@ -289,11 +290,14 @@ class ImageContent(SQLModel, table=True):
     """
     id: Optional[int] = Field(default=None, primary_key=True)
     checksum: str = Field(sa_column=Column(String(128), nullable=False, unique=True), description="sha256 hex")
+    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True,unique=True))
     public_id:uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     provider_public_id: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
     meta: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON, nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+
+    product_imgs : List["ProductImage"] = Relationship(back_populates="img_content")
 
 
 class ProductCategory(SQLModel, table=True):
