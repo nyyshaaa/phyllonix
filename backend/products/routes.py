@@ -3,11 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request,status
 
 from backend.db.dependencies import get_session
 from backend.products.dependency import require_permissions
-from backend.products.models import ProductCreateIn, ProductUpdateIn
+from backend.products.models import InitBatchImagesIn, ProductCreateIn, ProductUpdateIn
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.products.repository import patch_product, product_by_public_id, replace_catgs, validate_catgs
-from backend.products.services import create_product_with_catgs
+from backend.products.services import ImageUpload, create_product_with_catgs
 
 
 prods_public_router=APIRouter()
@@ -41,6 +41,34 @@ async def update_product(request:Request,product_public_id: str,
     await replace_catgs(session,product_id,cat_ids)
 
     return {"message":"product updated"}
+
+@prods_admin_router.post("/{product_public_id}/images/init-batch")
+async def init_images_upload_batch(request:Request,product_public_id: str, imgs_batch: InitBatchImagesIn,session: AsyncSession = Depends(get_session)):
+    user_identifier=request.state.user_identifier
+
+    product = await product_by_public_id(session, product_public_id, user_identifier)
+
+    if product.owner_id!=user_identifier:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update.")
+    
+    for img in imgs_batch.images:
+        img_upload=ImageUpload(img.content_type,img.filesize)
+
+        img_content_ids=await img_upload.if_image_content_exists(session,img.checksum)
+
+        if not img_content_ids:
+            img_content_ids=await img_upload.create_image_content(session,img.checksum)
+
+        storage_key= img_upload.storage_key(img_content_ids["public_id"])
+
+        await img_upload.link_image_to_product(session,storage_key,img_content_ids["public_id"],product.id)
+
+        upload_params = img_upload.generate_presigned_upload(storage_key)
+
+        
+
+
+
 
 
 

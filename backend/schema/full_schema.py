@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import ARRAY, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
+from sqlalchemy import ARRAY, JSON, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
 from uuid6 import uuid7
 from datetime import datetime
 from typing import Any, Dict, List, Optional 
@@ -261,14 +261,15 @@ class ProductImage(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False, index=True))
+    content_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("imagecontent.id", ondelete="SET NULL"), nullable=True))
     
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     storage_key: str = Field(sa_column=Column(String(1024), nullable=False), description="bucket key (not public URL)")
-    # provider: str = Field(default="r2", sa_column=Column(String(32), nullable=False))
+    storage_provider: str = Field(default="cloudinary", sa_column=Column(String(64), nullable=False))
     bucket: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
     mime_type: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     file_size: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))
-    checksum: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True,unique=True))  # sha256 hex
+    
     variants: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB, nullable=True))
     status: ImageUploadStatus = Field(sa_column=Column(Enum(ImageUploadStatus, create_type=False),default=ImageUploadStatus.PENDING_UPLOADED,nullable=False))
     orig_filename: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
@@ -282,6 +283,18 @@ class ProductImage(SQLModel, table=True):
 
     product: "Product" = Relationship(back_populates="images")
 
+class ImageContent(SQLModel, table=True):
+    """
+    Canonical content rows keyed by checksum. Workers insert with ON CONFLICT DO NOTHING.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    checksum: str = Field(sa_column=Column(String(128), nullable=False, unique=True), description="sha256 hex")
+    public_id:uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
+    provider_public_id: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
+    url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
+    meta: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+
 
 class ProductCategory(SQLModel, table=True):
    
@@ -292,6 +305,7 @@ class ProductCategory(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now, onupdate=now))
 
     products: List["Product"] = Relationship(back_populates="prod_categories", link_model=ProductCategoryLink)
+
 
 #---------------------------------------------------------------------------------------------------------
 

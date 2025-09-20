@@ -25,3 +25,12 @@ class ProductUpdateIn(BaseModel):
 
     class Config:
         extra = "forbid"
+
+class InitImageItem(BaseModel):
+    filename: str
+    content_type: str
+    filesize: int
+    checksum: str
+
+class InitBatchImagesIn(BaseModel):
+    images: List[InitImageItem]
