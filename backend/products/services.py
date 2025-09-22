@@ -149,10 +149,12 @@ class ImageUpload:
                 update(ProductImage)
                 .where(ProductImage.id == prod_image.id)
                 .values(storage_key=storage_key)
+                .returning(ProductImage.id)
             )
-            await session.execute(stmt)
+            res=await session.execute(stmt)
             await session.commit()
-
+            return res.scalar_one_or_none()
+        return True  
     
     async def cloudinary_upload_params(prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())

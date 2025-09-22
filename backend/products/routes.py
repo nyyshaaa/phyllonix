@@ -43,6 +43,7 @@ async def update_product(request:Request,product_public_id: str,
     return {"message":"product updated"}
 
 # idempotency not enforced at init level , don't give users and option to retry in case of network failures , remove pending rows via background cron processses.
+# avoid checksum computation in client side to save from file read and reduce latency for main requests , use a cheap small hint of image data for idempotency or use i key , no idempotency at present for uploads init level .
 @prods_admin_router.post("/{product_public_id}/images/init-batch")
 async def init_images_upload_batch(request:Request,product_public_id: str, imgs_batch: InitBatchImagesIn,session: AsyncSession = Depends(get_session)):
     user_identifier=request.state.user_identifier
@@ -60,22 +61,26 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
 
 
         try:
-            prod_image = await img_upload.create_product_image_link(session,product.id)
+            prod_image = await img_upload.create_prod_image_link(session,product.id)
         except Exception:
             errors.append( {"filename": img.filename,
-                "detail": "Internal Server Error , Retry "})
+                "detail": "Internal Server Error while creating product image"})
             continue
-
+         
         uniq_img_key= img_upload.uniq_prod_image_identifier_name(prod_image.public_id)
 
-        await img_upload.update_prod_img_storage_key(session,prod_image,uniq_img_key)
-         
+        if_updated=await img_upload.update_prod_img_storage_key(session,prod_image,uniq_img_key)
+        if not if_updated:
+            errors.append( {"filename": img.filename,
+                    "detail": "Internal Server Error while updating product image"})
+            continue
+
         try:
             upload_params = await img_upload.cloudinary_upload_params(prod_image.public_id,uniq_img_key)
 
         except Exception:
             errors.append( {"filename": img.filename,
-                "detail": "Couldn't generate upload signature , product image pending uploaded , please retry "})
+                "detail": "Couldn't generate upload signature , product image pending uploaded "})
             continue
 
         responses.append({"filename": img.filename,"upload_params":upload_params})
