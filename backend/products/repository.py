@@ -5,9 +5,6 @@ from sqlalchemy import select, text, update
 from backend.common.utils import now
 from backend.schema.full_schema import Product, ProductCategory, ProductCategoryLink
 
-async def add_product():
-    pass
-
 
 async def add_product_categories(session,product_id, cat_ids):
     # Bulk insert product_category_link (single statement)

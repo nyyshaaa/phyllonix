@@ -42,6 +42,7 @@ async def update_product(request:Request,product_public_id: str,
 
     return {"message":"product updated"}
 
+# idempotency not enforced at init level , don't give users and option to retry in case of network failures , remove pending rows via background cron processses.
 @prods_admin_router.post("/{product_public_id}/images/init-batch")
 async def init_images_upload_batch(request:Request,product_public_id: str, imgs_batch: InitBatchImagesIn,session: AsyncSession = Depends(get_session)):
     user_identifier=request.state.user_identifier
@@ -57,41 +58,27 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
     for img in imgs_batch.images:
         img_upload=ImageUpload(img.content_type,img.filesize,img.filename,img.checksum)
 
-        img_content=await img_upload.if_image_content_exists(session,img.checksum,user_identifier)
-
-        if img_content and img_content.owner_id!=user_identifier:
-            errors.append({
-                    "filename": img.filename,
-                    "detail": "Image belongs to another user",
-            })
-            continue
-
-        if not img_content:
-            try:
-                img_content=await img_upload.create_image_content(session,user_identifier)
-            except Exception as e:
-                errors.append( {"filename": img.filename,
-                    "detail": "Internal Server Error , Retry "})
-                continue
-
-        uniq_img_key= img_upload.uniq_image_identifier_name(img_content.public_id)
 
         try:
-            await img_upload.link_image_to_product(session,img_content,product.id,uniq_img_key)
+            prod_image = await img_upload.create_product_image_link(session,product.id)
         except Exception:
             errors.append( {"filename": img.filename,
                 "detail": "Internal Server Error , Retry "})
             continue
 
+        uniq_img_key= img_upload.uniq_prod_image_identifier_name(prod_image.public_id)
+
+        await img_upload.update_prod_img_storage_key(session,prod_image,uniq_img_key)
+         
         try:
-            upload_params = await img_upload.cloudinary_upload_params(img_content.public_id,uniq_img_key)
+            upload_params = await img_upload.cloudinary_upload_params(prod_image.public_id,uniq_img_key)
 
         except Exception:
             errors.append( {"filename": img.filename,
-                "detail": "Couldn't generate upload signature , image added and linked , please retry "})
+                "detail": "Couldn't generate upload signature , product image pending uploaded , please retry "})
             continue
 
-        responses.append(upload_params)
+        responses.append({"filename": img.filename,"upload_params":upload_params})
     
     return {"items": responses,"errors":errors}
 

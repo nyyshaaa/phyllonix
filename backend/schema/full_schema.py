@@ -264,7 +264,7 @@ class ProductImage(SQLModel, table=True):
     content_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("imagecontent.id", ondelete="CASCADE"), nullable=False))
     
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
-    storage_key: str = Field(sa_column=Column(String(1024), nullable=False,unique=True), description="bucket key (not public URL)")
+    storage_key: str = Field(sa_column=Column(String(1024), nullable=True,unique=True), description="bucket key (not public URL)")
     storage_provider: str = Field(default="cloudinary", sa_column=Column(String(64), nullable=False))
     bucket: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
     mime_type: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))

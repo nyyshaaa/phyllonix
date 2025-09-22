@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import time
 from fastapi import HTTPException , status
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from backend.products.repository import add_product_categories, validate_catgs
 from backend.schema.full_schema import ImageContent, ImageUploadStatus, Product, ProductCategory, ProductImage
 from sqlalchemy.exc import IntegrityError
@@ -98,38 +98,43 @@ class ImageUpload:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry") # integrity error can happen for same user or different user 
         
     
-    async def link_image_to_product(self,session,img_content,product_id,uniq_img_key):
+    async def create_prod_image_link(self,session,product_id,user_id):
         
         image = ProductImage(
             product_id=product_id,
-            content_id=img_content.id,
-            storage_key=f"{ImageUpload.FOLDER_PREFIX}/{img_content.public_id}/{uniq_img_key}",
+            storage_key="",
             storage_provider="cloudinary",
             mime_type=self.content_type,
             file_size=self.filesize,
-            checksum=self.checksum,
+            checksum=None,
             status=ImageUploadStatus.PENDING_UPLOADED,
             orig_filename=self.orig_filename
         )
-        try:
-            session.add(image)
-            await session.commit()
-            await session.refresh(image)
-        except IntegrityError:
-            await session.rollback()
-            stmt = select(ProductImage).where(ProductImage.storage_key == image.storage_key)
-            res = await session.execute(stmt)
-            image = res.scalar_one_or_none()
-            if image:
-                return image
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry")  
+        
+        session.add(image)
+        await session.flush()
+        await session.refresh(image)
+        return image
+        # except IntegrityError:
+        #     await session.rollback()
+        #     stmt = select(ProductImage).where(
+        #         ProductImage.product_id == product_id,
+        #         ProductImage.owner_id == user_id,
+        #         ProductImage.orig_filename == self.orig_filename,
+        #         ProductImage.file_size == self.filesize
+        #     )
+        #     res = await session.execute(stmt)
+        #     prod_image = res.scalar_one_or_none()
+        #     if prod_image:
+        #         return prod_image
+        #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry")
 
 
-    def uniq_image_identifier_name(self,image_content_public_id: str) -> str:
+    def uniq_prod_image_identifier_name(self,prod_image_public_id: str) -> str:
         """
         Deterministic, unguessable storage key
         """
-        msg = f"{self.checksum}:{image_content_public_id}".encode()
+        msg = f"{prod_image_public_id}".encode()
         secret=ImageUpload.FILE_SECRET_KEY
         hash_func = getattr(hashlib, HASH_ALGO)
         h = hmac.new(secret.encode(), msg, hash_func).hexdigest()
@@ -137,11 +142,22 @@ class ImageUpload:
         suffix = h[:24]
         return suffix
     
+    async def update_prod_img_storage_key(self,session,prod_image,uniq_img_key):
+        storage_key=f"{self.FOLDER_PREFIX}/{prod_image.public_id}/{uniq_img_key}"
+        if prod_image.storage_key != storage_key:
+            stmt = (
+                update(ProductImage)
+                .where(ProductImage.id == prod_image.id)
+                .values(storage_key=storage_key)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
     
-    async def cloudinary_upload_params(image_public_id: str,unq_img_key:str,expires_in: int = 300):
+    async def cloudinary_upload_params(prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())
         params_to_sign = {"public_id": unq_img_key, "timestamp": timestamp}
-        folder=f"{ImageUpload.FOLDER_PREFIX}/{image_public_id}"
+        folder=f"{ImageUpload.FOLDER_PREFIX}/{prod_image_public_id}"
         params_to_sign["folder"] = folder
         signature = api_sign_request(params_to_sign, CLOUDINARY_API_SECRET)
         response_params = {
