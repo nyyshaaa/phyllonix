@@ -138,9 +138,9 @@ class ImageUpload:
         return suffix
     
     
-    def cloudinary_upload_params(image_public_id: str,unq_img_key:str,expires_in: int = 300):
+    async def cloudinary_upload_params(image_public_id: str,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())
-        params_to_sign = {"unq_img_key": unq_img_key, "timestamp": timestamp}
+        params_to_sign = {"public_id": unq_img_key, "timestamp": timestamp}
         folder=f"{ImageUpload.FOLDER_PREFIX}/{image_public_id}"
         params_to_sign["folder"] = folder
         signature = api_sign_request(params_to_sign, CLOUDINARY_API_SECRET)
@@ -151,7 +151,7 @@ class ImageUpload:
                 "api_key": CLOUDINARY_API_KEY,
                 "timestamp": timestamp,
                 "signature": signature,
-                "unq_img_key": unq_img_key,
+                "public_id": unq_img_key,
                 "folder": folder,
                 # optional: tell Cloudinary not to create unique filename (we use deterministic public_id)
                 "unique_filename": False,

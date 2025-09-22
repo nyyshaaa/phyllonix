@@ -82,10 +82,11 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
             errors.append( {"filename": img.filename,
                 "detail": "Internal Server Error , Retry "})
             continue
-      
-        upload_params = img_upload.cloudinary_upload_params(img_content.public_id,uniq_img_key)
 
-        if not upload_params:
+        try:
+            upload_params = await img_upload.cloudinary_upload_params(img_content.public_id,uniq_img_key)
+
+        except Exception:
             errors.append( {"filename": img.filename,
                 "detail": "Couldn't generate upload signature , image added and linked , please retry "})
             continue
