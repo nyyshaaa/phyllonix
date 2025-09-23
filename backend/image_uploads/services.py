@@ -54,6 +54,17 @@ class ImageUpload:
         
     
     async def create_prod_image_link(self,session,product_id,user_id):
+
+        stmt = select(ProductImage).where(
+            ProductImage.product_id == product_id,
+            ProductImage.orig_filename == self.orig_filename,
+            ProductImage.file_size == self.filesize,
+            ProductImage.status == ImageUploadStatus.PENDING_UPLOADED
+        ).limit(1)
+        res = await session.execute(stmt)
+        existing = res.scalar_one_or_none()
+        if existing:
+            return existing
         
         image = ProductImage(
             product_id=product_id,
@@ -70,19 +81,6 @@ class ImageUpload:
         await session.flush()
         await session.refresh(image)
         return image
-        # except IntegrityError:
-        #     await session.rollback()
-        #     stmt = select(ProductImage).where(
-        #         ProductImage.product_id == product_id,
-        #         ProductImage.owner_id == user_id,
-        #         ProductImage.orig_filename == self.orig_filename,
-        #         ProductImage.file_size == self.filesize
-        #     )
-        #     res = await session.execute(stmt)
-        #     prod_image = res.scalar_one_or_none()
-        #     if prod_image:
-        #         return prod_image
-        #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry")
 
 
     def uniq_prod_image_identifier_name(self,prod_image_public_id: str) -> str:

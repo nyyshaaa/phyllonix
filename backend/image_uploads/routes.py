@@ -10,7 +10,6 @@ from backend.products.services import ImageUpload
 
 # idempotency not enforced at init level , remove pending rows via background cron processses.
 # remove checksum computation(was added to make uploads idempotent) in client side to save from file read and reduce latency for main requests , use a cheap small hint of image data for idempotency or use i key , no idempotency at present for uploads init level .
-# storage key is computed from public id of productimage table so even at cloud save level no idempotency for now .
 @prods_admin_router.post("/{product_public_id}/images/init-batch")
 async def init_images_upload_batch(request:Request,product_public_id: str, imgs_batch: InitBatchImagesIn,session: AsyncSession = Depends(get_session)):
     user_identifier=request.state.user_identifier
@@ -18,7 +17,7 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
     product = await product_by_public_id(session, product_public_id, user_identifier)
 
     if product.owner_id!=user_identifier:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update product.")
     
     responses=[]
     errors=[]
