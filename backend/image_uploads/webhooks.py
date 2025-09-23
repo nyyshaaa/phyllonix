@@ -1,13 +1,15 @@
 
 import os
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import select
 from backend.db.dependencies import get_session
 from backend.image_uploads.dependency import validate_upload_signature
+from backend.image_uploads.repository import create_webhook_event, upload_prod_image_upload_status
 from backend.schema.full_schema import ProductImage
 from backend.config.media_config import CLOUDINARY_CALLBACK_ROUTE
 from backend.__init__ import logger
+from backend.image_uploads.services import enqueue_process_simulate
 
 uploads_router = APIRouter()
 
@@ -26,16 +28,45 @@ async def cloudinary_webhook(body_bytes=Depends(validate_upload_signature), sess
     # dedupe provider webhook events: prefer asset_id if present or use public_id:version
     provider_event_id = payload.get("asset_id") or f"{payload.get('public_id')}:{payload.get('version')}"
 
+    event=await create_webhook_event(session,provider_event_id,payload)
+
     # Map payload to ProductImage row
     public_id = payload.get("public_id")
     folder = payload.get("folder", "")  # if you set folder param in init it should be images/<product_img_public_id>
     product_image = None
 
-    if folder.startswith("images/"):
-        parts = folder.split("/", 1)
-        if len(parts) == 2:
-            prod_img_public_id = parts[1]
-            stmt = select(ProductImage).where(ProductImage.public_id == prod_img_public_id)
-            # update product image 
 
-    # enqueue extra processing work 
+    if folder.startswith("images/"):
+        try:
+            parts = folder.split("/", 1)
+            if len(parts) == 2:
+                prod_img_public_id = parts[1]
+                stmt = select(ProductImage).where(ProductImage.public_id == prod_img_public_id)
+                qres = await session.execute(stmt)
+                product_image = qres.scalar_one_or_none()
+        except Exception:
+            logger.exception("Failed to lookup ProductImage by folder")
+
+    if product_image:
+        try:
+           
+            updated_id=await upload_prod_image_upload_status(session,product_image)
+
+            if not updated_id:
+                logger.error("Failed to update ProductImage status for id %s", product_image.id)
+                raise HTTPException(status_code=500, detail="Failed to update product image status")
+                
+            # enqueue heavy processing (worker will compute checksum, canonicalize, create variants, etc.)
+            enqueue_process_simulate("process_image", {"product_image_public_id": product_image.public_id, "provider_asset_id": payload.get("asset_id") or payload.get("public_id")})
+            logger.info("Enqueued process_image for %s", product_image.public_id)
+
+            return Response(status_code=200)
+        except Exception:
+            logger.exception("Failed to update product_image or enqueue job")
+            # we still return 200 because webhook will be retried by Cloudinary; ensure idempotency in processing
+            return Response(status_code=200)
+    else:
+        # Couldn't map to a product_image — enqueue a mapping job for manual reconciliation
+        logger.warning("Could not map Cloudinary webhook to ProductImage (public_id=%s, folder=%s). Enqueuing unmapped job.", public_id, folder)
+        enqueue_process_simulate("process_unmapped_provider_event", {"provider_event_id": provider_event_id, "payload": payload})
+        return Response(status_code=200)
