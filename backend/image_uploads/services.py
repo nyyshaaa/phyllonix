@@ -127,7 +127,7 @@ class ImageUpload:
                 # optional: tell Cloudinary not to create unique filename (we use deterministic public_id)
                 "unique_filename": False,
                 # # optional: prevent accidental overwrite (set to True or False depending on workflow)
-                # "overwrite": "true" if overwrite else "false",
+                "overwrite": "false",
             },
             "expires_in": expires_in
         }

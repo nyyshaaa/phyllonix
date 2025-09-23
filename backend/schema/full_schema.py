@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import ARRAY, JSON, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
+from sqlalchemy import ARRAY, JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
 from uuid6 import uuid7
 from datetime import datetime
 from typing import Any, Dict, List, Optional 
@@ -310,6 +310,15 @@ class ProductCategory(SQLModel, table=True):
 
     products: List["Product"] = Relationship(back_populates="prod_categories", link_model=ProductCategoryLink)
 
+
+class ProviderWebhookEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider_event_id: str = Field(sa_column=Column(String(1000), nullable=False,unique=True))  # provider unique id (asset_id or public_id:version)
+    provider: str = Field(sa_column=Column(String(100), nullable=False))           # e.g. 'cloudinary'
+    payload: dict = Field(sa_column=Column(JSONB, nullable=False))
+    received_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    processed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
+    processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
 #---------------------------------------------------------------------------------------------------------
 

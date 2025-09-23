@@ -1,24 +1,28 @@
 
 import os
 import json
-import hashlib
-import hmac
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Request, HTTPException, Response, Depends
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from backend.db.dependencies import get_session
 from backend.image_uploads.dependency import validate_upload_signature
-from backend.products.routes import prods_admin_router
-from backend.schema.full_schema import ImageUploadStatus, ProductImage
+from backend.schema.full_schema import ProductImage
+from backend.config.media_config import CLOUDINARY_CALLBACK_ROUTE
+from backend.__init__ import logger
+
+uploads_router = APIRouter()
 
 
-@prods_admin_router.post("/webhooks/cloudinary")
+@uploads_router.post(f"/{CLOUDINARY_CALLBACK_ROUTE}")
 async def cloudinary_webhook(body_bytes=Depends(validate_upload_signature), session = Depends(get_session)):
     
     # parse JSON body now that signature is validated
-    payload = json.loads(body_bytes.decode("utf-8"))
 
+    try:
+        payload = json.loads(body_bytes.decode("utf-8"))
+    except Exception:
+        logger.exception("Invalid JSON payload")
+        raise HTTPException(status_code=400, detail="invalid json")
+   
     # dedupe provider webhook events: prefer asset_id if present or use public_id:version
     provider_event_id = payload.get("asset_id") or f"{payload.get('public_id')}:{payload.get('version')}"
 
