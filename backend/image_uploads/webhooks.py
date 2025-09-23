@@ -65,8 +65,4 @@ async def cloudinary_webhook(body_bytes=Depends(validate_upload_signature), sess
             logger.exception("Failed to update product_image or enqueue job")
             # we still return 200 because webhook will be retried by Cloudinary; ensure idempotency in processing
             return Response(status_code=200)
-    else:
-        # Couldn't map to a product_image — enqueue a mapping job for manual reconciliation
-        logger.warning("Could not map Cloudinary webhook to ProductImage (public_id=%s, folder=%s). Enqueuing unmapped job.", public_id, folder)
-        enqueue_process_simulate("process_unmapped_provider_event", {"provider_event_id": provider_event_id, "payload": payload})
-        return Response(status_code=200)
+    
