@@ -1,6 +1,11 @@
 import asyncio
+import functools
 import time
-from typing import Optional
+from typing import Callable, Optional
+
+from fastapi import Depends, FastAPI, HTTPException
+
+from backend.db.dependencies import get_session
 
 class CircuitOpenError(RuntimeError):
     pass
@@ -58,7 +63,43 @@ class CircuitBreaker:
             
 
 
+def guard_with_circuit(circuit: CircuitBreaker):
+    """Decorator that checks circuit before call and updates state after."""
+    def deco(fn: Callable):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            await circuit.before_call()
+            try:
+                result = await fn(*args, **kwargs)
+            except Exception:
+                await circuit.after_call(False)
+                raise
+            else:
+                await circuit.after_call(True)
+                return result
+        return wrapper
+    return deco
 
+# async def get_session_with_circuit(db_session=Depends(get_session), app: FastAPI = Depends(lambda: app)):
+#     """
+#     Use this dependency where your endpoint will touch DB.
+#     It checks the circuit BEFORE yielding the session and records success/failure AFTER.
+#     """
+#     cb = app.state.db_circuit
+#     try:
+#         await cb.before_call()
+#     except CircuitOpenError:
+#         # short-circuit
+#         raise HTTPException(status_code=503, detail="Database temporarily unavailable. Try again later.")
+#     try:
+#         yield db_session
+#     except Exception:
+#         # any unhandled exception that bubbled up — mark failure
+#         await cb.after_call(False)
+#         raise
+#     else:
+#         # success path
+#         await cb.after_call(True)
     
     
 
