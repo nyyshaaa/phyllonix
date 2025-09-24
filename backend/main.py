@@ -47,7 +47,7 @@ def create_app():
         # app.add_middleware(AdminGuardMiddleware)
     
 
-    app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth"])
+    # app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth"])
 
     register_all_exceptions(app)
     return app

@@ -5,7 +5,7 @@ import functools
 import random
 import socket
 from typing import Callable, Optional, Tuple, Type
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError,OperationalError,InterfaceError
 
 def _safe_name(obj) -> str:
     try:
@@ -38,13 +38,18 @@ def is_recoverable_exception(exc: BaseException) -> bool:
             name = _safe_name(orig).lower()
             if any(k in name for k in ("timeout", "connection", "brokenpipe", "connectionrefused", "connectionreset","interfaceerror", "operationalerror")):
                 return True
+            
+    if OperationalError and isinstance(exc, OperationalError):
+        return True
+    if InterfaceError and isinstance(exc, InterfaceError):
+        return True
 
     return False
 
 
 def retry_async(
     *,
-    attempts: int = 3,
+    attempts: int = 1,
     base_delay: float = 0.2,
     factor: float = 2.0,
     max_delay: float = 10.0,

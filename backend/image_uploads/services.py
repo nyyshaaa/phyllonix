@@ -5,17 +5,17 @@ from fastapi import HTTPException , status
 from sqlalchemy import select,  update
 from backend.schema.full_schema import ImageContent, ImageUploadStatus, ProductImage
 from sqlalchemy.exc import IntegrityError
-from backend.config.media_config import HASH_ALGO,FILE_SECRET_KEY,CLOUDINARY_API_SECRET,CLOUDINARY_API_KEY,CLOUDINARY_CLOUD_NAME
+from backend.config.media_config import media_settings
 from cloudinary.utils import api_sign_request
 from backend.__init__ import logger
 
-CLOUDINARY_UPLOAD_URL = f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload"
+CLOUDINARY_UPLOAD_URL = f"https://api.cloudinary.com/v1_1/{media_settings.CLOUDINARY_CLOUD_NAME}/image/upload"
 
 
 class ImageUpload:
     MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
     ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
-    FILE_SECRET_KEY = FILE_SECRET_KEY
+    FILE_SECRET_KEY = media_settings.FILE_SECRET_KEY
     FOLDER_PREFIX="images"
 
     def __init__(self,content_type,filesize,filename,checksum):
@@ -90,7 +90,7 @@ class ImageUpload:
         """
         msg = f"{prod_image_public_id}".encode()
         secret=ImageUpload.FILE_SECRET_KEY
-        hash_func = getattr(hashlib, HASH_ALGO)
+        hash_func = getattr(hashlib, media_settings.HASH_ALGO)
         h = hmac.new(secret.encode(), msg, hash_func).hexdigest()
         # take first 24 hex characters (12 bytes) to keep path shorter but collision-safe
         suffix = h[:24]
@@ -115,12 +115,12 @@ class ImageUpload:
         params_to_sign = {"public_id": unq_img_key, "timestamp": timestamp}
         folder=f"{ImageUpload.FOLDER_PREFIX}/{prod_image_public_id}"
         params_to_sign["folder"] = folder
-        signature = api_sign_request(params_to_sign, CLOUDINARY_API_SECRET)
+        signature = api_sign_request(params_to_sign, media_settings.CLOUDINARY_API_SECRET)
         response_params = {
             "provider": "cloudinary",
-            "upload_url": CLOUDINARY_UPLOAD_URL,
+            "upload_url": media_settings.CLOUDINARY_UPLOAD_URL,
             "params": {
-                "api_key": CLOUDINARY_API_KEY,
+                "api_key": media_settings.CLOUDINARY_API_KEY,
                 "timestamp": timestamp,
                 "signature": signature,
                 "public_id": unq_img_key,

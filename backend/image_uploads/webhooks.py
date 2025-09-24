@@ -7,11 +7,13 @@ from backend.db.dependencies import get_session
 from backend.image_uploads.dependency import validate_upload_signature
 from backend.image_uploads.repository import create_webhook_event, upload_prod_image_upload_status
 from backend.schema.full_schema import ProductImage
-from backend.config.media_config import CLOUDINARY_CALLBACK_ROUTE
+from backend.config.media_config import media_settings
 from backend.__init__ import logger
 from backend.image_uploads.services import enqueue_process_simulate
 
 uploads_router = APIRouter()
+
+CLOUDINARY_CALLBACK_ROUTE = media_settings.CLOUDINARY_CALLBACK_ROUTE  
 
 
 @uploads_router.post(f"/{CLOUDINARY_CALLBACK_ROUTE}")

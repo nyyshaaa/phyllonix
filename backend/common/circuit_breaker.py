@@ -33,7 +33,7 @@ class CircuitBreaker:
         async with self._lock:
             await self._maybe_transition()
 
-            if self.state == "OPEN":
+            if self._state == "OPEN":
                 raise CircuitOpenError(f"circuit {self.name} is open")
             
             # if HALF_OPEN or CLOSED we allow the call to proceed
