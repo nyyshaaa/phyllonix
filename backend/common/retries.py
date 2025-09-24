@@ -3,13 +3,20 @@ import asyncio
 from asyncio import TimeoutError as AsyncioTimeoutError
 import functools
 import random
+import socket
 from typing import Callable, Optional, Tuple, Type
 from sqlalchemy.exc import DBAPIError
 
+def _safe_name(obj) -> str:
+    try:
+        return type(obj).__name__
+    except Exception:
+        return ""
 
-def is_transient_exception(exc: BaseException) -> bool:
+
+def is_recoverable_exception(exc: BaseException) -> bool:
     """
-    Conservative transient detection:
+    Conservative retryable detection:
     - network/timeout errors
     - SQLAlchemy DBAPIError with connection_invalidated
     - asyncio.TimeoutError
@@ -17,7 +24,7 @@ def is_transient_exception(exc: BaseException) -> bool:
     """
 
     # common python timeouts/connections
-    if isinstance(exc, (AsyncioTimeoutError, ConnectionError)):
+    if isinstance(exc, (AsyncioTimeoutError, TimeoutError, socket.timeout, ConnectionError, OSError)):
         return True
 
     if isinstance(exc, DBAPIError):
@@ -27,8 +34,9 @@ def is_transient_exception(exc: BaseException) -> bool:
         # underlying driver errors often in exc.orig - be conservative:
         orig = getattr(exc, "orig", None)
         if orig is not None:
-            name = type(orig).__name__
-            if name.lower().startswith(("timeout", "connection", "interfaceerror", "operationalerror")):
+           
+            name = _safe_name(orig).lower()
+            if any(k in name for k in ("timeout", "connection", "brokenpipe", "connectionrefused", "connectionreset","interfaceerror", "operationalerror")):
                 return True
 
     return False
@@ -42,16 +50,17 @@ def retry_async(
     max_delay: float = 10.0,
     jitter: float = 0.2,
     retry_on: Optional[Tuple[Type[BaseException], ...]] = None,
-    only_if: Optional[Callable[[BaseException], bool]] = None,
+    if_retryable: Optional[Callable[[BaseException], bool]] = None,
 ):
     """
     Async exponential-backoff retry decorator with jitter.
 
     - attempts: total attempts including first.
-    - only_if: optional function(exc) -> bool to decide based on exception (e.g. is_transient_exception)
+    - if_retryable: optional function(exc) -> bool to decide based on exception (e.g. is_recoverable_exception)
     - retry_on: explicit exception classes to retry (if provided).
     """
-    retry_on = tuple(retry_on) if retry_on else None
+    if retry_on is not None:
+        retry_on = tuple(retry_on)
 
     def deco(fn: Callable):
         @functools.wraps(fn)
@@ -63,10 +72,10 @@ def retry_async(
                 except Exception as exc:
                     last_exc = exc
                     # check class
-                    if not isinstance(exc, retry_on):
+                    if retry_on is not None and not isinstance(exc, retry_on):
                         raise
                     # check predicate
-                    if only_if is not None and not only_if(exc):
+                    if if_retryable is not None and not if_retryable(exc):
                         raise
                     # compute delay
                     delay = min(max_delay, base_delay * (factor ** (attempt - 1)))

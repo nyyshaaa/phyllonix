@@ -8,7 +8,7 @@ from backend.auth.utils import create_access_token
 from backend.db.dependencies import get_session
 
 from backend.common.circuit_breaker import db_circuit, guard_with_circuit
-from backend.common.transient_retries import retry_async, is_transient_exception
+from backend.common.retries import retry_async, is_transient_exception
 
 auth_router=APIRouter()
 
