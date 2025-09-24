@@ -7,10 +7,15 @@ from backend.auth.services import create_user, issue_auth_tokens, provide_access
 from backend.auth.utils import create_access_token
 from backend.db.dependencies import get_session
 
+from backend.common.circuit_breaker import db_circuit, guard_with_circuit
+from backend.common.transient_retries import retry_async, is_transient_exception
+
 auth_router=APIRouter()
 
 #* sign in via both mobile or email(only email for now)
 @auth_router.post("/login")
+@guard_with_circuit(db_circuit)
+@retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, only_if=is_transient_exception)
 async def login_user(request:Request,payload:SignIn, device_session: Optional[str] = Depends(device_session_plain),session: AsyncSession = Depends(get_session)):
     
     access,refresh=await issue_auth_tokens(session,request,payload,device_session)
@@ -18,6 +23,8 @@ async def login_user(request:Request,payload:SignIn, device_session: Optional[st
 
 #* make phone necessary for signup when app grows (not added now because of otp prices)
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
+@guard_with_circuit(db_circuit)
+@retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, only_if=is_transient_exception)
 async def signup_user(payload: SignupIn=Depends(signup_validation), session: AsyncSession = Depends(get_session)):
     
     user_id=await create_user(session,payload)
@@ -28,6 +35,8 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
 
 
 @auth_router.post("/refresh")
+@guard_with_circuit(db_circuit)
+@retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, only_if=is_transient_exception)
 async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),
                    session=Depends(get_session)):
     

@@ -3,14 +3,10 @@ import functools
 import time
 from typing import Callable, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
-
-from backend.db.dependencies import get_session
-
 class CircuitOpenError(RuntimeError):
     pass
 
-
+#** make it less overprotective for half open state by allowing all concurrent calls to probe thes service in case of multiple server instances or high concurrency 
 class CircuitBreaker:
     """
     Simple async circuit breaker (in-memory). 
@@ -80,26 +76,9 @@ def guard_with_circuit(circuit: CircuitBreaker):
         return wrapper
     return deco
 
-# async def get_session_with_circuit(db_session=Depends(get_session), app: FastAPI = Depends(lambda: app)):
-#     """
-#     Use this dependency where your endpoint will touch DB.
-#     It checks the circuit BEFORE yielding the session and records success/failure AFTER.
-#     """
-#     cb = app.state.db_circuit
-#     try:
-#         await cb.before_call()
-#     except CircuitOpenError:
-#         # short-circuit
-#         raise HTTPException(status_code=503, detail="Database temporarily unavailable. Try again later.")
-#     try:
-#         yield db_session
-#     except Exception:
-#         # any unhandled exception that bubbled up — mark failure
-#         await cb.after_call(False)
-#         raise
-#     else:
-#         # success path
-#         await cb.after_call(True)
+
+db_circuit = CircuitBreaker(name="postgres", failure_threshold=3, recovery_timeout=10.0)
+
     
     
 
