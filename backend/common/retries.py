@@ -5,6 +5,7 @@ import functools
 import random
 import socket
 from typing import Callable, Optional, Tuple, Type
+from fastapi import HTTPException , status
 from sqlalchemy.exc import DBAPIError,OperationalError,InterfaceError
 
 def _safe_name(obj) -> str:
@@ -72,13 +73,14 @@ def retry_async(
         async def wrapper(*args, **kwargs):
             last_exc = None
             for attempt in range(1, attempts + 1):
+                print("retry here")
                 try:
                     return await fn(*args, **kwargs)
                 except Exception as exc:
                     last_exc = exc
                     # check class
                     if retry_on is not None and not isinstance(exc, retry_on):
-                        raise
+                        raise 
                     # check predicate
                     if if_retryable is not None and not if_retryable(exc):
                         raise
@@ -91,6 +93,6 @@ def retry_async(
                     # RETRIES_TOTAL.labels(operation=fn.__name__).inc()
                     await asyncio.sleep(sleep_for)
             # if we exit loop, re-raise last:
-            raise last_exc
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,detail=f"{type(last_exc).__name__}")
         return wrapper
     return deco

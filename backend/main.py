@@ -15,7 +15,7 @@ from backend.config.admin_config import admin_config
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    setup_logger()
+    # setup_logger()
     # base_pubsub=BasePubSubWorker()
     # base_pubsub.start()
 

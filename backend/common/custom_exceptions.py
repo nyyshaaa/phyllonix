@@ -44,7 +44,7 @@ def create_exception_handler(detail_fn: DetailFn) -> Callable[[Request, PhyllExc
 async def fallback_handler(request: Request, exc: Exception):
     
     body = {
-        "detail": getattr(exc, "detail", "Internal Server Error from fallback exception handler"),
+        "detail": "Internal Server Error from fallback exception handler",
         "error_type": type(exc).__name__
     }
     

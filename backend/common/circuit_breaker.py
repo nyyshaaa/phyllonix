@@ -1,5 +1,6 @@
 import asyncio
 import functools
+from fastapi import HTTPException
 import time
 from typing import Callable, Optional
 
@@ -34,7 +35,7 @@ class CircuitBreaker:
             await self._maybe_transition()
 
             if self._state == "OPEN":
-                raise CircuitOpenError(f"circuit {self.name} is open")
+                    raise HTTPException(status_code=500, detail=f"circuit {self.name} is open")
             
             # if HALF_OPEN or CLOSED we allow the call to proceed
             

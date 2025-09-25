@@ -54,21 +54,34 @@ async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-T
 
 @auth_router.get("/health")
 @guard_with_circuit(db_circuit)
-@retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def health_check(session=Depends(get_session)):
-    # raise InterfaceError("DB down", None, None)
+@retry_async(attempts=1, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
+async def health_check(session:AsyncSession=Depends(get_session)):
     stmt=select(1)
     
     try:
-        await session.execute(stmt)
+        res=await session.execute(stmt)
+        print(res.scalar_one_or_none())
+    except Exception as e:
+        raise e
+
+    return {"status": "healthy"}
+
+@auth_router.get("/retries_cb_test")
+@guard_with_circuit(db_circuit)
+@retry_async(attempts=1, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
+async def health_check(session:AsyncSession=Depends(get_session)):
+    stmt=select(1)
+    
+    try:
+        res=await session.execute(stmt)
+        print(res.scalar_one_or_none())
         print("heya")
-        raise OperationalError("DB Erroir",None,None)
-        
-        
+        raise OperationalError("DB Error",None,None)
+
     except (OperationalError, InterfaceError):
         print("neya")
-        raise HTTPException(status_code=503, detail="Database unavailable")
-    return {"status": "healthy"}
+        raise 
+    
     
 
 
