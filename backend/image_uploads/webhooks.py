@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import select
 from backend.db.dependencies import get_session
 from backend.image_uploads.dependency import validate_upload_signature
-from backend.image_uploads.repository import create_webhook_event, upload_prod_image_upload_status
+from backend.image_uploads.repository import create_webhook_event, update_prod_image_upload_status
 from backend.schema.full_schema import ProductImage
 from backend.config.media_config import media_settings
 from backend.__init__ import logger
@@ -52,7 +52,7 @@ async def cloudinary_webhook(body_bytes=Depends(validate_upload_signature), sess
     if product_image:
         try:
            
-            updated_id=await upload_prod_image_upload_status(session,product_image)
+            updated_id=await update_prod_image_upload_status(session,product_image)
 
             if not updated_id:
                 logger.error("Failed to update ProductImage status for id %s", product_image.id)

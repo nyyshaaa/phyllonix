@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, Request , status
 from backend.db.dependencies import get_session
-from backend.products.models import InitBatchImagesIn
+from backend.image_uploads.models import InitBatchImagesIn
 from backend.products.repository import product_by_public_id
 from backend.products.routes import prods_admin_router
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +23,13 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
     errors=[]
     
     for img in imgs_batch.images:
-        img_upload=ImageUpload(img.content_type,img.filesize,img.filename,img.checksum)
+        img_upload=ImageUpload(img.content_type,img.filesize,img.filename)
 
 
         try:
             prod_image = await img_upload.create_prod_image_link(session,product.id)
         except Exception:
+            #* log actual error
             errors.append( {"filename": img.filename,
                 "detail": "Internal Server Error while creating product image"})
             continue

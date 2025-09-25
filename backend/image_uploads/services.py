@@ -22,7 +22,6 @@ class ImageUpload:
         self.content_type=content_type
         self.filesize=filesize
         self.orig_filename=filename
-        self.checksum=checksum
         self.ext = self.orig_filename.split(".")[-1].lower() if "." in self.orig_filename else "jpg"
 
         self._validate_file()
@@ -54,7 +53,7 @@ class ImageUpload:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry") # integrity error can happen for same user or different user 
         
     
-    async def create_prod_image_link(self,session,product_id,user_id):
+    async def create_prod_image_link(self,session,product_id):
 
         stmt = select(ProductImage).where(
             ProductImage.product_id == product_id,
@@ -98,18 +97,20 @@ class ImageUpload:
     
     async def update_prod_img_storage_key(self,session,prod_image,uniq_img_key):
         storage_key=f"{self.FOLDER_PREFIX}/{prod_image.public_id}/{uniq_img_key}"
-        if prod_image.storage_key != storage_key:
-            stmt = (
-                update(ProductImage)
-                .where(ProductImage.id == prod_image.id)
-                .values(storage_key=storage_key)
-                .returning(ProductImage.id)
-            )
-            res=await session.execute(stmt)
-            await session.commit()
-            return res.scalar_one_or_none()
-        return True  
-    
+        if prod_image.storage_key == storage_key:
+            return True
+        
+        stmt = (
+            update(ProductImage)
+            .where(ProductImage.id == prod_image.id)
+            .values(storage_key=storage_key)
+            .returning(ProductImage.id)
+        )
+        res=await session.execute(stmt)
+        await session.commit()
+        return res.scalar_one_or_none()
+     
+
     async def cloudinary_upload_params(prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())
         params_to_sign = {"public_id": unq_img_key, "timestamp": timestamp}

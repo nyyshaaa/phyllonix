@@ -35,7 +35,7 @@ async def create_webhook_event(session, provider_event_id, payload):
     #     logger.exception("Unexpected error persisting provider webhook event %s", provider_event_id)
     #     raise HTTPException(status_code=500, detail="internal error")
 
-async def upload_prod_image_upload_status(session,product_image):
+async def update_prod_image_upload_status(session,product_image):
     # update fields
     stmt=(update(ProductImage).where(ProductImage.id == product_image.id).values(
         # provider_public_id = payload.get("asset_id") or public_id,
