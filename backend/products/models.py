@@ -23,8 +23,8 @@ class ProductUpdateIn(BaseModel):
     specs: Optional[Dict[str, Any]] = None
     category_ids: Optional[List[int]] = None  
 
-    class Config:
-        extra = "forbid"
+    class ConfigDict:
+        json_schema_extra = "forbid"
 
 class InitImageItem(BaseModel):
     filename: str

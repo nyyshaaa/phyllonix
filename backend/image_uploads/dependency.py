@@ -3,12 +3,13 @@
 from datetime import datetime, timezone
 import os
 from fastapi import HTTPException, Request
-from backend.config.media_config import CLOUDINARY_API_SECRET
+from backend.config.media_config import media_settings
 from backend.image_uploads.utils import compute_notification_signature_sha1
-from backend.image_uploads.webhooks import secure_compare
+from backend.image_uploads.utils import secure_compare
 
 MAX_WEBHOOK_AGE_SECONDS = int(os.getenv("CLOUDINARY_WEBHOOK_MAX_AGE", 2 * 60 * 60))
 
+CLOUDINARY_API_SECRET=media_settings.CLOUDINARY_API_SECRET
 
 
 async def validate_upload_signature(request:Request):

@@ -17,3 +17,7 @@ test_tokens.txt
 backend/api/default_roles.py
 
 client/
+
+test_users.py
+
+syntax_checks/
