@@ -45,9 +45,7 @@ async def update_prod_image_upload_status(session,product_image):
     res=res.first()
     return res
 
-async def get_image_by_cloud_pkey(session,provider_payload):
-    public_id = provider_payload.get("public_id")
-    folder = provider_payload.get("folder", "")
+async def get_image_by_cloud_pkey(session,public_id,folder):
 
     product_image = None
     if folder.startswith("images/"):
