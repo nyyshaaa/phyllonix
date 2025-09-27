@@ -30,7 +30,11 @@ async def cloudinary_webhook(body_bytes=Depends(validate_upload_signature), sess
     # dedupe provider webhook events: prefer asset_id if present or use public_id:version
     provider_event_id = payload.get("asset_id") or f"{payload.get('public_id')}:{payload.get('version')}"
 
-    event=await create_webhook_event(session,provider_event_id,payload)
+    event_row=await create_webhook_event(session,provider_event_id,payload)
+
+    if event_row.prcocessed_at:
+        logger.info("Event %s already processed at %s - skipping", provider_event_id, event_row.processed_at)
+        return Response(status_code=200)
 
     # Map payload to ProductImage row
     public_id = payload.get("public_id")
