@@ -14,16 +14,27 @@ async def create_webhook_event(session, provider_event_id, payload):
     event_row=None
     try:
         insert_sql = text("""
-            INSERT INTO provider_webhook_events (provider_event_id, provider, payload, received_at)
-            VALUES (:peid, :prov, :payload::jsonb, now())
+            INSERT INTO providerwebhookevent (provider_event_id, provider, payload, received_at)
+            VALUES (:peid, :prov, CAST(:payload AS jsonb), now())
             ON CONFLICT (provider_event_id) DO NOTHING
-            RETURNING id;
+            RETURNING id,processed_at;
         """)
         res = await session.execute(insert_sql, {"peid": provider_event_id, "prov": "cloudinary", "payload": json.dumps(payload)})
-        event_row = res.first()
         await session.commit()
+        event_row = res.first()
+
+        if event_row is None:
+            select_sql = text("""
+                SELECT id, processed_at FROM providerwebhookevent WHERE provider_event_id = :peid
+            """)
+            res = await session.execute(select_sql, {"peid": provider_event_id})
+            event_row = res.first()
+            await session.commit()
         return event_row
-    except IntegrityError:
+    
+    except IntegrityError as e:
+        print(e)
+        print("integrity issue")
         await session.rollback()
         return event_row
         
@@ -31,6 +42,7 @@ async def create_webhook_event(session, provider_event_id, payload):
         # Transient DB problem: log and return 5xx so provider retries
         logger.exception("Transient DB error while persisting webhook event %s - returning 500 to allow retry", provider_event_id)
         raise HTTPException(status_code=500, detail="temporary database error")
+    
 
 async def update_prod_image_upload_status(session,product_image):
     # update fields

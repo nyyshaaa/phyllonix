@@ -15,30 +15,33 @@ uploads_router = APIRouter()
 CLOUDINARY_CALLBACK_ROUTE = media_settings.CLOUDINARY_CALLBACK_ROUTE  
 
 
-@uploads_router.post(f"/{CLOUDINARY_CALLBACK_ROUTE}")
+@uploads_router.post(f"/webhook/cloudinary")
 async def cloudinary_webhook(request:Request,body_bytes=Depends(validate_upload_signature), session = Depends(get_session)):
-    
+    logger.info("Cloudinary webhook here")
     # parse JSON body now that signature is validated
 
     app=request.app
 
     try:
         payload = json.loads(body_bytes.decode("utf-8"))
+        # logger.info("Cloudinary webhook received: %s", payload)
     except Exception:
         logger.exception("Invalid JSON payload")
         raise HTTPException(status_code=400, detail="invalid json")
    
     # dedupe provider webhook events: prefer asset_id if present or use public_id:version
-    provider_event_id = payload.get("asset_id") or f"{payload.get('public_id')}:{payload.get('version')}"
+    provider_event_id = payload.get("asset_id") or f"{payload.get('display_name')}:{payload.get('version')}"
 
     event_row=await create_webhook_event(session,provider_event_id,payload)
 
-    if event_row.prcocessed_at:
+    print(event_row)
+
+    if event_row[1]:
         logger.info("Event %s already processed at %s - skipping", provider_event_id, event_row.processed_at)
         return Response(status_code=200)
 
     # Map payload to ProductImage row
-    public_id = payload.get("public_id")
+    public_id = payload.get("display_name")
     folder = payload.get("folder", "")  # if you set folder param in init it should be images/<product_img_public_id>
     product_image = None
 
@@ -54,10 +57,10 @@ async def cloudinary_webhook(request:Request,body_bytes=Depends(validate_upload_
                 raise HTTPException(status_code=500, detail="Failed to update product image status")
             
             event="product_image_uploaded"
-            data={"payload":payload,"event_id":event_row.id,"product_image":product_image}
+            data={"payload":payload,"event_id":event_row[0],"product_image":product_image}
 
             # enqueue heavy processing (worker will compute checksum, canonicalize, create variants, etc.)
-            app.pubsub_pub(event,data)
+            app.state.pubsub_pub(event,data)
             logger.info("Enqueued process_image for %s", product_image.public_id)
 
             return Response(status_code=200)

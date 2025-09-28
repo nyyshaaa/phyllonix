@@ -18,7 +18,7 @@ class ImageUpload:
     FILE_SECRET_KEY = media_settings.FILE_SECRET_KEY
     FOLDER_PREFIX="images"
 
-    def __init__(self,content_type,filesize,filename,checksum):
+    def __init__(self,content_type,filesize,filename):
         self.content_type=content_type
         self.filesize=filesize
         self.orig_filename=filename
@@ -111,15 +111,16 @@ class ImageUpload:
         return res.scalar_one_or_none()
      
 
-    async def cloudinary_upload_params(prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
+    async def cloudinary_upload_params(self,prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())
-        params_to_sign = {"public_id": unq_img_key, "timestamp": timestamp}
+        params_to_sign = {"public_id": unq_img_key, "timestamp": str(timestamp),"unique_filename": "false",
+        "overwrite": "false",}
         folder=f"{ImageUpload.FOLDER_PREFIX}/{prod_image_public_id}"
         params_to_sign["folder"] = folder
         signature = api_sign_request(params_to_sign, media_settings.CLOUDINARY_API_SECRET)
         response_params = {
             "provider": "cloudinary",
-            "upload_url": media_settings.CLOUDINARY_UPLOAD_URL,
+            "upload_url": CLOUDINARY_UPLOAD_URL,
             "params": {
                 "api_key": media_settings.CLOUDINARY_API_KEY,
                 "timestamp": timestamp,
@@ -129,7 +130,7 @@ class ImageUpload:
                 # optional: tell Cloudinary not to create unique filename (we use deterministic public_id)
                 "unique_filename": False,
                 # # optional: prevent accidental overwrite (set to True or False depending on workflow)
-                "overwrite": "false",
+                "overwrite": False,
             },
             "expires_in": expires_in
         }

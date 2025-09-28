@@ -30,13 +30,13 @@ class BasePubSubWorker():
         self.register_subscribers()
 
     def register_subscribers(self):
-        img_upload_handler=self.handlers["image_uploaded"]
-        self.subscribe("image_uploaded",img_upload_handler.thumbgen)
-        self.subscribe("image_uploaded",img_upload_handler.log_analytics)
-        self.subscribe("image_uploaded",img_upload_handler.notify_admin)
+        # img_upload_handler=self.handlers["image_uploaded"]
+        # self.subscribe("image_uploaded",img_upload_handler.thumbgen)
+        # self.subscribe("image_uploaded",img_upload_handler.log_analytics)
+        # self.subscribe("image_uploaded",img_upload_handler.notify_admin)
 
         img_process_handler=self.handlers["product_image_uploaded"]
-        self.subscribe("product_image_uploaded", img_process_handler.handle)
+        self.subscribe("product_image_uploaded", img_process_handler.compute_checksum_and_update_status)
 
     def _handler_key(self,fn):
         return (getattr(fn,"__self__",None),getattr(fn,"__func__",fn))

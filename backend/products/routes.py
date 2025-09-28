@@ -8,10 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.products.repository import patch_product, product_by_public_id, replace_catgs, validate_catgs
 from backend.products.services import create_product_with_catgs
+from backend.image_uploads.routes import prod_images_router
 
 
 prods_public_router=APIRouter()
 prods_admin_router=APIRouter()
+
+prods_admin_router.include_router(prod_images_router)
 
 @prods_admin_router.post("/", dependencies=[require_permissions("product:create")])
 async def create_product(request:Request,payload: ProductCreateIn, session: AsyncSession = Depends(get_session)):

@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import json
 import os
 import tempfile ,aiofiles
 from typing import Tuple
@@ -10,11 +9,12 @@ from backend.__init__ import logger
 from backend.schema.full_schema import ImageContent, ImageUploadStatus, ProviderWebhookEvent
 from sqlalchemy import text, select
 from backend.db.connection import async_session
+from backend.common.utils import now
 
 class ImageTransformHandler():
  
-    def __init__(self, max_download_size: int = 50 * 1024 * 1024, http_retries: int = 2):
-            self.max_download_size = max_download_size
+    def __init__(self, max_bytes: int = 50 * 1024 * 1024, http_retries: int = 2):
+            self.max_bytes = max_bytes
             self.http_retries = http_retries
 
     async def compute_checksum_and_update_status(self,event,w_name):
@@ -29,7 +29,7 @@ class ImageTransformHandler():
             event_row=None
 
             try:
-                stmt = text("SELECT id, processed_at, attempts FROM provider_webhook_events WHERE event_id = :eid FOR UPDATE")
+                stmt = text("SELECT id, processed_at, attempts FROM providerwebhookevent WHERE id = :eid FOR UPDATE")
                 res = await session.execute(stmt, {"eid": event_id})  
                 event_row=res.first()
             except Exception:
@@ -63,7 +63,7 @@ class ImageTransformHandler():
         if product_image.content_id is not None and product_image.status == ImageUploadStatus.READY:
             logger.info("[%s] product_image %s already processed (content_id=%s) — skipping", w_name, product_image.id, product_image.content_id)
             # Mark event processed for safety:
-            await session.execute(text("UPDATE provider_webhook_events SET processed_at = now() WHERE id = :id"), {"id": evt_id})
+            await session.execute(text("UPDATE providerwebhookevent SET processed_at = now() WHERE id = :id"), {"id": evt_id})
             await session.commit()
             return
         
@@ -81,7 +81,7 @@ class ImageTransformHandler():
                 await asyncio.sleep(1 + attempt * 2)
         if checksum is None:
             # record failure attempts and potentially escalate
-            await session.execute(text("UPDATE provider_webhook_events SET attempts = COALESCE(attempts,0)+1 WHERE id = :id"), {"id": evt_id})
+            await session.execute(text("UPDATE providerwebhookevent SET attempts = COALESCE(attempts,0)+1 WHERE id = :id"), {"id": evt_id})
             await session.commit()
             logger.exception("[%s] failed to download content for %s after retries", w_name, evt_id)
             # optionally push to DLQ after few retries if still fails
@@ -89,35 +89,29 @@ class ImageTransformHandler():
         
     async def image_content_insert(self,session,product_image,provider_payload,checksum,w_name):
         try:
-            insert_sql = text("""
-                INSERT INTO imagecontent (checksum, provider_public_id, url, meta)
-                VALUES (:checksum, :ppid, :url, :meta::jsonb)
-                ON CONFLICT (checksum) DO NOTHING
-                RETURNING id, public_id;
-            """)
-            meta = {}  # add whatever metadata you want: width, height, format
-            res = await session.execute(insert_sql, {
-                "checksum": checksum,
-                "ppid": provider_payload.get("asset_id") or provider_payload.get("public_id"),
-                "url": provider_payload.get("secure_url") or provider_payload.get("url"),
-                "meta": json.dumps(meta)
-            })
-            row = res.first()
-            if row:
-                content_id = row[0]
-                content_public_id = row[1]
-            else:
-                # someone else created canonical row: select it
-                sel = select(ImageContent).where(ImageContent.checksum == checksum)
-                res = await session.execute(sel)
-                existing = res.scalar_one_or_none()
-                if not existing:
-                    # This is unexpected but handle gracefully
+            image_content = ImageContent(
+                checksum=checksum,
+                provider_public_id=provider_payload.get("asset_id") or provider_payload.get("display_name"),
+                url=provider_payload.get("secure_url") or provider_payload.get("url")
+            )
+            session.add(image_content)
+            try:
+                await session.commit()
+                await session.refresh(image_content)
+                content_id = image_content.id
+                content_public_id = image_content.public_id
+            except Exception as e:
+                await session.rollback()
+                # If insert failed due to conflict, fetch existing row
+                existing = await session.execute(
+                    select(ImageContent).where(ImageContent.checksum == checksum)
+                )
+                image_content_obj = existing.scalar_one_or_none()
+                if not image_content_obj:
                     logger.exception("[%s] canonical imagecontent missing after insert conflict for %s", w_name, checksum)
-                    # create fallback or raise
                     raise RuntimeError("canonical imagecontent missing")
-                content_id = existing.id
-                content_public_id = existing.public_id
+                content_id = image_content_obj.id
+                content_public_id = image_content_obj.public_id
 
             return content_id
 
@@ -125,21 +119,18 @@ class ImageTransformHandler():
             logger.exception("[%s] failed to upsert/select imagecontent for %s", w_name, checksum)
             raise
 
-    async def link_to_prod_img(self,session,product_image,content_id,evt_id,w_name):
+    async def link_to_prod_img(self, session, product_image, content_id, evt_id, w_name):
         try:
-            await session.execute(text("""
-                UPDATE product_image
-                SET content_id = :cid,
-                    status = :ready,
-                    processed_at = now()
-                WHERE id = :pid AND content_id IS NULL
-            """), {"cid": content_id, "ready": ImageUploadStatus.READY, "pid": product_image.id})
-            # mark event processed
-            await session.execute(text("""
-                UPDATE provider_webhook_events
-                SET processed_at = now()
-                WHERE id = :id
-            """), {"id": evt_id})
+            product_image.content_id = content_id
+            product_image.status = ImageUploadStatus.READY
+            session.add(product_image)
+
+            # ORM style update for providerwebhookevent
+            webhook_event = await session.get(ProviderWebhookEvent, evt_id)
+            if webhook_event:
+                webhook_event.processed_at = now()
+                session.add(webhook_event)
+
             await session.commit()
         except Exception:
             await session.rollback()

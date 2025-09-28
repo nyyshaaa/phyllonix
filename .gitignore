@@ -21,3 +21,5 @@ client/
 test_users.py
 
 syntax_checks/
+
+assets/

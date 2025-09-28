@@ -15,17 +15,17 @@ from backend.config.admin_config import admin_config
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    # setup_logger()
-    # base_pubsub=BasePubSubWorker()
-    # base_pubsub.start()
+    setup_logger()
+    base_pubsub=BasePubSubWorker()
+    base_pubsub.start()
 
-    # app.state.pubsub_pub=base_pubsub.publish
+    app.state.pubsub_pub=base_pubsub.publish
 
     try:
         yield
     finally:
         # at this point new requests accept has been stopped already before calling shutdown
-        # await base_pubsub.shutdown()
+        await base_pubsub.shutdown()
         # safe to dispose DB engine after workers exit
         await async_engine.dispose()
 
@@ -47,9 +47,10 @@ def create_app():
         # app.add_middleware(AdminGuardMiddleware)
     
 
-    # app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth"])
+    app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth",
+                                                                             f"{version_prefix}/admin/uploads"])
 
-    register_all_exceptions(app)
+    # register_all_exceptions(app)
     return app
 
 app=create_app()
