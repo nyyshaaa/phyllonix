@@ -36,7 +36,7 @@ async def create_webhook_event(session, provider_event_id, payload):
         print(e)
         print("integrity issue")
         await session.rollback()
-        return event_row
+        logger.exception(f"{e} error while persisting webhook event %s - returning 500 to allow retry", provider_event_id)
         
     except (OperationalError, DatabaseError) as db_err:
         # Transient DB problem: log and return 5xx so provider retries

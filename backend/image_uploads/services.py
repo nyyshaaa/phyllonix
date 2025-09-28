@@ -137,20 +137,3 @@ class ImageUpload:
         return response_params
     
 
-async def enqueue_process_simulate(job_name: str, payload: dict):
-    
-    pass
-    
-    logger.info(f"Simulated enqueue job {job_name} with payload {payload}")
-    
-    # Fetch ProductImage by public_id (or id) and ensure status is UPLOADED and has a url or provider_public_id.
-    # Download asset from provider (Cloudinary secure_url) or via provider API (use retries, timeouts).
-    # Insert into ImageContent:
-    #     INSERT INTO imagecontent (checksum, owner_id, public_id, provider_public_id, url, meta, created_at) VALUES (...) ON CONFLICT (checksum) DO NOTHING RETURNING id, public_id;
-    #     If conflict (row exists), SELECT id, public_id of the existing canonical row.
-    # Link ProductImage.content_id to the canonical imagecontent.id and set status = READY (or whatever final status), update processed_at
-    # Generate variants (thumbnails, webp, etc.) via image processing pipeline (enqueue sub-jobs for CPU-bound processing / CDN invalidation).
-    # Persist variants metadata into ProductImage.variants or ImageContent.meta as appropriate.
-    # Update caches / CDN: invalidate or pre-warm if necessary.
-    # Metrics/logging: emit processing duration, success/failure, upload sizes, dedupe counts.
-    # Cleanup: if the worker detects duplicate provider assets (multiple ProductImage rows mapping to same imagecontent), either mark duplicates as linking to same content and optionally schedule deletion of provider duplicate assets (if you plan to cleanup provider storage).
