@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
-from backend.auth.repository import get_user_role_names, identify_device_session, identify_user, save_refresh_token,  user_id_by_email
+from backend.auth.repository import get_user_role_ids, identify_device_session, identify_user, save_refresh_token,  user_id_by_email
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_session_token_plain, verify_password
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
@@ -98,7 +98,6 @@ async def save_device_state(session,request,user_id,payload):
 async def issue_auth_tokens(session,request,payload,device_session):
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
-    print("user_id",user_id)
     
     session_id=None
     if device_session:
@@ -113,7 +112,7 @@ async def issue_auth_tokens(session,request,payload,device_session):
     
     await session.commit()
     # create access token with public_id
-    user_roles=await get_user_role_names(session,user_id)
+    user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
 
     return access_token,refresh_token
@@ -129,12 +128,11 @@ async def validate_refresh_and_fetch_user(session,plain_token):
         select(
             Users.public_id.label("public_id"),
             Users.role_version,
-            Role.name.label("role_name")
+            UserRole.role_id.label("role_id")
         )
         .select_from(DeviceAuthToken)
         .join(Users, Users.id == DeviceAuthToken.user_id)
         .join(UserRole, UserRole.user_id == Users.id)
-        .join(Role, Role.id == UserRole.role_id)
         .where(
             DeviceAuthToken.token_hash == hashed_token,
             DeviceAuthToken.revoked_at.is_(None),
@@ -150,18 +148,18 @@ async def validate_refresh_and_fetch_user(session,plain_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired refresh token")
     
     first=rows[0]
-    role_names=[r[1] for r in rows]
+    role_ids=[r[2] for r in rows]
     
     return {
         "user_public_id": first.public_id,
         "role_version":first.role_version,
-        "role_names": role_names
+        "role_ids": role_ids
     }
 
 async def provide_access_token(claims_dict):
     
     access_token = create_access_token(user_id=claims_dict["user_public_id"], 
-                                       user_roles=claims_dict["role_names"],role_version=claims_dict["role_version"])
+                                       user_roles=claims_dict["role_ids"],role_version=claims_dict["role_version"])
     return access_token
     
 

@@ -54,8 +54,8 @@ async def save_refresh_token(session,ds_id,user_id):
     print("refresh plain",refresh_plain)
     return refresh_plain
 
-async def get_user_role_names(session,user_id):
-    stmt=select(Role.name).join(UserRole,Role.id==UserRole.role_id).where(UserRole.user_id==user_id)
+async def get_user_role_ids(session,user_id):
+    stmt=select(Role.id).join(UserRole,Role.id==UserRole.role_id).where(UserRole.user_id==user_id)
     result = await session.execute(stmt)
     return result.scalars().all()
 

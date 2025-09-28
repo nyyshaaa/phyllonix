@@ -56,4 +56,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             request.state.role_version=role_version
 
 
+            print(user_roles)
+
+
         return await call_next(request)

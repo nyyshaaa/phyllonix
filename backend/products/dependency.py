@@ -11,15 +11,12 @@ def require_permissions(perm:str):
     async def _checker(request: Request,
         session: AsyncSession = Depends(get_session),):
         user_roles=set(request.state.user_roles)
-
-        print("user_roles",user_roles)
         
         # check if the required permisssion belongs to any user roles .
         stmt=(
-            select(Role.id)
-            .join(RolePermission, Role.id == RolePermission.role_id)
+            select(RolePermission.id)
             .join(Permission, Permission.id == RolePermission.permission_id)
-            .where(Permission.name == 'product:create',Role.name.in_(list(user_roles))).limit(1)
+            .where(Permission.name == 'product:create',RolePermission.role_id.in_(list(user_roles))).limit(1)
         )
         
         res=await session.execute(stmt)
