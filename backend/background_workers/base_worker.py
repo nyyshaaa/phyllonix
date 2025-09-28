@@ -1,7 +1,7 @@
-
 import asyncio
 from typing import Any, Dict, Optional
 from backend.__init__ import logger
+from backend.background_workers.image_tansform_handler import ImageTransformHandler
 from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
 
 SENTINEL = None  # queue sentinel
@@ -13,7 +13,7 @@ class BasePubSubWorker():
         self.workers_count:int=workers_count
         self._processed = 0
         self.subscribers={}
-        self.handlers={"image_uploaded":ThumbnailTaskHandler()}
+        self.handlers={"image_uploaded":ThumbnailTaskHandler(),"product_image_uploaded":ImageTransformHandler()}
         
     
     def start(self):
@@ -30,10 +30,13 @@ class BasePubSubWorker():
         self.register_subscribers()
 
     def register_subscribers(self):
-        img_upload_handler=self.handlers["image_uploaded"]
-        self.subscribe("image_uploaded",img_upload_handler.thumbgen)
-        self.subscribe("image_uploaded",img_upload_handler.log_analytics)
-        self.subscribe("image_uploaded",img_upload_handler.notify_admin)
+        # img_upload_handler=self.handlers["image_uploaded"]
+        # self.subscribe("image_uploaded",img_upload_handler.thumbgen)
+        # self.subscribe("image_uploaded",img_upload_handler.log_analytics)
+        # self.subscribe("image_uploaded",img_upload_handler.notify_admin)
+
+        img_process_handler=self.handlers["product_image_uploaded"]
+        self.subscribe("product_image_uploaded", img_process_handler.compute_checksum_and_update_status)
 
     def _handler_key(self,fn):
         return (getattr(fn,"__self__",None),getattr(fn,"__func__",fn))
@@ -112,11 +115,3 @@ class BasePubSubWorker():
         #** can use asyncio.gather here
         for subfn in self.subscribers.get(task["event"],[]):
             await subfn(task["data"],name)
-            
-        
-    
-       
-            
-    
-
-

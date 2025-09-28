@@ -18,11 +18,10 @@ class ImageUpload:
     FILE_SECRET_KEY = media_settings.FILE_SECRET_KEY
     FOLDER_PREFIX="images"
 
-    def __init__(self,content_type,filesize,filename,checksum):
+    def __init__(self,content_type,filesize,filename):
         self.content_type=content_type
         self.filesize=filesize
         self.orig_filename=filename
-        self.checksum=checksum
         self.ext = self.orig_filename.split(".")[-1].lower() if "." in self.orig_filename else "jpg"
 
         self._validate_file()
@@ -54,7 +53,7 @@ class ImageUpload:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry") # integrity error can happen for same user or different user 
         
     
-    async def create_prod_image_link(self,session,product_id,user_id):
+    async def create_prod_image_link(self,session,product_id):
 
         stmt = select(ProductImage).where(
             ProductImage.product_id == product_id,
@@ -98,27 +97,30 @@ class ImageUpload:
     
     async def update_prod_img_storage_key(self,session,prod_image,uniq_img_key):
         storage_key=f"{self.FOLDER_PREFIX}/{prod_image.public_id}/{uniq_img_key}"
-        if prod_image.storage_key != storage_key:
-            stmt = (
-                update(ProductImage)
-                .where(ProductImage.id == prod_image.id)
-                .values(storage_key=storage_key)
-                .returning(ProductImage.id)
-            )
-            res=await session.execute(stmt)
-            await session.commit()
-            return res.scalar_one_or_none()
-        return True  
-    
-    async def cloudinary_upload_params(prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
+        if prod_image.storage_key == storage_key:
+            return True
+        
+        stmt = (
+            update(ProductImage)
+            .where(ProductImage.id == prod_image.id)
+            .values(storage_key=storage_key)
+            .returning(ProductImage.id)
+        )
+        res=await session.execute(stmt)
+        await session.commit()
+        return res.scalar_one_or_none()
+     
+
+    async def cloudinary_upload_params(self,prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())
-        params_to_sign = {"public_id": unq_img_key, "timestamp": timestamp}
+        params_to_sign = {"public_id": unq_img_key, "timestamp": str(timestamp),"unique_filename": "false",
+        "overwrite": "false",}
         folder=f"{ImageUpload.FOLDER_PREFIX}/{prod_image_public_id}"
         params_to_sign["folder"] = folder
         signature = api_sign_request(params_to_sign, media_settings.CLOUDINARY_API_SECRET)
         response_params = {
             "provider": "cloudinary",
-            "upload_url": media_settings.CLOUDINARY_UPLOAD_URL,
+            "upload_url": CLOUDINARY_UPLOAD_URL,
             "params": {
                 "api_key": media_settings.CLOUDINARY_API_KEY,
                 "timestamp": timestamp,
@@ -128,27 +130,10 @@ class ImageUpload:
                 # optional: tell Cloudinary not to create unique filename (we use deterministic public_id)
                 "unique_filename": False,
                 # # optional: prevent accidental overwrite (set to True or False depending on workflow)
-                "overwrite": "false",
+                "overwrite": False,
             },
             "expires_in": expires_in
         }
         return response_params
     
 
-async def enqueue_process_simulate(job_name: str, payload: dict):
-    
-    pass
-    
-    logger.info(f"Simulated enqueue job {job_name} with payload {payload}")
-    
-    # Fetch ProductImage by public_id (or id) and ensure status is UPLOADED and has a url or provider_public_id.
-    # Download asset from provider (Cloudinary secure_url) or via provider API (use retries, timeouts).
-    # Insert into ImageContent:
-    #     INSERT INTO imagecontent (checksum, owner_id, public_id, provider_public_id, url, meta, created_at) VALUES (...) ON CONFLICT (checksum) DO NOTHING RETURNING id, public_id;
-    #     If conflict (row exists), SELECT id, public_id of the existing canonical row.
-    # Link ProductImage.content_id to the canonical imagecontent.id and set status = READY (or whatever final status), update processed_at
-    # Generate variants (thumbnails, webp, etc.) via image processing pipeline (enqueue sub-jobs for CPU-bound processing / CDN invalidation).
-    # Persist variants metadata into ProductImage.variants or ImageContent.meta as appropriate.
-    # Update caches / CDN: invalidate or pre-warm if necessary.
-    # Metrics/logging: emit processing duration, success/failure, upload sizes, dedupe counts.
-    # Cleanup: if the worker detects duplicate provider assets (multiple ProductImage rows mapping to same imagecontent), either mark duplicates as linking to same content and optionally schedule deletion of provider duplicate assets (if you plan to cleanup provider storage).

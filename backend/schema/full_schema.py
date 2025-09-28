@@ -261,7 +261,7 @@ class ProductImage(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False, index=True))
-    content_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("imagecontent.id", ondelete="CASCADE"), nullable=False))
+    content_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("imagecontent.id", ondelete="CASCADE"), nullable=True))
     
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     storage_key: str = Field(sa_column=Column(String(1024), nullable=True,unique=True), description="bucket key (not public URL)")
@@ -290,7 +290,7 @@ class ImageContent(SQLModel, table=True):
     """
     id: Optional[int] = Field(default=None, primary_key=True)
     checksum: str = Field(sa_column=Column(String(128), nullable=False, unique=True), description="sha256 hex")
-    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True))
+    # owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True))
     public_id:uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     provider_public_id: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
@@ -314,11 +314,12 @@ class ProductCategory(SQLModel, table=True):
 class ProviderWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     provider_event_id: str = Field(sa_column=Column(String(1000), nullable=False,unique=True))  # provider unique id (asset_id or public_id:version)
-    provider: str = Field(sa_column=Column(String(100), nullable=False))           # e.g. 'cloudinary'
+    provider: str = Field(sa_column=Column(String(100), nullable=True))           # e.g. 'cloudinary'
     payload: dict = Field(sa_column=Column(JSONB, nullable=False))
     received_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-    processed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
+    # processed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    attempts: Optional[int] = Field(default=0, sa_column=Column(Integer, nullable=True))
 
 #---------------------------------------------------------------------------------------------------------
 
