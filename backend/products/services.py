@@ -28,7 +28,7 @@ async def create_product_with_catgs(session,payload,user_id):
 
         await session.commit()
         await session.refresh(product)
-    except IntegrityError:
+    except IntegrityError as e:
         await session.rollback()
         res = await session.execute(
             select(Product).where(Product.owner_id == user_id, Product.name == payload.name)

@@ -235,7 +235,7 @@ class Product(SQLModel, table=True):
         description="Flexible product specs JSON (e.g. { 'weight_g': 500, 'flavor': 'saffron' })",
     )
 
-    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True,unique=True))
+    owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True))
     # audit fields(in case admin creates  a product on behalf of sa seller)
     # created_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
     # updated_by: Optional[int] = Field(foreign_key="user.id", nullable=True)

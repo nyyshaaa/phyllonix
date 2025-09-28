@@ -43,6 +43,7 @@ def validate_password(password: str, min_length: int = 8) -> tuple[bool, str]:
 def create_access_token(user_id,user_roles,role_version,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
     now=datetime.now(timezone.utc)
     expiry= now + (timedelta(minutes=expires_dur))
+    
     payload = {
         "sub": str(user_id),
         "iat": int(now.timestamp()),
