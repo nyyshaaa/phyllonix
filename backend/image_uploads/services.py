@@ -14,15 +14,16 @@ CLOUDINARY_UPLOAD_URL = f"https://api.cloudinary.com/v1_1/{media_settings.CLOUDI
 
 class ImageUpload:
     MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
-    ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+    ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
     FILE_SECRET_KEY = media_settings.FILE_SECRET_KEY
     FOLDER_PREFIX="images"
 
-    def __init__(self,content_type,filesize,filename):
+    def __init__(self,content_type,filesize,filename,sort_order):
         self.content_type=content_type
         self.filesize=filesize
         self.orig_filename=filename
         self.ext = self.orig_filename.split(".")[-1].lower() if "." in self.orig_filename else "jpg"
+        self.sort_order=sort_order
 
         self._validate_file()
 
@@ -58,8 +59,7 @@ class ImageUpload:
         stmt = select(ProductImage).where(
             ProductImage.product_id == product_id,
             ProductImage.orig_filename == self.orig_filename,
-            ProductImage.file_size == self.filesize,
-            ProductImage.status == ImageUploadStatus.PENDING_UPLOADED
+            ProductImage.file_size == self.filesize
         ).limit(1)
         res = await session.execute(stmt)
         existing = res.scalar_one_or_none()
@@ -74,7 +74,8 @@ class ImageUpload:
             file_size=self.filesize,
             checksum=None,
             status=ImageUploadStatus.PENDING_UPLOADED,
-            orig_filename=self.orig_filename
+            orig_filename=self.orig_filename,
+            sort_order=self.sort_order
         )
         
         session.add(image)

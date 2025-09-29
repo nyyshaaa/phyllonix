@@ -23,7 +23,7 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
     errors=[]
     
     for img in imgs_batch.images:
-        img_upload=ImageUpload(img.content_type,img.filesize,img.filename)
+        img_upload=ImageUpload(img.content_type,img.filesize,img.filename,img.sort_order)
 
 
         try:
