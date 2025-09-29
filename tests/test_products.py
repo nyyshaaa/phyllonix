@@ -1,18 +1,8 @@
-import asyncio
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from asgi_lifespan import LifespanManager
 from backend.main import app
-from backend.db import dependencies as db_deps
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from backend.schema.full_schema import Users, ProductCategory, Product, ProductImage, ImageContent
-from backend.auth.services import hash_password
-from backend.schema.full_schema import Credential, CredentialType, Role, UserRole, Permission, RolePermission
-from backend.auth.utils import create_access_token
-from backend.db.connection import async_session
-import uuid
-from test_tokens import admin_access_token,api_base_url
 
 url_prefix = "/api/v1"
 
