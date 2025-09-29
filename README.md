@@ -7,8 +7,10 @@ The project is inspired by two goals:
 
 > DB Design Plan --
 https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
+
 > Image uploads plan and notes --
 https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083a016fdd43bdcd15d
+
 
 
 
