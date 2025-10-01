@@ -345,11 +345,11 @@ class Cart(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True),
+        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True,unique= True),
     )
     session_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("devicesession.id", ondelete="SET NULL"), nullable=True, index=True),
+        sa_column=Column(ForeignKey("devicesession.id", ondelete="SET NULL"), nullable=True, index=True,unique=True),
     )
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
