@@ -43,8 +43,7 @@ class Users(SQLModel, table=True):
     session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")
     roles: List["Role"] = Relationship(back_populates="user",link_model=UserRole)
     media:"UserMedia" = Relationship(back_populates="user")
-    # user_cart: Cart = Relationship(back_populates="user") # user -> cart (1:1)
-    # wishlist: Wishlist = Relationship(back_populates="user")
+    cart: "Cart" = Relationship(back_populates="users") # user -> cart (1:1)
     # orders: List["Order"] = Relationship(back_populates="user")
 
 class UserMedia(SQLModel,table=True):
@@ -149,6 +148,8 @@ class DeviceSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     # hashed session token (e.g., sha256 hex = 64 chars) - unique so no duplicate tokens
     session_token_hash: str = Field(sa_column=Column(String(128), nullable=False, unique=True, index=True))
+    user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
+            index=True,nullable=True))
 
     # metadata...
     device_name: Optional[str] = Field(default=None, sa_column=Column(String(128)))
@@ -335,3 +336,43 @@ class RoleAudit(SQLModel, table=True):
 
 
 
+#-----------------------------------------------------------------------------------------------------------
+
+# CARTS — Persist carts server-side (DB/Redis) so they survive page reloads and can merge on login
+# user / userphone to cart (1:1)
+# hard delete cart items after some retention window when not used for a longgg time 
+class Cart(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True),
+    )
+    session_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(ForeignKey("devicesession.id", ondelete="SET NULL"), nullable=True, index=True),
+    )
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+
+
+    user: Optional["Users"] = Relationship(back_populates="cart")   # (guest cart)a cart may have no user 
+    cart_items: List["CartItem"] = Relationship(back_populates="cart")
+
+# set deleted_at when item is added to order , hard delete after some time .
+# CartItem is like join table as well for product and cart (product <--> cart many to many)
+class CartItem(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cart_id: Optional[int] = Field(sa_column=Column(ForeignKey("cart.id", ondelete="SET NULL"), nullable=True))
+    product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False))
+    quantity: int = Field(default=1)
+    unit_price_snapshot: int = Field(nullable=False) # rs
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    deleted_at: Optional[datetime] = Field(default=None,sa_column=Column(DateTime(timezone=True)))
+
+
+    cart: "Cart" = Relationship(back_populates="cart_items")
+
+    # unique constraint for insertion safety at db level
+    __table_args__ = (
+        UniqueConstraint("cart_id", "product_id", name="uq_cart_product"),
+    )
