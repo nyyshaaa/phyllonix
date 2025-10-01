@@ -3,6 +3,7 @@ from typing import Any, Type, Union
 from fastapi import FastAPI, Request,status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from backend.__init__ import logger 
 
 class PhyllException(Exception):
     """
@@ -47,9 +48,10 @@ async def fallback_handler(request: Request, exc: Exception):
         "detail": "Internal Server Error from fallback exception handler",
         "error_type": type(exc).__name__
     }
+
+    logger.debug(f"{exc} fallback handler error occured ")
     
     code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-    print("falback exception")
     return JSONResponse(status_code=code, content=body)
 
 
