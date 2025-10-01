@@ -8,6 +8,8 @@ myvenv/
 __pycache__/
 alembic.ini
 
+.pytest_cache/
+
 .vscode/
 
 media/
