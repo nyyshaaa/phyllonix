@@ -74,7 +74,7 @@ async def add_item_to_cart(session,cart_id,product_data,max_item_qty=1000):
 
     if row:
         existing_id, existing_qty, existing_price = row[0], row[1], row[2]
-        new_qty = row.quantity + 1
+        new_qty = existing_qty + 1
         if new_qty > max_item_qty:
             new_qty = max_item_qty
             
