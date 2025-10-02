@@ -63,6 +63,13 @@ async def save_user_avatar(session, user_id: int, image_path: str,final_path:str
 
 
 async def userauth_by_public_id(session,user_pid,ds_token):
+    if not ds_token:
+        stmt=select(Users.id).where(Users.public_id==user_pid)
+        res=await session.execute(stmt)
+        user=res.first()
+        user= {"user_id":user[0],"sid":None,"revoked":None}
+        return user
+
     ds_token__hash=hash_token(ds_token)
     stmt=select(Users.id,DeviceSession.id,DeviceSession.revoked_at).join(DeviceSession,DeviceSession.user_id==Users.id
                                ).where(Users.public_id==user_pid,
