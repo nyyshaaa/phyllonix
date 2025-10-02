@@ -50,7 +50,7 @@ def create_access_token(user_id,user_roles,role_version,expires_dur=ACCESS_TOKEN
         "exp": int(expiry.timestamp()),
         "jti": secrets.token_hex(32),
         "roles": user_roles,
-        "role_version":role_version
+        "role_version":role_version,
     }
     token=jwt.encode(claims=payload,key=config_settings.JWT_SECRET,algorithm=config_settings.JWT_ALGO)
     return token

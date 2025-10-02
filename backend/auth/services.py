@@ -56,7 +56,7 @@ async def create_user(session,payload):
         raise HTTPException(status_code=400, detail="User with that email already exists")
 
 
-async def save_device_state(session,request,user_id,payload):
+async def save_device_state(session,request,user_id):
 
     # gather device metadata
     ua = request.headers.get("user-agent", "")[:512]
@@ -64,9 +64,8 @@ async def save_device_state(session,request,user_id,payload):
     if request.client:
         ip = request.client.host
 
-    device_name = payload.device_name or (ua.split(")")[0] if ua else "unknown")
-    device_type = payload.device_type or "browser"
-    device_id = payload.device_id  
+    device_name = (ua.split(")")[0] if ua else "unknown")
+    device_type = "browser"
 
     # create device session row + session token (opaque) and store hashed form
      
@@ -77,10 +76,10 @@ async def save_device_state(session,request,user_id,payload):
 
     ds = DeviceSession(
         session_token_hash=session_token_hash,
+        user_id=user_id,
         device_name=device_name,
         device_type=device_type,
         user_agent_snippet=ua[:512],
-        device_fingerprint_hash=None if not device_id else hash_token(f"{device_id}|{ua[:200]}"),
         ip_first_seen=ip,
         last_seen_ip=ip,
         last_activity_at=datetime.now(timezone.utc),
@@ -92,7 +91,7 @@ async def save_device_state(session,request,user_id,payload):
 
     print("ds_id",ds.id)
 
-    return ds.id
+    return ds.id,session_token_plain
         
 
 async def issue_auth_tokens(session,request,payload,device_session):
@@ -105,7 +104,7 @@ async def issue_auth_tokens(session,request,payload,device_session):
     
     # create device session , refresh token and save
     if not session_id:
-        session_id=await save_device_state(session,request,user_id,payload)
+        session_id=await save_device_state(session,request,user_id)
 
     refresh_token=await save_refresh_token(session,session_id,user_id)
     
@@ -163,7 +162,19 @@ async def provide_access_token(claims_dict):
     return access_token
     
 
+async def get_or_create_device_session(session,request,device_session_plain,user_id):
+    if device_session_plain:
+        session_id=await identify_device_session(session,device_session_plain)
 
+    # create device session 
+    if not device_session_plain :
+        session_id=await save_device_state(session,request,user_id)
+
+    return session_id
+
+
+
+        
     
 
 

@@ -1,6 +1,8 @@
 
 from fastapi import HTTPException,status
 from sqlalchemy import select, update
+from backend.auth.utils import hash_token
+from backend.common.utils import now
 from backend.schema.full_schema import DeviceSession, UserMedia,Users
 from sqlalchemy.exc import IntegrityError
 
@@ -10,6 +12,7 @@ async def userid_by_public_id(session,user_pid):
     res=await session.execute(stmt)
     user=res.first()
     return user[0] if user else None
+
 
 async def check_user_roles_version(session,identifier,role_version):
     stmt=select(Users.id).where(Users.public_id==identifier,Users.role_version==role_version)
@@ -58,5 +61,16 @@ async def save_user_avatar(session, user_id: int, image_path: str,final_path:str
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save avatar")
 
 
-    
-  
+
+async def userauth_by_public_id(session,user_pid,ds_token):
+    ds_token__hash=hash_token(ds_token)
+    stmt=select(Users.id,DeviceSession.id,DeviceSession.revoked_at).join(DeviceSession,DeviceSession.user_id==Users.id
+                               ).where(Users.public_id==user_pid,
+                                       DeviceSession.session_token_hash==ds_token__hash)
+    res=await session.execute(stmt)
+    user=res.first()
+    user= {"user_id":user[0],"sid":user[1],"revoked":user[2]}
+    return user
+
+
+

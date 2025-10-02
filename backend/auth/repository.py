@@ -62,6 +62,8 @@ async def get_user_role_ids(session,user_id):
 
 async def identify_device_session(session,device_session):
     device_session_hash=hash_token(device_session)
-    stmt=select(DeviceSession.id).where(DeviceSession.session_token_hash==device_session_hash)
+    stmt=select(DeviceSession.id
+                ).where(DeviceSession.session_token_hash==device_session_hash,
+                        DeviceSession.revoked_at == None)
     res= await session.execute(stmt)
     return res.scalar_one_or_none()
