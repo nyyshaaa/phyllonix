@@ -365,7 +365,6 @@ class CartItem(SQLModel, table=True):
     cart_id: Optional[int] = Field(sa_column=Column(ForeignKey("cart.id", ondelete="SET NULL"), nullable=True))
     product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False))
     quantity: int = Field(default=1)
-    unit_price_snapshot: int = Field(nullable=False) # rs
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     deleted_at: Optional[datetime] = Field(default=None,sa_column=Column(DateTime(timezone=True)))
 

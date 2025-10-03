@@ -64,7 +64,7 @@ async def get_product_data(session,product_pid):
 
 async def add_item_to_cart(session,cart_id,product_data,max_item_qty=1000):
     stmt = (
-            select(CartItem.id,CartItem.quantity,CartItem.unit_price_snapshot)
+            select(CartItem.id,CartItem.quantity)
             .where(CartItem.cart_id == cart_id, CartItem.product_id == product_data["id"])
             .with_for_update()
             .limit(1)
@@ -73,16 +73,18 @@ async def add_item_to_cart(session,cart_id,product_data,max_item_qty=1000):
     row = res.one_or_none()
 
     if row:
-        existing_id, existing_qty, existing_price = row[0], row[1], row[2]
+        existing_id, existing_qty = row[0], row[1], row[2]
+        if product_data["stock_qty"]==0:  # if concurrent requests and the addd to cart was not disabled before requests arrive at backend 
+            new_qty = existing_qty   # simply don't increase qty , later client will disbale ui 
         new_qty = existing_qty + 1
-        if new_qty > max_item_qty:
+        if new_qty > max_item_qty :
             new_qty = max_item_qty
             
         upd = (
                 update(CartItem)
                 .where(CartItem.id == existing_id)
                 .values(quantity=new_qty)
-                .returning(CartItem.id, CartItem.quantity, CartItem.unit_price_snapshot)
+                .returning(CartItem.id, CartItem.quantity)
             )
         upd_res = await session.execute(upd)
         updated_row = upd_res.one() 
