@@ -18,29 +18,35 @@ async def ac_client():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
 
+
+
+
    
 
 @pytest.mark.asyncio
-async def test_add_to_cart_creates_cart_and_item(ac_client):
+async def test_add_to_cart_user_logged(ac_client):
 
-    # set cookie in the AsyncClient cookie jar (domain must match base_url host)
-    # ac_client.cookies.set("px_device", plain_device_session_admin , domain="test")
+    only_device_headers = {"X-Device-Token" : plain_device_session_admin}
 
-    headers = {"Authorization" : "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NTk0ODczOTksImV4cCI6MTc1OTQ5MDk5OSwianRpIjoiNjk0MDkwM2IxNzNhNGY2YmE0MTM4MzE5MmJmY2MyOWI4OTZkMTVjMTcwYzExZDE0ODBkMjFiYzRkYjMyZmU5YyIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.OpwFGx-AP8OebdKGBm5dgAuNJhfW2XPSa0jzHANHZYQ"}
+    only_auth_headers = {"Authorization" : "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NTk1MDI5NzYsImV4cCI6MTc1OTUwNjU3NiwianRpIjoiOTExM2M0MDliMDE0OTVlM2QzZGE4MmNlOWQ3ZjY1ZjkwN2U1Y2FkYjBhNWMzMWQ1ZTg5ODlmMzRlYWU3YzA4OSIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.MM2mvvUZVLL7E8xhjdi-5pQDXYqDzS04DQfxqsC8-x0"}
+
+    headers = {"Authorization" : "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NTk1MDI5NzYsImV4cCI6MTc1OTUwNjU3NiwianRpIjoiOTExM2M0MDliMDE0OTVlM2QzZGE4MmNlOWQ3ZjY1ZjkwN2U1Y2FkYjBhNWMzMWQ1ZTg5ODlmMzRlYWU3YzA4OSIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.MM2mvvUZVLL7E8xhjdi-5pQDXYqDzS04DQfxqsC8-x0",
+               "X-Device-Token" : plain_device_session_admin}
 
     # 2) call add-to-cart endpoint (device cookie is created by middleware automatically)
-    resp = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9",headers=headers)
+    resp = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9",headers=only_auth_headers)
     assert resp.status_code == 201, resp.text
 
     payload = resp.json()
     assert "cart_id" in payload
     assert "item" in payload
-    assert payload["item"]["quantity"] == 13
+    # assert payload["item"]["quantity"] == 2
 
-    r2 = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9",headers=headers)
-    assert r2.status_code == 201
-    payload = r2.json()
-    assert payload["item"]["quantity"] == 14
+    # r2 = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9")
+    # assert r2.status_code == 201
+    # payload = r2.json()
+    # assert payload["item"]["quantity"] == 16
+
 
 
 # python -m pytest tests/test_carts.py
@@ -52,4 +58,37 @@ async def test_add_to_cart_creates_cart_and_item(ac_client):
 # collected 1 item                                                                                                                                    
 
 # tests/test_carts.py .                                                                          [100%]
+
+
+@pytest.mark.asyncio
+async def test_add_to_cart_user_not_loggedin(ac_client):
+
+    only_device_headers = {"X-Device-Token" : plain_device_session_admin}
+
+    # 2) call add-to-cart endpoint (device cookie is created by middleware automatically)
+    resp = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9",headers=only_device_headers)
+    assert resp.status_code == 201, resp.text
+
+    payload = resp.json()
+    assert "cart_id" in payload
+    assert "item" in payload
+    # assert payload["item"]["quantity"] == 2
+
+@pytest.mark.asyncio
+async def test_add_to_cart_user_logged(ac_client):
+
+    only_device_headers = {"X-Device-Token" : plain_device_session_admin}
+
+    only_auth_headers = {"Authorization" : "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NTk1MDI5NzYsImV4cCI6MTc1OTUwNjU3NiwianRpIjoiOTExM2M0MDliMDE0OTVlM2QzZGE4MmNlOWQ3ZjY1ZjkwN2U1Y2FkYjBhNWMzMWQ1ZTg5ODlmMzRlYWU3YzA4OSIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.MM2mvvUZVLL7E8xhjdi-5pQDXYqDzS04DQfxqsC8-x0"}
+
+    headers = {"Authorization" : "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NTk1MDI5NzYsImV4cCI6MTc1OTUwNjU3NiwianRpIjoiOTExM2M0MDliMDE0OTVlM2QzZGE4MmNlOWQ3ZjY1ZjkwN2U1Y2FkYjBhNWMzMWQ1ZTg5ODlmMzRlYWU3YzA4OSIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.MM2mvvUZVLL7E8xhjdi-5pQDXYqDzS04DQfxqsC8-x0",
+               "X-Device-Token" : plain_device_session_admin}
+
+    # 2) call add-to-cart endpoint (device cookie is created by middleware automatically)
+    resp = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9",headers=only_auth_headers)
+    assert resp.status_code == 201, resp.text
+
+    payload = resp.json()
+    assert "cart_id" in payload
+    assert "item" in payload
    

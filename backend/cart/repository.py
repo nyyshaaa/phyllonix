@@ -51,6 +51,9 @@ async def get_or_create_cart(session,user_id,session_id):
             cart_id = res.scalar_one_or_none()
             return cart_id
 
+    if not session_id or not user_id:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Either session id or user id is required")
+
 
 async def get_product_data(session,product_pid):
     stmt = select(Product.id,Product.base_price,Product.stock_qty).where(Product.public_id == product_pid)

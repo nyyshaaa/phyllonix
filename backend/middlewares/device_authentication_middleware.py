@@ -8,10 +8,9 @@ from backend.auth.services import save_device_state
 
 # this middleware will run only for endpoints that don't require auth otherwise device checks will happen at user authetication stage and ttached to request state
 class DeviceSessionMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, session,paths:str):
+    def __init__(self, app, *, session):
         super().__init__(app)
         self.session = session
-        self.paths = paths 
 
     async def dispatch(self, request: Request, call_next):
         # cookie in browsers, fallback to header (mobile app)

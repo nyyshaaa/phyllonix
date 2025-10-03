@@ -362,7 +362,7 @@ class Cart(SQLModel, table=True):
 # CartItem is like join table as well for product and cart (product <--> cart many to many)
 class CartItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    cart_id: Optional[int] = Field(sa_column=Column(ForeignKey("cart.id", ondelete="SET NULL"), nullable=True))
+    cart_id: Optional[int] = Field(sa_column=Column(ForeignKey("cart.id", ondelete="CASCADE"), nullable=True))
     product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False))
     quantity: int = Field(default=1)
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
