@@ -104,7 +104,7 @@ async def issue_auth_tokens(session,request,payload,device_session):
     
     # create device session , refresh token and save
     if not session_id:
-        session_id=await save_device_state(session,request,user_id)
+        session_id,session_token_plain=await save_device_state(session,request,user_id)
 
     refresh_token=await save_refresh_token(session,session_id,user_id)
     

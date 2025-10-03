@@ -40,7 +40,10 @@ class DeviceSessionMiddleware(BaseHTTPMiddleware):
                 await session.commit()
                 set_cookie_later=True
 
+            #** retry save device state in case of retryable errors . otherwise return error to client with some hints 
+            # and client should return to user that some internal server error and they should retry in some time etc .
 
+            
             # attach to request
             request.state.sid = session_id
 
