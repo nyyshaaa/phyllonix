@@ -5,6 +5,7 @@ from backend.api.routers import public_routers,admin_routers
 from backend.auth.routes import auth_router
 from backend.common.custom_exceptions import register_all_exceptions
 from backend.middlewares.auth_middleware import AuthenticationMiddleware
+from backend.middlewares.device_authentication_middleware import DeviceSessionMiddleware
 from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
 from backend.__init__ import setup_logger
@@ -49,6 +50,7 @@ def create_app():
 
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth",
                                                                              f"{version_prefix}/admin/uploads"])
+    # app.add_middleware(DeviceSessionMiddleware,session=async_session)
 
     # register_all_exceptions(app)
     return app

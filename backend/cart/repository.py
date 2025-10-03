@@ -73,7 +73,7 @@ async def add_item_to_cart(session,cart_id,product_data,max_item_qty=1000):
     row = res.one_or_none()
 
     if row:
-        existing_id, existing_qty = row[0], row[1], row[2]
+        existing_id, existing_qty = row[0], row[1]
         if product_data["stock_qty"]==0:  # if concurrent requests and the addd to cart was not disabled before requests arrive at backend 
             new_qty = existing_qty   # simply don't increase qty , later client will disbale ui 
         new_qty = existing_qty + 1
@@ -87,12 +87,12 @@ async def add_item_to_cart(session,cart_id,product_data,max_item_qty=1000):
                 .returning(CartItem.id, CartItem.quantity)
             )
         upd_res = await session.execute(upd)
+        await session.commit()
         updated_row = upd_res.one() 
         return (
             {
                 "id": int(updated_row[0]),
-                "quantity": int(updated_row[1]),
-                "unit_price_snapshot": int(updated_row[2]),
+                "quantity": int(updated_row[1])
             },
             False,
         )
@@ -101,18 +101,17 @@ async def add_item_to_cart(session,cart_id,product_data,max_item_qty=1000):
         insert(CartItem)
         .values(
             cart_id=cart_id,
-            product_id=product_data["id"],
-            unit_price_snapshot=product_data["base_price"],
+            product_id=product_data["id"]
         )
-        .returning(CartItem.id, CartItem.quantity, CartItem.unit_price_snapshot)
+        .returning(CartItem.id, CartItem.quantity)
     )
     ins_res = await session.execute(ins)
+    await session.commit()
     inserted_row = ins_res.one()
     return (
         {
             "id": int(inserted_row[0]),
-            "quantity": int(inserted_row[1]),
-            "unit_price_snapshot": int(inserted_row[2]),
+            "quantity": int(inserted_row[1])
         },
         True,
     )

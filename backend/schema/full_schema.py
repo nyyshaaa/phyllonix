@@ -43,7 +43,7 @@ class Users(SQLModel, table=True):
     session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")
     roles: List["Role"] = Relationship(back_populates="user",link_model=UserRole)
     media:"UserMedia" = Relationship(back_populates="user")
-    cart: "Cart" = Relationship(back_populates="users") # user -> cart (1:1)
+    cart: "Cart" = Relationship(back_populates="user") # user -> cart (1:1)
     # orders: List["Order"] = Relationship(back_populates="user")
 
 class UserMedia(SQLModel,table=True):

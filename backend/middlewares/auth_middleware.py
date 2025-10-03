@@ -42,6 +42,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             
             user_authdata=await userauth_by_public_id(session,user_pid,device_session_plain)
 
+            print("user_authdata",user_authdata)
+
             user_identifier=user_authdata.get("user_id")
             if not user_identifier:
                 return JSONResponse(
@@ -50,8 +52,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 )
             
             sid=user_authdata.get("sid")
-            if sid is None:
-                pass
+            # if sid is None:
+            #     pass
                 #** create device session and link to user and also populate cookie .
 
             device_revoked=user_authdata.get("revoked_at")

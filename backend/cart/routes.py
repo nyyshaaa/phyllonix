@@ -7,7 +7,7 @@ from backend.db.dependencies import get_session
 
 carts_router=APIRouter()
 
-@carts_router.post("/items/{product_public_id}")
+@carts_router.post("/items/{product_public_id}",status_code=status.HTTP_201_CREATED)
 async def add_to_cart(request:Request,product_public_id:str,session:AsyncSession=Depends(get_session)):
     user_id = getattr(request.state, "user_identifier", None)
     session_id = getattr(request.state, "sid", None)
@@ -24,10 +24,9 @@ async def add_to_cart(request:Request,product_public_id:str,session:AsyncSession
     return {
         "cart_id": cart_id,
         "item": {
-            "id": cart_item.id,
+            "id": cart_item["id"],
             "product_id": product_data["id"],
-            "quantity": cart_item.quantity,
-            "unit_price_snapshot": cart_item.unit_price_snapshot,
+            "quantity": cart_item["quantity"],
             "created": created,
         },
     }
