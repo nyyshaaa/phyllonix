@@ -99,22 +99,23 @@ async def issue_auth_tokens(session,request,payload,device_session):
     user_id=user.id
     
     session_id=None
+    session_token_plain = device_session
     if device_session:
         session_id=await identify_device_session(session,device_session)
     
     # create device session , refresh token and save
     if not session_id:
         session_id,session_token_plain=await save_device_state(session,request,user_id)
+    
+    # await merge_guest_cart_into_user(session, user_id, session_id)
 
     refresh_token=await save_refresh_token(session,session_id,user_id)
-    
-    
     await session.commit()
     # create access token with public_id
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
 
-    return access_token,refresh_token
+    return access_token,refresh_token,session_token_plain
 
 
 async def validate_refresh_and_fetch_user(session,plain_token):

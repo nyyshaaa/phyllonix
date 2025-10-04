@@ -9,10 +9,11 @@ from backend.user.repository import  userauth_by_public_id, userid_by_public_id
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, session,paths:str):
+    def __init__(self, app, *, session,paths:str,maybe_auth_paths:Optional[str]):
         super().__init__(app)
         self.session = session
         self.paths = paths 
+        self.maybe_auth_paths=maybe_auth_paths
 
     async def dispatch(self, request: Request, call_next):
         if any(request.url.path.startswith(p) for p in self.paths):
@@ -22,6 +23,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         try:
             auth_token = await Authentication()(request)
         except Exception as e:
+            if any(request.url.path.startswith(p) for p in self.maybe_auth_paths):
+                return await call_next(request)
+
             return JSONResponse(
                 {"detail": e.detail or "Missing or Invalid Auth Headers"},
                 status_code=status.HTTP_401_UNAUTHORIZED,

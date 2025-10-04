@@ -18,9 +18,9 @@ auth_router = APIRouter()
 @auth_router.post("/login")
 @guard_with_circuit(db_circuit)
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def login_user(request:Request,payload:SignIn, device_session: Optional[str] = Depends(device_session_plain),session: AsyncSession = Depends(get_session)):
+async def login_user(request:Request,payload:SignIn, device_session_token: Optional[str] = Depends(device_session_plain),session: AsyncSession = Depends(get_session)):
     
-    access,refresh=await issue_auth_tokens(session,request,payload,device_session)
+    access,refresh=await issue_auth_tokens(session,request,payload,device_session_token)
     return {"message":{"access_token":access,"refresh_token":refresh}}
 
 #* make phone necessary for signup when app grows (not added now because of otp prices)
@@ -67,6 +67,19 @@ async def health_check(session:AsyncSession=Depends(get_session)):
         raise e
 
     return {"status": "healthy"}
+
+
+@auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),   #** to be retrieved from cookies for real use cases in browsers
+    session: AsyncSession = Depends(get_session),
+):
+    
+    user_identifier=request.state.user_identifier
+
+    pass
+
 
 @auth_router.get("/retries_cb_test")
 @guard_with_circuit(db_circuit)

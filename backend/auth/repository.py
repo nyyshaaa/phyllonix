@@ -1,8 +1,8 @@
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
-from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
+from backend.schema.full_schema import Cart, CartItem, Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, hash_token, make_refresh_plain, verify_password
 
@@ -67,3 +67,5 @@ async def identify_device_session(session,device_session):
                         DeviceSession.revoked_at == None)
     res= await session.execute(stmt)
     return res.scalar_one_or_none()
+
+
