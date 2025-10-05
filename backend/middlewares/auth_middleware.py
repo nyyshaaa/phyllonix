@@ -13,7 +13,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.session = session
         self.paths = paths 
-        self.maybe_auth_paths=maybe_auth_paths
+        # self.maybe_auth_paths=maybe_auth_paths
 
     async def dispatch(self, request: Request, call_next):
         if any(request.url.path.startswith(p) for p in self.paths):
@@ -23,8 +23,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         try:
             auth_token = await Authentication()(request)
         except Exception as e:
-            if any(request.url.path.startswith(p) for p in self.maybe_auth_paths):
-                return await call_next(request)
+            # if any(request.url.path.startswith(p) for p in self.maybe_auth_paths):
+            #     return await call_next(request)
 
             return JSONResponse(
                 {"detail": e.detail or "Missing or Invalid Auth Headers"},
@@ -58,7 +58,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             sid=user_authdata.get("sid")
             # if sid is None:
             #     pass
-                #** create device session and link to user and also populate cookie .
+            #** create device session and link to user and also populate cookie .
 
             device_revoked=user_authdata.get("revoked_at")
             if device_revoked is not None:
