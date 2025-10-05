@@ -19,7 +19,7 @@ public_routers.include_router(auth_router, prefix="/auth",tags=["auth"])
 public_routers.include_router(user_router, prefix="/users",tags=["users"])
 public_routers.include_router(prods_public_router, prefix="/products",tags=["products-public"])
 public_routers.include_router(carts_router,prefix="/cart",tags=["cart"])
-public_routers.include_router(orders_router,prefix="/orders",tags=["orders"])
+public_routers.include_router(orders_router,tags=["orders"])
 public_routers.include_router(webhooks_router,prefix="/webhooks",tags=["webhooks"])
 
 #--------------------------------------------------------------------------------------------------------

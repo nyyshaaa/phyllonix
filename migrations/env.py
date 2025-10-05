@@ -17,6 +17,7 @@ from backend.config.settings import config_settings
 
 from backend.schema.full_schema import Users,Address,Credential,DeviceSession,DeviceAuthToken,Role,Permission,UserRole,RolePermission,UserPhone,ImageContent
 from backend.schema.full_schema import Cart,CartItem
+# from backend.schema.full_schema import Order,OrderItem,IdempotencyKey,CheckoutSession,InventoryReservation,Payment,PaymentAttempt,PaymentStatus,PaymentWebhookEvent
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

@@ -4,23 +4,24 @@ from fastapi import APIRouter
 
 orders_router=APIRouter()
 
-# create order draft 
-@orders_router.post("/checkout")
+# in cart (user clicks on procceed to buy)
+@orders_router.post("/checkout/initiate")
 async def initiate_buy_now():
     pass
 
-# client should get the order id recived from buy now ,store it and ask to user for payment options in ui
-# if client proceeds with pay now call get order draft 
-# when clicked on pay now call this 
-@orders_router.get("/checkout/{order_public_id}/order-draft")
-async def get_order_draft(order_public_id:str):
+# client should get the checkout id recived from initiate_buy_now ,store it and set it in url 
+# ask to user for payment options in ui , users can select payment methods 
+
+# when user clicks on proceed with selected payment method 
+@orders_router.get("/checkout/{checkout_id}/order-summary")
+async def get_order_summary(checkout_id:str):
     pass
 
 
-# after getting order draft client should show payment button(e.g. pay with upi)
-# when clicked on proceed to pay call this 
-@orders_router.get("/{order_public_id}/secure-payment-init")
-async def get_order_draft(order_public_id:str):
+# when clicked on proceed to pay with upi etc. call this 
+# order creation will happen here in final stage
+@orders_router.get("/{checkout_id}/secure-payment-init")
+async def place_order_with_pay(checkout_id:str):
     pass
 
 # ----------------------------------------------------------------------------------------------------
