@@ -5,11 +5,11 @@ from datetime import timedelta
 from typing import Any, Dict, List
 
 from fastapi import HTTPException,status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 
 from backend.common.utils import now
-from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, InventoryReservation, InventoryReserveStatus, Product
+from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, InventoryReservation, InventoryReserveStatus, Product
 
 
 async def load_cart_items(session, user_id: int) -> List[Dict[str, Any]]:
@@ -49,7 +49,7 @@ async def product_avblty(session, product_id, product_stock_qty: int) -> int:
     # sum of active reservations
     stmt2 = select(func.coalesce(func.sum(InventoryReservation.quantity), 0)).where(
         InventoryReservation.product_id == product_id,
-        InventoryReservation.status == "ACTIVE",
+        InventoryReservation.status == InventoryReserveStatus.ACTIVE.value,
         InventoryReservation.reserved_until > now(),
     )
     res2 = await session.execute(stmt2)
@@ -73,8 +73,9 @@ async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
    
     cs = CheckoutSession(
         user_id=user_id,
+        status=CheckoutStatus.PROGRESS.value,
         cart_snapshot={"cart_id": cart_id, "items": items},
-        expires_at=reserved_until,
+        expires_at=now() + timedelta(minutes=RESERVATION_TTL_MINUTES),
         selected_payment_method=None
     )
     session.add(cs)
@@ -83,7 +84,7 @@ async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
     cs_id = cs.id
     cs_public_id = cs.public_id
 
-    await reserve_inventory(session,items,cs_id,reserved_until)
+    # await reserve_inventory(session,items,cs_id,reserved_until)
 
     await session.commit()
 
@@ -105,14 +106,72 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
 async def get_checkout_session(session,user_id):
   
     # Reuse active checkout session if exists
-    stmt = select(CheckoutSession).where(
+    stmt = select(CheckoutSession.public_id).where(
         CheckoutSession.user_id == user_id,
-        CheckoutSession.expires_at > now()
-    ).limit(1)
+        CheckoutSession.expires_at > now(),
+        CheckoutSession.status==CheckoutStatus.PROGRESS.value
+    )
     res = await session.execute(stmt)
     cs = res.scalar_one_or_none()
     if cs:  
         return {
-            "checkout_id": cs.public_id,
-            "expires_at": cs.expires_at.isoformat() if cs.expires_at else None,
+            "checkout_id": cs.public_id
         }
+    
+async def get_checkout_details(session,checkout_id,user_id):
+    stmt = select(CheckoutSession.id,CheckoutSession.cart_snapshot,CheckoutSession.expires_at
+                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id,CheckoutSession.status==CheckoutStatus.PROGRESS.value
+                          ).with_for_update()
+    res = await session.execute(stmt)
+    cs = res.scalar_one_or_none()
+    if not cs:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="checkout session not found")
+
+    if cs.expires_at and cs.expires_at < now():
+        raise HTTPException(status_code=410, detail="checkout session expired")
+
+    items = cs.cart_snapshot.get("items", []) if cs.cart_snapshot else []
+    if not items:
+        raise HTTPException(status_code=400, detail="no items in checkout session")
+    
+    return cs 
+
+
+async def compute_order_totals(session,items,payment_method,cs_id,checkout_public_id,cs_expires_at):
+    # Compute totals
+    subtotal = sum(int(it["base_price"]) * int(it["quantity"]) for it in items)
+    tax = int(subtotal * 0.02)
+    shipping = 50
+    discount = 0
+
+    cod_fee = 0
+    if payment_method == "COD":
+        cod_fee = 50
+    total = subtotal + tax + shipping + cod_fee - discount
+
+    # Optionally extend TTL for slower payment methods like UPI
+    if payment_method == "UPI":
+        cs_expires_at = now() + timedelta(minutes=UPI_RESERVATION_TTL_MINUTES)
+
+    stmt=update(CheckoutSession.selected_payment_method).where(CheckoutSession.id==cs_id).values(selected_payment_method=payment_method)
+    await session.execute(stmt)
+    await session.commit()
+
+    return {
+        "checkout_id": checkout_public_id,
+        "selected_payment_method": payment_method,
+        "summary": {
+            "items": items,
+            "subtotal": subtotal,
+            "tax": tax,
+            "shipping": shipping,
+            "cod_fee": cod_fee,
+            "discount": discount,
+            "total": total,
+        },
+        "confirm_instructions": {
+            "endpoint": f"/checkout/{checkout_public_id}/confirm",
+            "method": "POST",
+            "idempotency_required": True,
+        },
+    }
