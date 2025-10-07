@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import compute_order_totals, create_checkout_session, get_checkout_details, get_checkout_session, load_cart_items, reserve_inventory, spc_by_ikey, validate_checkout
+from backend.orders.repository import capture_cart_snapshot, compute_order_totals, create_checkout_session, get_checkout_details, get_checkout_session, reserve_inventory, spc_by_ikey, validate_checkout
 from backend.orders.services import validate_items_avblty
 
 
@@ -16,21 +16,21 @@ orders_router=APIRouter()
 
 
 # in cart (user clicks on procceed to buy)
-#** create an index on user id and status of checkout for idempotency of /checkout/initiate or send i key 
+#**(done) create an index on user id and status of checkout for idempotency of /checkout/initiate or send i key 
 @orders_router.post("/checkout/initiate")
 async def initiate_buy_now(request:Request,
     session: AsyncSession = Depends(get_session)):
 
     user_identifier=request.state.user_identifier
 
-    await get_checkout_session(session,user_identifier)
+    checkout_public_id = await get_checkout_session(session,user_identifier)
 
-    cart_data = await load_cart_items(session, user_identifier)
-    cart_items=cart_data["cart_items"]
-    
-    reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
+    if checkout_public_id is None :
+        cart_data = await capture_cart_snapshot(session, user_identifier)
+        cart_items=cart_data["cart_items"]
+        reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
 
-    checkout_public_id = await create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
+        checkout_public_id = await create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
     
     return {
         "checkout_id": checkout_public_id

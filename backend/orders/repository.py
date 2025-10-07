@@ -12,10 +12,11 @@ from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TT
 from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Product
 
 
-async def load_cart_items(session, user_id: int) -> List[Dict[str, Any]]:
+async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
     
     stmt = (
-        select(Cart.id,CartItem.id, CartItem.product_id, CartItem.quantity, Product.base_price , Product.stock_qty)
+        select(Cart.id.label("cart_id"),CartItem.id.label("cart_item_id"), 
+               CartItem.product_id, CartItem.quantity, Product.base_price , Product.stock_qty)
         .join(Cart,Cart.id==CartItem.cart_id)
         .join(Product, Product.id == CartItem.product_id)
         .where(Cart.user_id == user_id)
@@ -23,19 +24,18 @@ async def load_cart_items(session, user_id: int) -> List[Dict[str, Any]]:
     res = await session.execute(stmt)
     rows = res.all()
     first = rows[0]
-    cart_id = first.cart_id
+    cart_id = int(first.cart_id)
     if cart_id is None :
         raise HTTPException()
         
     items = []
     for r in rows:
-        cid, pid, qty, base_price, pr_qty = r
         items.append({
-            "cart_item_id": int(cid),
-            "product_id": int(pid),
-            "quantity": int(qty),
-            "prod_base_price": int(base_price),
-            "product_stock": pr_qty,
+            "cart_item_id": int(r.cart_item_id),
+            "product_id": int(r.product_id),
+            "quantity": int(r.quantity),
+            "prod_base_price": int(r.base_price),
+            "product_stock": int(r.stock_qty),
         })
     return {
         "cart_id":cart_id,
@@ -81,7 +81,6 @@ async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
     session.add(cs)
     await session.flush()  # get cs.id
 
-    cs_id = cs.id
     cs_public_id = cs.public_id
 
     await session.commit()
@@ -105,8 +104,8 @@ async def get_checkout_session(session,user_id):
     # Reuse active checkout session if exists
     stmt = select(CheckoutSession.public_id).where(
         CheckoutSession.user_id == user_id,
-        CheckoutSession.expires_at > now(),
-        CheckoutSession.status==CheckoutStatus.PROGRESS.value
+        CheckoutSession.status == CheckoutStatus.PROGRESS.value,
+        CheckoutSession.expires_at > now()
     )
     res = await session.execute(stmt)
     cs = res.scalar_one_or_none()
@@ -114,6 +113,7 @@ async def get_checkout_session(session,user_id):
         return {
             "checkout_id": cs.public_id
         }
+    return None
     
 async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.cart_snapshot,CheckoutSession.expires_at

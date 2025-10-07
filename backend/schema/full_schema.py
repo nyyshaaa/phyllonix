@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import ARRAY, JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
+from sqlalchemy import ARRAY, JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Text, UniqueConstraint,BigInteger, text
 from uuid6 import uuid7
 from datetime import datetime
 from typing import Any, Dict, List, Optional 
@@ -443,15 +443,24 @@ class CheckoutSession(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
-    user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=False, index=True))
+    user_id: int = Field(default=None, sa_column=Column(Integer, nullable=False))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
     cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
     selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
-    status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False, unique=True))
+    status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
     expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+
+    __table_args__ = (
+        Index(
+            "uq_checkout_active_cart",
+            "user_id",
+            unique=True,
+            postgresql_where= text(f"status = {CheckoutStatus.PROGRESS.value}")
+        ),
+    )
 
 class InventoryReservation(SQLModel, table=True):
    
