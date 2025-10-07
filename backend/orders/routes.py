@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_order_totals, create_checkout_session, get_checkout_details, get_checkout_session, reserve_inventory, spc_by_ikey, validate_checkout
+from backend.orders.repository import capture_cart_snapshot, create_checkout_session, get_checkout_details, get_checkout_session, order_totals_n_checkout_updates, reserve_inventory, spc_by_ikey, validate_checkout
 from backend.orders.services import validate_items_avblty
 
 
@@ -58,13 +58,14 @@ async def get_order_summary(request:Request,checkout_id: str,
         raise HTTPException(status_code=400, detail="payment_method must be UPI or COD")
     
     cs=await get_checkout_details(session,checkout_id,user_identifier)
-    cart_items=cs.cart_items
+    cart_items=cs["cs_cart_snap"]
     
     # Validate availability for each item
     await validate_items_avblty(session,cart_items)
-    await reserve_inventory(session,cart_items,cs.id,cs.expires_at)
-    res=await compute_order_totals(session,cart_items,payment_method,cs.id,checkout_id,cs.expires_at)
-    
+    await reserve_inventory(session,cart_items,cs["cs_id"],cs["cs_expires_at"])
+    res=await order_totals_n_checkout_updates(session,cart_items,payment_method,cs["cs_id"],checkout_id,cs["cs_expires_at"])
+    await session.commit()
+
     return res
 
 # when clicked on proceed to pay with upi etc. call this 

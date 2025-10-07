@@ -465,14 +465,17 @@ class CheckoutSession(SQLModel, table=True):
 class InventoryReservation(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
-    product_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
-    checkout_session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    product_id: int = Field(sa_column=Column(Integer, nullable=False))
+    checkout_id: int = Field(sa_column=Column(Integer, nullable=False))
     order_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
     quantity: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     reserved_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
     status: int = Field(default=InventoryReserveStatus.ACTIVE.value, sa_column=Column(Integer, nullable=False, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-
+    
+    __table_args__ = (
+        UniqueConstraint("checkout_id", "product_id", name="uq_checkout_product"),
+    )
 # -----------------------------------------------------------------------------------------------------------------------
 
 class IdempotencyKey(SQLModel, table=True):

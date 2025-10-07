@@ -43,23 +43,30 @@ async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
     }
 
 
-async def items_avblty(session, product_ids,product_qts,requested_qts) -> int:
+async def items_avblty(session,product_ids,product_data) -> int:
     """Return available = stock_qty - sum(active reservations)."""
     item_errs=[]
     cond = (InventoryReservation.status == InventoryReserveStatus.ACTIVE.value) & (InventoryReservation.reserved_until > now())
     reserved_expr = func.coalesce(func.sum(case([(cond, InventoryReservation.quantity)], else_=0)), 0).label("reserved_qty")
    
     # sum of active reservations
-    stmt2 = select(Product.id,reserved_expr).where(Product.id.in_(product_ids)).group_by(Product.id)
-
-    res = await session.execute(stmt2)
+    stmt = (
+        select(InventoryReservation.product_id, reserved_expr)
+        .where(InventoryReservation.product_id.in_(product_ids))
+        .group_by(InventoryReservation.product_id)
+    )
+    res = await session.execute(stmt)
     rows = res.all()
+    reserved_map = {row[0]: int(row[1]) for row in rows} 
 
-    for pid,reserved_qty,product_qty,req_qty in zip(rows,product_qts,requested_qts):
-        avbl=max(0,product_qty-reserved_qty)
-        if req_qty > avbl:
+    for pid,prod_dict in product_data.items():
+        stock_qty = prod_dict["stock_qty"]
+        requested_qty = prod_dict["requested_qty"]
+        reserved_qty = reserved_map.get(pid, 0)
+        avbl=max(0,stock_qty-reserved_qty)
+        if requested_qty > avbl:
             item_errs.append({
-                "detail": f"Not enough stock for product {pid}: requested={req_qty}, available={avbl}"
+                "detail": f"Not enough stock for product {pid}: requested={requested_qty}, available={avbl}"
             })
 
     if item_errs:
@@ -97,6 +104,7 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
             status=InventoryReserveStatus.ACTIVE.value
         )
         session.add(inv)
+    
 
 
 async def get_checkout_session(session,user_id):
@@ -120,21 +128,23 @@ async def get_checkout_details(session,checkout_id,user_id):
                   ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id,CheckoutSession.status==CheckoutStatus.PROGRESS.value
                           ).with_for_update()
     res = await session.execute(stmt)
-    cs = res.scalar_one_or_none()
+    cs = res.one_or_none()
+    cs_dict = {"cs_id":cs[0],"cs_cart_snap":cs[1],"cs_expires_at":cs[2]}
+   
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="checkout session not found")
 
-    if cs.expires_at and cs.expires_at < now():
-        raise HTTPException(status_code=410, detail="checkout session expired")
+    if cs_dict["cs_expires_at"] and cs_dict["cs_expires_at"] < now():
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
 
-    items = cs.cart_snapshot.get("items", []) if cs.cart_snapshot else []
+    items = cs_dict["cs_cart_snap"].get("items", [])
     if not items:
-        raise HTTPException(status_code=400, detail="no items in checkout session")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no items in checkout session")
     
-    return cs 
+    return cs_dict 
 
 
-async def compute_order_totals(session,items,payment_method,cs_id,checkout_public_id,cs_expires_at):
+async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,checkout_public_id,cs_expires_at):
     # Compute totals
     subtotal = sum(int(it["base_price"]) * int(it["quantity"]) for it in items)
     tax = int(subtotal * 0.02)
@@ -152,7 +162,6 @@ async def compute_order_totals(session,items,payment_method,cs_id,checkout_publi
 
     stmt=update(CheckoutSession.selected_payment_method).where(CheckoutSession.id==cs_id).values(selected_payment_method=payment_method)
     await session.execute(stmt)
-    await session.commit()
 
     return {
         "checkout_id": checkout_public_id,
