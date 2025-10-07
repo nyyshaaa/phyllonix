@@ -1,14 +1,15 @@
 
 
 from datetime import timedelta
-from typing import Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Any, Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import compute_order_totals, create_checkout_session, get_checkout_details, get_checkout_session, load_cart_items, reserve_inventory, validate_items_avblty
+from backend.orders.repository import compute_order_totals, create_checkout_session, get_checkout_details, get_checkout_session, load_cart_items, reserve_inventory, spc_by_ikey, validate_checkout
+from backend.orders.services import validate_items_avblty
 
 
 orders_router=APIRouter()
@@ -29,7 +30,7 @@ async def initiate_buy_now(request:Request,
     
     reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
 
-    checkout_public_id = await create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items)
+    checkout_public_id = await create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
     
     return {
         "checkout_id": checkout_public_id
@@ -48,7 +49,7 @@ async def get_order_summary(request:Request,checkout_id: str,
     """
     POST /checkout/{checkout_id}/select-method
     Body: { "payment_method": "UPI"|"COD" }
-    Revalidates reservations and recomputes totals with payment-method adjustments.
+    Holds reservations and computes totals with payment-method adjustments.
     Returns server-validated order summary. Does NOT create final Order.
     """
     user_identifier=request.state.user_identifier
@@ -59,7 +60,6 @@ async def get_order_summary(request:Request,checkout_id: str,
     cs=await get_checkout_details(session,checkout_id,user_identifier)
     cart_items=cs.cart_items
     
-    
     # Validate availability for each item
     await validate_items_avblty(session,cart_items)
     await reserve_inventory(session,cart_items,cs.id,cs.expires_at)
@@ -69,9 +69,19 @@ async def get_order_summary(request:Request,checkout_id: str,
 
 # when clicked on proceed to pay with upi etc. call this 
 # order creation will happen here in final stage
-@orders_router.get("/{checkout_id}/secure-payment-init")
-async def place_order_with_pay(checkout_id:str):
-    pass
+@orders_router.get("checkout/{checkout_id}/secure-confirm")
+async def place_order_with_pay(request:Request,checkout_id: str,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+    session: AsyncSession = Depends(get_session)):
+    
+    if not idempotency_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for confirm")
+    
+    order_npay_data = await spc_by_ikey(session,idempotency_key)
+
+    await validate_checkout(session,checkout_id)
+    
+
 
 # ----------------------------------------------------------------------------------------------------
 # after payment success payment provider api will send a webhook to our server 

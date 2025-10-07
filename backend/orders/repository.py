@@ -5,11 +5,11 @@ from datetime import timedelta
 from typing import Any, Dict, List
 
 from fastapi import HTTPException,status
-from sqlalchemy import func, select, text, update
+from sqlalchemy import case, func, select, text, update
 
 from backend.common.utils import now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, InventoryReservation, InventoryReserveStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Product
 
 
 async def load_cart_items(session, user_id: int) -> List[Dict[str, Any]]:
@@ -43,30 +43,30 @@ async def load_cart_items(session, user_id: int) -> List[Dict[str, Any]]:
     }
 
 
-async def product_avblty(session, product_id, product_stock_qty: int) -> int:
+async def items_avblty(session, product_ids,product_qts,requested_qts) -> int:
     """Return available = stock_qty - sum(active reservations)."""
+    item_errs=[]
+    cond = (InventoryReservation.status == InventoryReserveStatus.ACTIVE.value) & (InventoryReservation.reserved_until > now())
+    reserved_expr = func.coalesce(func.sum(case([(cond, InventoryReservation.quantity)], else_=0)), 0).label("reserved_qty")
    
     # sum of active reservations
-    stmt2 = select(func.coalesce(func.sum(InventoryReservation.quantity), 0)).where(
-        InventoryReservation.product_id == product_id,
-        InventoryReservation.status == InventoryReserveStatus.ACTIVE.value,
-        InventoryReservation.reserved_until > now(),
-    )
-    res2 = await session.execute(stmt2)
-    reserved_sum = int(res2.scalar_one() or 0)
+    stmt2 = select(Product.id,reserved_expr).where(Product.id.in_(product_ids)).group_by(Product.id)
 
-    return max(0, product_stock_qty - reserved_sum)
+    res = await session.execute(stmt2)
+    rows = res.all()
 
-async def validate_items_avblty(session,cart_items):
-    item_errs=[]
-    for it in cart_items:
-        available = await product_avblty(session, it["product_id"],it["product_stock"])
-        if it["quantity"] > available:
-            item_errs.append({"detail":f"Not enough stock for product_id={it['product_id']}. requested={it['quantity']} available={available}"})
+    for pid,reserved_qty,product_qty,req_qty in zip(rows,product_qts,requested_qts):
+        avbl=max(0,product_qty-reserved_qty)
+        if req_qty > avbl:
+            item_errs.append({
+                "detail": f"Not enough stock for product {pid}: requested={req_qty}, available={avbl}"
+            })
 
-    if len(item_errs) != 0:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail=f"There is problem with some items stock qty {item_errs}")
+    if item_errs:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"errors": item_errs})
+
     
+
 
 # create checkout session and resrver inventory atomically 
 async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
@@ -75,7 +75,7 @@ async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
         user_id=user_id,
         status=CheckoutStatus.PROGRESS.value,
         cart_snapshot={"cart_id": cart_id, "items": items},
-        expires_at=now() + timedelta(minutes=RESERVATION_TTL_MINUTES),
+        expires_at=reserved_until,
         selected_payment_method=None
     )
     session.add(cs)
@@ -84,10 +84,7 @@ async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
     cs_id = cs.id
     cs_public_id = cs.public_id
 
-    # await reserve_inventory(session,items,cs_id,reserved_until)
-
     await session.commit()
-
     return cs_public_id
 
 
@@ -175,3 +172,111 @@ async def compute_order_totals(session,items,payment_method,cs_id,checkout_publi
             "idempotency_required": True,
         },
     }
+
+async def spc_by_ikey(session,i_key):
+    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code
+                  ).where(IdempotencyKey.key == i_key).limit(1)  #* check limit 1 
+    res = await session.execute(stmt)
+    order_npay_data = res.one_or_none()
+    if order_npay_data:
+        if order_npay_data[0] and order_npay_data[1]:
+            return order_npay_data[0]
+
+
+#* recheck checkout retrieval and correct attr retreive format as per reqd fields
+async def validate_checkout(session,checkout_id):
+    stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
+                  ).where(CheckoutSession.public_id == checkout_id).with_for_update()
+    res = await session.execute(stmt)
+    cs = res.scalar_one_or_none()
+    cs_id=cs.id
+    if not cs:
+        raise HTTPException(status_code=404, detail="Checkout session not found")
+
+    # expiration check
+    if cs.expires_at and cs.expires_at < now():
+        raise HTTPException(status_code=410, detail="Checkout session expired")
+
+    # ensure a payment method has been selected
+    if not cs.selected_payment_method:
+        raise HTTPException(status_code=400, detail="Payment method not selected")
+
+    payment_method = cs.selected_payment_method  # "UPI" or "COD"
+
+    # Load items from checkout snapshot
+    items = cs.cart_snapshot.get("items", []) if cs.cart_snapshot else []
+    if not items:
+        raise HTTPException(status_code=400, detail="Checkout has no items")
+
+
+    await validate_reservations_and_total(session,cs_id,items,payment_method)
+    
+
+async def validate_reservations_and_total(session,cs_id,items,payment_method):
+    stmt = select(InventoryReservation).where(InventoryReservation.checkout_session_id == cs_id)
+    res = await session.execute(stmt)
+    reservations = res.scalars().all()
+    if not reservations:
+        raise HTTPException(status_code=409, detail="No reservations found for checkout")
+
+    # Build map product_id -> requested_qty
+    requested_by_product = {it["product_id"]: int(it["quantity"]) for it in items}
+
+    # Check each reservation is ACTIVE and not expired and matches requested qty
+    for r in reservations:
+       
+        if r.reserved_until and r.reserved_until < now():
+            raise HTTPException(status_code=409, detail=f"Reservation expired for product {r.product_id}")
+
+        req_qty = requested_by_product.get(r.product_id, 0)
+        if req_qty == 0 or r.quantity != req_qty:
+            # mismatch: client snapshot or reservation mismatch
+            raise HTTPException(status_code=409, detail=f"Reservation mismatch for product {r.product_id}")
+        
+        order_total=compute_final_total(items,payment_method)
+
+        return order_total
+        
+
+def compute_final_total(items,payment_method):
+    subtotal = 0
+    for it in items:
+        subtotal += int(it["base_price"]) * int(it["quantity"])
+    tax = int(subtotal * 0.02)
+    shipping = 0
+    discount = 0
+    cod_fee = 50 if payment_method == "COD" else 0
+    total = subtotal + tax + shipping + cod_fee - discount
+    return total
+
+
+async def create_order_with_items(session,user_id,payment_method,subtotal,tax,shipping,discount,total,items):
+    # Create Order
+    order = Order(
+        user_id=user_id,
+        # session_id=session_id,
+        status=OrderStatus.PENDING_PAYMENT.value if payment_method == "UPI" else OrderStatus.CONFIRMED.value,
+        subtotal=subtotal,
+        tax=tax,
+        shipping=shipping,
+        discount=discount,
+        total=total,
+        placed_at=None if payment_method == "UPI" else now(),
+        created_at=now(),
+        updated_at=now(),
+    )
+    session.add(order)
+    await session.flush()  # to get order.id
+
+    # Create OrderItem rows
+    for it in items:
+        oi = OrderItem(
+            order_id=order.id,
+            product_id=it["product_id"],
+            sku=None,
+            quantity=it["quantity"],
+            unit_price_snapshot=it["base_price"],
+            tax_snapshot=int((it["base_price"] * it["quantity"]) * 0.02),
+            discount_snapshot=0,
+        )
+        session.add(oi)
