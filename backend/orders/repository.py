@@ -162,23 +162,25 @@ async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,che
 
     stmt=update(CheckoutSession.selected_payment_method).where(CheckoutSession.id==cs_id).values(selected_payment_method=payment_method)
     await session.execute(stmt)
+    
+    #** if want to return with response
+    # "confirm_instructions": {
+        #     "endpoint": f"/checkout/{checkout_public_id}/confirm",
+        #     "method": "POST",
+        #     "idempotency_required": True,
+    # },
 
     return {
         "checkout_id": checkout_public_id,
         "selected_payment_method": payment_method,
+        "items": items,
         "summary": {
-            "items": items,
             "subtotal": subtotal,
             "tax": tax,
             "shipping": shipping,
             "cod_fee": cod_fee,
             "discount": discount,
             "total": total,
-        },
-        "confirm_instructions": {
-            "endpoint": f"/checkout/{checkout_public_id}/confirm",
-            "method": "POST",
-            "idempotency_required": True,
         },
     }
 
@@ -193,7 +195,7 @@ async def spc_by_ikey(session,i_key):
 
 
 #* recheck checkout retrieval and correct attr retreive format as per reqd fields
-async def validate_checkout(session,checkout_id):
+async def validate_checkout_nget_totals(session,checkout_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
                   ).where(CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
@@ -217,11 +219,16 @@ async def validate_checkout(session,checkout_id):
     if not items:
         raise HTTPException(status_code=400, detail="Checkout has no items")
 
+    #** keep the same expiry for checkout and invenotry hold and avoid the work of revalidating inventory hence optimising latency .      
+    # await validate_reservations(session,cs_id,items,payment_method)
 
-    await validate_reservations_and_total(session,cs_id,items,payment_method)
+
+    order_totals=compute_final_total(items,payment_method)
+    return order_totals,payment_method
+
     
 
-async def validate_reservations_and_total(session,cs_id,items,payment_method):
+async def validate_reservations(session,cs_id,items,payment_method):
     stmt = select(InventoryReservation).where(InventoryReservation.checkout_session_id == cs_id)
     res = await session.execute(stmt)
     reservations = res.scalars().all()
@@ -242,9 +249,6 @@ async def validate_reservations_and_total(session,cs_id,items,payment_method):
             # mismatch: client snapshot or reservation mismatch
             raise HTTPException(status_code=409, detail=f"Reservation mismatch for product {r.product_id}")
         
-        order_total=compute_final_total(items,payment_method)
-
-        return order_total
         
 
 def compute_final_total(items,payment_method):
@@ -256,20 +260,30 @@ def compute_final_total(items,payment_method):
     discount = 0
     cod_fee = 50 if payment_method == "COD" else 0
     total = subtotal + tax + shipping + cod_fee - discount
-    return total
+
+    return {
+        "items" : items,
+        "subtotal": subtotal,
+        "tax": tax,
+        "shipping": shipping,
+        "cod_fee": cod_fee,
+        "discount": discount,
+        "total": total,
+    }
 
 
-async def create_order_with_items(session,user_id,payment_method,subtotal,tax,shipping,discount,total,items):
+async def create_order_with_items(session,user_id,payment_method,order_totals):
+
     # Create Order
     order = Order(
         user_id=user_id,
         # session_id=session_id,
         status=OrderStatus.PENDING_PAYMENT.value if payment_method == "UPI" else OrderStatus.CONFIRMED.value,
-        subtotal=subtotal,
-        tax=tax,
-        shipping=shipping,
-        discount=discount,
-        total=total,
+        subtotal=order_totals["subtotal"],
+        tax=order_totals["tax"],
+        shipping=order_totals["shipping"],
+        discount=order_totals["discount"],
+        total=order_totals["total"],
         placed_at=None if payment_method == "UPI" else now(),
         created_at=now(),
         updated_at=now(),
@@ -278,7 +292,7 @@ async def create_order_with_items(session,user_id,payment_method,subtotal,tax,sh
     await session.flush()  # to get order.id
 
     # Create OrderItem rows
-    for it in items:
+    for it in order_totals["items"]:
         oi = OrderItem(
             order_id=order.id,
             product_id=it["product_id"],
@@ -289,3 +303,37 @@ async def create_order_with_items(session,user_id,payment_method,subtotal,tax,sh
             discount_snapshot=0,
         )
         session.add(oi)
+
+    #** update product stock and stuff via bg workers , emit order place event .
+    
+    #** add processing here 
+    if payment_method == "UPI" :
+        pass
+
+
+    response = {
+        "order_public_id": order.public_id,
+        "order_id": order.id,
+        "status": order.status,
+        "message": "Order placed (COD).",
+    }
+
+    return response
+
+#** check this owner type thing and see if need to save event 
+async def commit_idempotent_order_place(session,idempotency_key,order_data):
+    ik = IdempotencyKey(
+            key=idempotency_key,
+            owner_type="order_confirm",
+            owner_id=order_data["id"],
+            response_code=200,
+            response_body=order_data,
+            expires_at=now + timedelta(days=1),
+        )
+    session.add(ik)
+
+    await session.commit()
+
+
+
+
