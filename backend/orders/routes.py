@@ -82,12 +82,12 @@ async def place_order_with_pay(request:Request,checkout_id: str,
     
     order_npay_data = await spc_by_ikey(session,idempotency_key)
 
-    order_totals,payment_method = await validate_checkout_nget_totals(session,checkout_id)
-    order_data = await create_order_with_items(session,user_identifier,payment_method,order_totals)
-    
-    # session commit at this level
-    await commit_idempotent_order_place(session,idempotency_key,order_data)
+    if order_npay_data:
+        return order_npay_data
 
+    order_totals,payment_method = await validate_checkout_nget_totals(session,checkout_id)
+    order_data = await create_order_with_items(session,user_identifier,payment_method,order_totals,idempotency_key)
+    
     
 
 

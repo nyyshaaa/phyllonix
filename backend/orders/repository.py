@@ -9,7 +9,7 @@ from sqlalchemy import case, func, select, text, update
 
 from backend.common.utils import now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Payment, PaymentAttempt, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -272,7 +272,7 @@ def compute_final_total(items,payment_method):
     }
 
 
-async def create_order_with_items(session,user_id,payment_method,order_totals):
+async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
     # Create Order
     order = Order(
@@ -306,34 +306,61 @@ async def create_order_with_items(session,user_id,payment_method,order_totals):
 
     #** update product stock and stuff via bg workers , emit order place event .
     
-    #** add processing here 
-    if payment_method == "UPI" :
-        pass
 
+    if payment_method == "UPI" :
+        await record_payment_attempt(session,order.id,order_totals["total"])
+        await commit_idempotent_order_place(session,i_key,order.id,
+                                            None,response_body=None,owner_type="order_confirm")
 
     response = {
         "order_public_id": order.public_id,
         "order_id": order.id,
-        "status": order.status,
-        "message": "Order placed (COD).",
+        "status": order.status
     }
+
+    await commit_idempotent_order_place(session,i_key,order.id,
+                                        200,response_body=response,owner_type="order_confirm")
 
     return response
 
 #** check this owner type thing and see if need to save event 
-async def commit_idempotent_order_place(session,idempotency_key,order_data):
+async def commit_idempotent_order_place(session,idempotency_key,owner_id,response_code,response_body,owner_type):
     ik = IdempotencyKey(
             key=idempotency_key,
-            owner_type="order_confirm",
-            owner_id=order_data["id"],
-            response_code=200,
-            response_body=order_data,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            response_code=response_code,
+            response_body=response_body,
             expires_at=now + timedelta(days=1),
         )
     session.add(ik)
-
+    
+    # commit here after saving idempotency of operation
     await session.commit()
 
+    
 
+
+async def record_payment_attempt(session,order_id,order_total):
+  
+    payment = Payment(
+        order_id=order_id,
+        # provider="razorpay", 
+        provider_payment_id=None,
+        status="PENDING",
+        amount=order_total
+    )
+    session.add(payment)
+    await session.flush()
+
+    # record a payment attempt
+    pa = PaymentAttempt(
+        payment_id=payment.id,
+        attempt_no=1,
+        provider_response=None,
+        provider_event_id=None,
+    )
+    session.add(pa)
+    await session.flush()
 
 
