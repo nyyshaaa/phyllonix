@@ -188,10 +188,11 @@ async def spc_by_ikey(session,i_key):
     stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code
                   ).where(IdempotencyKey.key == i_key).limit(1)  #* check limit 1 
     res = await session.execute(stmt)
-    order_npay_data = res.one_or_none()
-    if order_npay_data:
-        if order_npay_data[0] and order_npay_data[1]:
-            return order_npay_data[0]
+    res = res.one_or_none()
+    if res:
+        order_npay_data = {"response_body":res[0],"response_code":res[1]}
+        return order_npay_data[0]
+    return res
 
 
 #* recheck checkout retrieval and correct attr retreive format as per reqd fields
@@ -305,18 +306,21 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
         session.add(oi)
 
     #** update product stock and stuff via bg workers , emit order place event .
-    
-
-    if payment_method == "UPI" :
-        await record_payment_attempt(session,order.id,order_totals["total"])
-        await commit_idempotent_order_place(session,i_key,order.id,
-                                            None,response_body=None,owner_type="order_confirm")
 
     response = {
         "order_public_id": order.public_id,
         "order_id": order.id,
         "status": order.status
     }
+    
+
+    if payment_method == "UPI" :
+        pay_public_id=await record_payment_attempt(session,order.id,order_totals["total"])
+        await commit_idempotent_order_place(session,i_key,order.id,
+                                            None,response_body=None,owner_type="order_confirm")
+        
+        response["pay_public_id"]=pay_public_id
+        return response
 
     await commit_idempotent_order_place(session,i_key,order.id,
                                         200,response_body=response,owner_type="order_confirm")
@@ -363,4 +367,22 @@ async def record_payment_attempt(session,order_id,order_total):
     session.add(pa)
     await session.flush()
 
+    return payment.public_id
+
+#** update staus as well
+async def update_payment_status(session,pay_public_id,provider_order_id):
+    stmt = update(Payment).where(Payment.public_id==pay_public_id).values(provider_payment_id=provider_order_id).returning(Payment.id)
+    res=await session.execute(stmt)
+    res=res.first[0] if res else None
+
+#** also update provider event id and also check if to convert resp to any format 
+async def update_payment_attempt(session,pay_id,psp_resp):
+    stmt = update(PaymentAttempt).where(PaymentAttempt.payment_id==pay_id).values(provider_response=psp_resp)
+    await session.execute(stmt)
+
+
+async def update_idempotent_response(session, key: str, code: int, body: dict):
+    stmt = update(IdempotencyKey).where(IdempotencyKey.key==key
+                                        ).values(response_code=code,response_body=body)
+    await session.execute(stmt)
 

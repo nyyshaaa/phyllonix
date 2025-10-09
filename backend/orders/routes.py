@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, commit_idempotent_order_place, create_checkout_session, create_order_with_items, get_checkout_details, get_checkout_session, order_totals_n_checkout_updates, reserve_inventory, spc_by_ikey, validate_checkout_nget_totals
-from backend.orders.services import validate_items_avblty
+from backend.orders.repository import capture_cart_snapshot, create_checkout_session, get_checkout_details, get_checkout_session, order_totals_n_checkout_updates, place_order_with_items, reserve_inventory, spc_by_ikey, validate_checkout_nget_totals
+from backend.orders.services import create_payment_intent, validate_items_avblty
 
 
 orders_router=APIRouter()
@@ -71,7 +71,7 @@ async def get_order_summary(request:Request,checkout_id: str,
 # when clicked on proceed to pay with upi etc. call this 
 # order creation will happen here in final stage
 @orders_router.post("checkout/{checkout_id}/secure-confirm")
-async def place_order_with_pay(request:Request,checkout_id: str,
+async def place_order(request:Request,checkout_id: str,
     idempotency_key: str = Header(alias="Idempotency-Key"),
     session: AsyncSession = Depends(get_session)):
 
@@ -86,7 +86,17 @@ async def place_order_with_pay(request:Request,checkout_id: str,
         return order_npay_data
 
     order_totals,payment_method = await validate_checkout_nget_totals(session,checkout_id)
-    order_data = await create_order_with_items(session,user_identifier,payment_method,order_totals,idempotency_key)
+    order_data = await place_order_with_items(session,user_identifier,payment_method,order_totals,idempotency_key)
+    
+    pay_public_id=order_data.get("pay_public_id",None)
+
+    if pay_public_id:
+        order_pay_res=create_payment_intent(session,idempotency_key,order_totals,order_data)
+        return order_pay_res
+    
+    return order_data
+        
+
     
     
 

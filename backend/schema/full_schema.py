@@ -406,7 +406,7 @@ class Order(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL"), index=True))
     status: int = Field(default=OrderStatus.DRAFT.value, sa_column=Column(Integer, nullable=False, index=True))
-    currency: str = Field(default="Rs", sa_column=Column(String(8), nullable=False))
+    currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     subtotal: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))  # stored in rs
     tax: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
     shipping: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
@@ -511,7 +511,7 @@ class Payment(SQLModel, table=True):
     provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
     status: int = Field(default=PaymentStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
     amount: int = Field(sa_column=Column(BigInteger, nullable=False))
-    currency: str = Field(default="Rs", sa_column=Column(String(8), nullable=False))
+    currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     pay_metadata: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     paid_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     DEFAULT_ROLE:str
     SELF_PROVIDER:str
     DEVICE_SESSION_EXPIRE_DAYS:str
+    RZPAY_KEY:str
+    RZPAY_SECRET:str
+    RZPAY_GATEWAY_URL:str
 
     class Config:
         env_file = ".env"
