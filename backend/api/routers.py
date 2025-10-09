@@ -5,6 +5,8 @@ from backend.user.routes import user_router , user_admin_router
 from backend.products.routes import prods_public_router,prods_admin_router
 from backend.image_uploads.webhooks import uploads_router
 from backend.cart.routes import carts_router
+from backend.orders.routes import orders_router
+from backend.orders.webhooks import webhooks_router
 
 
 
@@ -17,6 +19,8 @@ public_routers.include_router(auth_router, prefix="/auth",tags=["auth"])
 public_routers.include_router(user_router, prefix="/users",tags=["users"])
 public_routers.include_router(prods_public_router, prefix="/products",tags=["products-public"])
 public_routers.include_router(carts_router,prefix="/cart",tags=["cart"])
+public_routers.include_router(orders_router,tags=["orders"])
+public_routers.include_router(webhooks_router,prefix="/webhooks",tags=["webhooks"])
 
 #--------------------------------------------------------------------------------------------------------
 

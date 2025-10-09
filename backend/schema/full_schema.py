@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import ARRAY, JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint,BigInteger
+from sqlalchemy import ARRAY, JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Text, UniqueConstraint,BigInteger, text
 from uuid6 import uuid7
 from datetime import datetime
 from typing import Any, Dict, List, Optional 
@@ -375,3 +375,207 @@ class CartItem(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("cart_id", "product_id", name="uq_cart_product"),
     )
+
+# --------------------------------------------------------------------------------------------
+class OrderStatus(enum.IntEnum):
+    DRAFT = 0
+    PENDING_PAYMENT = 10
+    CONFIRMED = 20
+    CANCELLED = 30
+    FULFILLED = 40
+    OUT_FOR_DELIVERY = 50
+    DELIVERED = 60
+    RETURNED = 70
+
+class InventoryReserveStatus(enum.IntEnum):
+    ACTIVE = 0
+    COMMITED = 10
+    RELEASED = 20
+    EXPIRED = 30
+    
+class CheckoutStatus(enum.IntEnum):
+    PROGRESS = 0
+    DONE = 1
+
+# User --> Orders (1:many) 
+# Product <--> Order(many to many)
+class Order(SQLModel, table=True):
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
+    user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
+    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL"), index=True))
+    status: int = Field(default=OrderStatus.DRAFT.value, sa_column=Column(Integer, nullable=False, index=True))
+    currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
+    subtotal: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))  # stored in rs
+    tax: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
+    shipping: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
+    discount: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
+    total: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
+    shipping_address_json: dict = Field(sa_column=Column(JSON, nullable=False))
+    billing_address_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # e.g., "CARD", "UPI", "COD"
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+    placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+
+# Order --> OrderItems (1:many)
+# OrderItem is like join table as well for product and order (product <--> order many to many)
+class OrderItem(SQLModel, table=True):
+   
+    id: Optional[int] = Field(default=None, primary_key=True)
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False))
+    product_id: int = Field(sa_column=Column(Integer, ForeignKey("product.id", ondelete="RESTRICT"), nullable=False))
+    sku: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+    quantity: int = Field(sa_column=Column(Integer, nullable=False))
+    unit_price_snapshot: int = Field(sa_column=Column(BigInteger, nullable=False))  # rs
+    tax_snapshot: Optional[int] = Field(default=0, sa_column=Column(BigInteger, nullable=True))
+    discount_snapshot: Optional[int] = Field(default=0, sa_column=Column(BigInteger, nullable=True))
+    meta: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    __table_args__ = (
+        UniqueConstraint("order_id", "product_id", name="uq_order_product"),
+    )
+
+class CheckoutSession(SQLModel, table=True):
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
+    user_id: int = Field(default=None, sa_column=Column(Integer, nullable=False))
+    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
+    selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
+    status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
+    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+
+    __table_args__ = (
+        Index(
+            "uq_checkout_active_cart",
+            "user_id",
+            unique=True,
+            postgresql_where= text(f"status = {CheckoutStatus.PROGRESS.value}")
+        ),
+    )
+
+class InventoryReservation(SQLModel, table=True):
+   
+    id: Optional[int] = Field(default=None, primary_key=True)
+    product_id: int = Field(sa_column=Column(Integer, nullable=False))
+    checkout_id: int = Field(sa_column=Column(Integer, nullable=False))
+    order_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    quantity: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    reserved_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    status: int = Field(default=InventoryReserveStatus.ACTIVE.value, sa_column=Column(Integer, nullable=False, index=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    
+    __table_args__ = (
+        UniqueConstraint("checkout_id", "product_id", name="uq_checkout_product"),
+    )
+# -----------------------------------------------------------------------------------------------------------------------
+
+class IdempotencyKey(SQLModel, table=True):
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(sa_column=Column(String(128), unique=True, nullable=False, index=True))
+    created_by: int = Field(sa_column=Column(Integer, nullable=False))  # user id
+    owner_type: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "order", "payment", "refund"
+    owner_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))  # local id if created
+    request_hash: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+    response_code: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    response_body: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+
+# --------------------------------------------------------------------------------------------------------------------------------
+
+class PaymentStatus(enum.IntEnum):
+    PENDING = 0
+    AUTHORIZED = 10
+    SUCCESS = 20
+    FAILED = 30
+    REFUNDED = 40
+
+# Payments & payment attempts / events
+class Payment(SQLModel, table=True):
+   
+    id: Optional[int] = Field(default=None, primary_key=True)
+    public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False, index=True))
+    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
+    provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
+    status: int = Field(default=PaymentStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
+    amount: int = Field(sa_column=Column(BigInteger, nullable=False))
+    currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
+    pay_metadata: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    paid_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+class PaymentAttempt(SQLModel, table=True):
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    payment_id: int = Field(sa_column=Column(Integer, ForeignKey("payment.id", ondelete="CASCADE"), nullable=False, index=True))
+    attempt_no: int = Field(default=1, sa_column=Column(Integer, nullable=False))
+    provider_response: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+
+# class PaymentWebhookEvent(SQLModel, table=True):
+    
+#     id: Optional[int] = Field(default=None, primary_key=True)
+#     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
+#     provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
+#     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+#     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+
+# --------------------------------------------------------------------------------------------------------------------------------
+
+# class Shipment(SQLModel, table=True):
+   
+#     id: Optional[int] = Field(default=None, primary_key=True)
+#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
+#     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))
+#     tracking_number: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+#     status: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True, index=True))
+#     shipped_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+#     delivered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+
+# # Returns and Refunds
+# class ReturnRequest(SQLModel, table=True):
+    
+#     id: Optional[int] = Field(default=None, primary_key=True)
+#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
+#     shipment_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("shipment.id", ondelete="SET NULL"), nullable=True))
+#     items: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))  # list of product_id/qty
+#     reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+#     status: Optional[str] = Field(default="REQUESTED", sa_column=Column(String(32), nullable=False, index=True))
+#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+#     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+# class Refund(SQLModel, table=True):
+  
+#     id: Optional[int] = Field(default=None, primary_key=True)
+#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
+#     payment_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("payment.id", ondelete="SET NULL"), nullable=True))
+#     amount: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
+#     provider_refund_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+#     status: Optional[str] = Field(default="PENDING", sa_column=Column(String(32), nullable=False, index=True))
+#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+#     refunded_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+# # Order events / audit
+# class OrderEvent(SQLModel, table=True):
+    
+#     id: Optional[int] = Field(default=None, primary_key=True)
+#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
+#     event_type: str = Field(sa_column=Column(String(64), nullable=False))
+#     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+#     actor: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
