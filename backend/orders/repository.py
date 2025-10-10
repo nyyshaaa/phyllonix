@@ -5,11 +5,11 @@ from datetime import timedelta
 from typing import Any, Dict, List
 
 from fastapi import HTTPException,status
-from sqlalchemy import case, func, select, text, update
+from sqlalchemy import Tuple, and_, case, func, select, text, update
 
 from backend.common.utils import now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Payment, PaymentAttempt, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -386,3 +386,113 @@ async def update_idempotent_response(session, key: str, code: int, body: dict):
                                         ).values(response_code=code,response_body=body)
     await session.execute(stmt)
 
+
+async def get_payment_order_id(session,provider_payment_id):
+    stmt = select(Payment.order_id).where(Payment.provider_payment_id == provider_payment_id)
+    res = await session.execute(stmt)
+    payment_order_id = res.scalar_one_or_none()
+    return payment_order_id
+
+async def update_pay_success_get_orderid(session,provider_payment_id,payment_status):
+    stmt = (
+    update(Payment.order_id)
+    .where(Payment.provider_payment_id == provider_payment_id) 
+    .values(
+        status=payment_status,
+        paid_at=now(),
+        updated_at=now()
+    ).returning(Payment.order_id))
+    result=await session.execute(stmt)
+    order_id = result.scalar_one_or_none()
+    return order_id
+
+async def update_order_status_get_orderid(session,payment_order_id,order_status):
+  
+    stmt = (
+        update(Order)
+        .where(Order.id == payment_order_id)
+        .values(
+            status=order_status,
+            placed_at=func.now(),
+            updated_at=func.now()
+        )
+        .returning(Order.id)
+    )
+    result = await session.execute(stmt)
+    order_id = result.scalar_one_or_none()
+    return order_id
+
+
+async def commit_reservations_and_decrement_stock(session,order_id):
+    """
+    Idempotent commit: for each reservation linked to the order:
+      - ensure reservation.status != COMMITTED
+      - decrement product.stock_qty atomically (UPDATE ... WHERE stock_qty >= q)
+      - set reservation.status = COMMITTED
+    """
+    # fetch minimal reservation data and lock rows
+    stmt = (
+        select(
+            InventoryReservation.id,
+            InventoryReservation.product_id,
+            InventoryReservation.quantity,
+        )
+        .where(
+            InventoryReservation.order_id == order_id,
+            InventoryReservation.status.in_(InventoryReserveStatus.ACTIVE.value),
+        )
+        .with_for_update()  # lock reservations so other txs don't concurrently commit them
+    )
+
+    res = await session.execute(stmt)
+    rows: List[Tuple] = res.all()
+    if not rows:
+        return []  # nothing to commit
+    
+    committed_res_ids: List[int] = []
+    committed_at = now()
+
+    for res_row in rows:
+        iv_id, product_id, qty = res_row
+        q = int(qty)
+        pid = int(product_id)
+
+        prod_update_errs = []
+
+        prod_update = (
+                update(Product)
+                .where(and_(Product.id == pid, Product.stock_qty >= q))
+                .values(stock_qty=Product.stock_qty - q)
+        )
+        prod_result = await session.execute(prod_update)
+        # prod_result.rowcount should be 1 if update succeeded (stock >= q), otherwise 0
+        if prod_result.rowcount == 0:
+            # Either product not found OR stock insufficient OR concurrent change
+            #** log it , also check how to handle it properly webhook shouldn't retry in case of concurrent update or if product stock rem is low--
+            #-- product not found shouldn't happen--
+            #-- for now just append and don't do anything with it 
+            prod_update_errs.append(
+                {"detail":f"Insufficient stock or concurrent modification for product {pid} while committing reservation {iv_id}"})
+        
+        iv_update = (
+            update(InventoryReservation)
+            .where(
+                and_(
+                    InventoryReservation.id == iv_id,
+                    InventoryReservation.status.in_(InventoryReserveStatus.ACTIVE.value),
+                )
+            )
+            .values(status=InventoryReserveStatus.COMMITED.value, committed_at=committed_at)
+        )
+        iv_result = await session.execute(iv_update)
+        # If iv_result.rowcount == 0, someone else may have committed it already — that's fine (idempotency).
+        if iv_result.rowcount >= 1:
+            committed_res_ids.append(iv_id)
+        else:
+            # someone else committed it concurrently; we didn't modify it, but the product decrement happened
+            # We'll treat it as idempotent and continue; but log/raise if needed.
+            # OPTIONAL: log warning here about concurrent commit.
+            pass
+
+    await session.flush()
+    return committed_res_ids

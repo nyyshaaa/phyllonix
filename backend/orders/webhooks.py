@@ -1,6 +1,11 @@
 
-from fastapi import APIRouter
+import json
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import  AsyncSession
 
+from backend.db.dependencies import get_session
+from backend.config.settings import config_settings
+from backend.orders.services import mark_webhook_processed, mark_webhook_received, update_order_place_npay_states, verify_razorpay_signature, webhook_event_already_processed
 
 
 webhooks_router=APIRouter()
@@ -12,3 +17,42 @@ async def payment_status_webhook():
     # mark payment done & order confirmed in db 
     # enqueue an event of order confirmation and push event to queue 
 
+
+@webhooks_router.post("/razorpay")
+async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
+    body = await request.body()
+    
+    # verify signature
+    await verify_razorpay_signature(request, body)
+    
+    payload = json.loads(body)
+    provider_event_id = payload.get("id")
+    if not provider_event_id:
+        # bad payload; acknowledge to avoid retries or log and 400
+        raise HTTPException(status_code=400, detail="missing event id")
+
+    provider = "razorpay"
+
+    # insert/mark webhook receipt (dedupe)
+    if await webhook_event_already_processed(session, provider_event_id):
+            return {"status": "ok", "note": "already processed"}
+    
+    ev = await mark_webhook_received(session, provider_event_id, provider, payload)
+
+    # process the event
+    # Extract payment entity safely (Razorpay payload nests under payload.payment.entity)
+    payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {}) or {}
+    provider_payment_id = payment_entity.get("id") or payment_entity.get("payment_id")
+    psp_pay_status = payment_entity.get("status")  # e.g., 'captured', 'failed', 'authorized'
+
+    # If it's not a payment event, can ignore or handle other events (order.paid etc)
+    if not provider_payment_id:
+        # mark processed to stop retries
+        await mark_webhook_processed(session, ev)
+        return {"status": "ok", "note": "no payment entity"}
+    
+    return await update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_status)
+    
+
+
+   

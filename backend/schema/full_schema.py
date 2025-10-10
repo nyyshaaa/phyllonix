@@ -318,7 +318,6 @@ class ProviderWebhookEvent(SQLModel, table=True):
     provider: str = Field(sa_column=Column(String(100), nullable=True))           # e.g. 'cloudinary'
     payload: dict = Field(sa_column=Column(JSONB, nullable=False))
     received_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-    # processed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     attempts: Optional[int] = Field(default=0, sa_column=Column(Integer, nullable=True))
 
@@ -525,14 +524,14 @@ class PaymentAttempt(SQLModel, table=True):
     provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
-# class PaymentWebhookEvent(SQLModel, table=True):
+class PaymentWebhookEvent(SQLModel, table=True):
     
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
-#     provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
-#     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-#     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
+    provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=False, index=True))
+    payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
 # --------------------------------------------------------------------------------------------------------------------------------
 

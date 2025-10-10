@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     RZPAY_KEY:str
     RZPAY_SECRET:str
     RZPAY_GATEWAY_URL:str
+    RAZORPAY_WEBHOOK_SECRET:str
 
     class Config:
         env_file = ".env"
