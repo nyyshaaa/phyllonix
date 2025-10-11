@@ -82,12 +82,13 @@ async def place_order(request:Request,checkout_id: str,
     
     order_npay_data = await spc_by_ikey(session,idempotency_key)
 
-    if order_npay_data:
+    if order_npay_data and order_npay_data["response_body"] is not None:
         return order_npay_data
 
     order_totals,payment_method = await validate_checkout_nget_totals(session,checkout_id)
     order_data = await place_order_with_items(session,user_identifier,payment_method,order_totals,idempotency_key)
-    
+    await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
+
     pay_public_id=order_data.get("pay_public_id",None)
 
     if pay_public_id:

@@ -186,12 +186,12 @@ async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,che
 
 async def spc_by_ikey(session,i_key):
     stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code
-                  ).where(IdempotencyKey.key == i_key).limit(1)  #* check limit 1 
+                  ).where(IdempotencyKey.key == i_key)
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res:
         order_npay_data = {"response_body":res[0],"response_code":res[1]}
-        return order_npay_data[0]
+        return order_npay_data
     return res
 
 
@@ -206,7 +206,7 @@ async def validate_checkout_nget_totals(session,checkout_id):
         raise HTTPException(status_code=404, detail="Checkout session not found")
 
     # expiration check
-    if cs.expires_at and cs.expires_at < now():
+    if cs.expires_at and cs.expires_at < now()+timedelta(seconds=40):
         raise HTTPException(status_code=410, detail="Checkout session expired")
 
     # ensure a payment method has been selected
@@ -220,9 +220,8 @@ async def validate_checkout_nget_totals(session,checkout_id):
     if not items:
         raise HTTPException(status_code=400, detail="Checkout has no items")
 
-    #** keep the same expiry for checkout and invenotry hold and avoid the work of revalidating inventory hence optimising latency .      
+    #** avoid the work of revalidating inventory hence optimising latency checked in earlier endpoint path . inventory hold expiry is longer than checkout expiry .    
     # await validate_reservations(session,cs_id,items,payment_method)
-
 
     order_totals=compute_final_total(items,payment_method)
     return order_totals,payment_method
@@ -315,9 +314,9 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
     
 
     if payment_method == "UPI" :
-        pay_public_id=await record_payment_attempt(session,order.id,order_totals["total"])
+        pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"])
         await commit_idempotent_order_place(session,i_key,order.id,
-                                            None,response_body=None,owner_type="order_confirm")
+                                            None,response_body=None,owner_type="payment_pending")
         
         response["pay_public_id"]=pay_public_id
         return response
@@ -338,47 +337,75 @@ async def commit_idempotent_order_place(session,idempotency_key,owner_id,respons
             expires_at=now + timedelta(days=1),
         )
     session.add(ik)
-    
-    # commit here after saving idempotency of operation
-    await session.commit()
 
     
 
-
-async def record_payment_attempt(session,order_id,order_total):
+async def record_payment_init_pending(session,order_id,order_total):
   
     payment = Payment(
         order_id=order_id,
         # provider="razorpay", 
         provider_payment_id=None,
-        status="PENDING",
+        status=PaymentStatus.PENDING.value,
         amount=order_total
     )
     session.add(payment)
     await session.flush()
 
-    # record a payment attempt
-    pa = PaymentAttempt(
-        payment_id=payment.id,
-        attempt_no=1,
-        provider_response=None,
-        provider_event_id=None,
-    )
-    session.add(pa)
-    await session.flush()
+    # # record a payment attempt
+    # pa = PaymentAttempt(
+    #     payment_id=payment.id,
+    #     attempt_no=1,
+    #     provider_response=None,
+    #     provider_event_id=None,
+    # )
+    # session.add(pa)
+    # await session.flush()
 
     return payment.public_id
 
 #** update staus as well
-async def update_payment_status(session,pay_public_id,provider_order_id):
+async def update_payment_provider_id(session,pay_public_id,provider_order_id):
     stmt = update(Payment).where(Payment.public_id==pay_public_id).values(provider_payment_id=provider_order_id).returning(Payment.id)
     res=await session.execute(stmt)
     res=res.first[0] if res else None
 
 #** also update provider event id and also check if to convert resp to any format 
-async def update_payment_attempt(session,pay_id,psp_resp):
+async def update_payment_attempt_psp_resp(session,pay_id,psp_resp):
     stmt = update(PaymentAttempt).where(PaymentAttempt.payment_id==pay_id).values(provider_response=psp_resp)
     await session.execute(stmt)
+
+async def update_payment_attempt_resp(session,attempt_id,status,psp_response):
+    stmt= update(PaymentAttempt
+                 ).where(PaymentAttempt.id == attempt_id
+                ).values(
+                    status=status,
+                    provider_response=psp_response,
+                    updated_at=now()
+                )
+    await session.execute(stmt)
+
+# async def get_pay_attempt_id(session,payment_id):
+#     stmt = select(PaymentAttempt.id
+#                   ).where(PaymentAttempt.payment_id == payment_id,PaymentAttempt.attempt_no == 1)
+#     res = await session.execute(stmt)
+#     attempt_row = res.scalar_one_or_none()
+#     attempt_id = attempt_row.id if attempt_row else None
+
+async def record_payment_attempt(session,payment_id,attempt_no,pay_status,resp):
+    pa = PaymentAttempt(
+        payment_id=payment_id,
+        attempt_no=attempt_no,
+        status=pay_status,
+        provider_response=None,
+        created_at=now(),
+    )
+    session.add(pa)
+    # flush to get id
+    await session.flush()
+    attempt_id = pa.id
+    return attempt_id
+
 
 
 async def update_idempotent_response(session, key: str, code: int, body: dict):

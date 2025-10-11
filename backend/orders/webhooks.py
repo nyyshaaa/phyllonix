@@ -51,7 +51,10 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         await mark_webhook_processed(session, ev)
         return {"status": "ok", "note": "no payment entity"}
     
-    return await update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_status)
+    update_status = await update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_status)
+
+    #** emit events for shiipin , email confiemation , cart updates etc .
+    return update_status
     
 
 

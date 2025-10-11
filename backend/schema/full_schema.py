@@ -500,6 +500,14 @@ class PaymentStatus(enum.IntEnum):
     FAILED = 30
     REFUNDED = 40
 
+class PaymentAttemptStatus(enum.IntEnum):
+    FIRSTATTEMPT = 0
+    RETRYING = 10
+    SUCCESS = 20
+    FAILED = 30
+    UNKNOWN = 40
+
+
 # Payments & payment attempts / events
 class Payment(SQLModel, table=True):
    
@@ -519,7 +527,8 @@ class PaymentAttempt(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     payment_id: int = Field(sa_column=Column(Integer, ForeignKey("payment.id", ondelete="CASCADE"), nullable=False, index=True))
-    attempt_no: int = Field(default=1, sa_column=Column(Integer, nullable=False))
+    attempt_no: int = Field(sa_column=Column(Integer, nullable=False))
+    status: int = Field(sa_column=Column(Integer, nullable=False))
     provider_response: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))

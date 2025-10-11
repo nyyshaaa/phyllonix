@@ -1,5 +1,6 @@
 
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -8,14 +9,17 @@ from fastapi import HTTPException, Request , status
 import httpx
 from sqlalchemy import select
 from backend.common.utils import now
-from backend.orders.repository import commit_reservations_and_decrement_stock, get_payment_order_id, items_avblty, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt, update_payment_status
+from backend.orders.repository import commit_reservations_and_decrement_stock, get_payment_order_id, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt, update_payment_attempt_psp_resp, update_payment_attempt_resp, update_payment_provider_id
 from backend.config.settings import config_settings
-from backend.schema.full_schema import Order, OrderStatus, Payment, PaymentStatus, PaymentWebhookEvent
+from backend.schema.full_schema import Order, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentStatus, PaymentWebhookEvent
 
 PSP_API_BASE=config_settings.RZPAY_GATEWAY_URL
 PSP_KEY_ID=config_settings.RZPAY_KEY
 PSP_KEY_SECRET=config_settings.RZPAY_SECRET
 RAZORPAY_WEBHOOK_SECRET=config_settings.RAZORPAY_WEBHOOK_SECRET
+TRANSIENT_EXCEPTIONS = (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.NetworkError)
+DEFAULT_RETRIES=3
+DEFAULT_BACKOFF_BASE = 0.5 
 
 
 async def validate_items_avblty(session,cart_items):
@@ -28,65 +32,76 @@ async def validate_items_avblty(session,cart_items):
         "stock_qty": int(it["product_stock"]),
         "requested_qty": int(it["quantity"]),
         }
-        
 
     await items_avblty(session,product_ids,product_data)
 
 #** check the commits placement here
 async def create_payment_intent(session,idempotency_key,order_totals,order_data):
     pay_public_id=order_data["pay_public_id"]
-    try:
-        # amount expected in paise
-        amount_in_paise = order_totals["total"]*100
-        currency = "INR"
-        receipt = f"order_{order_data['order_public_id']}"
-        notes = {"order_public_id": order_data["order_public_id"], "payment_public_id": pay_public_id}
+   
+    # amount expected in paise
+    amount_in_paise = order_totals["total"]*100
+    currency = "INR"
+    receipt = f"order_{order_data['order_public_id']}"
+    notes = {"order_public_id": order_data["order_public_id"], "payment_public_id": pay_public_id}
 
-        psp_resp = await create_psp_order(amount_paise=amount_in_paise, currency=currency, 
-                                          receipt=receipt, notes=notes,idempotency_key=idempotency_key)
-        provider_order_id = psp_resp.get("id") 
-        if not provider_order_id:
-            # fallback: try other keys or treat as error
-            raise RuntimeError("Provider did not return order id")   #**recheck
-        # Build a client payload — for UPI you might create deeplink from data or use checkout
-        # Example deeplink (merchant VPA must be provided by provider or merchant account)
-        #** adjust based on PSP response fields.
-        client_payload = {
-            "provider": "razorpay",
-            "provider_order_id": provider_order_id,
-            "provider_raw": psp_resp,
-            "checkout_hint": {
-                "type": "provider_order",
-                "order_id": provider_order_id,
-                "note": "Use Razorpay Checkout or construct UPI deeplink / checkout flow using provider SDK",
-            },
-        }
+    create_psp_order = retry_payments(create_psp_order,pay_public_id,session) 
+    psp_resp,psp_exc = await create_psp_order(amount_paise=amount_in_paise, currency=currency, 
+                                        receipt=receipt, notes=notes,idempotency_key=idempotency_key)
+    
+    if psp_exc:
+        # await schedule_reconciliation_job(order_public_id=order_data["order_public_id"], payment_attempt_id=res.attempt_id)
+        raise HTTPException(status_code=502, detail="Payment provider unreachable;order and payment in pending state")  
+    # client will decide how to deal , 
+    # client can show pending for some duration to user until not reachable and then give and option to retyr by sending messages like payment is pending
 
-        # persist provider id and payment_attempt response & update idempotency table
-        # update payment row
-        pay_id=update_payment_status(session,pay_public_id,provider_order_id)
+    provider_order_id = psp_resp.get("id") 
+    if provider_order_id is None:
+        pay_status=PaymentAttemptStatus.UNKNOWN.value
+        # never got definitive provider response
+        # mark attempt as UNKNOWN and schedule background reconciliation
+        await record_payment_attempt(
+                session,pay_public_id,DEFAULT_RETRIES+1,pay_status,resp="No provider order id in response")
+
+        # await schedule_reconciliation_job(order_public_id=order_data["order_public_id"], payment_attempt_id=res.attempt_id)
+        raise HTTPException(status_code=502, detail="Payment provider unreachable;order and payment in pending state")  
         
-        # update payment_attempt.provider_response (assume attempt_no=1)
-        update_payment_attempt(session,pay_id,psp_resp)
+        
+    # Build a client payload — for UPI you might create deeplink from data or use checkout
+    # Example deeplink (merchant VPA must be provided by provider or merchant account)
+    #** adjust based on PSP response fields.
+    client_payload = {
+        "provider": "razorpay",
+        "provider_order_id": provider_order_id,
+        "provider_raw": psp_resp,
+        "checkout_hint": {
+            "type": "provider_order",
+            "order_id": provider_order_id,
+            "note": "Use Razorpay Checkout or construct UPI deeplink / checkout flow using provider SDK",
+        },
+    }
 
-        # update idempotency response
-        response_body = {
-            "order_public_id": order_data["order_public_id"],
-            "order_id": order_data["order_id"],
-            "payment_public_id": pay_public_id,
-            "payment_provider_id": provider_order_id,
-            "payment_client_payload": client_payload,
-            "status": "PENDING",
-            "message": "Provider order created; client should open provider checkout/deeplink.",
-        }
-        await update_idempotent_response(session, idempotency_key, 200, response_body)
-        return response_body
-    except httpx.HTTPError as e:
-        # PSP call failed — mark payment attempt as failed and return 502 to client or retry strategy
-        # Update payment_attempt to reflect failure and keep idempotency row for retry
-        resp=json.dumps({"error": str(e)})
-        update_payment_attempt(session,pay_id,resp)
-        raise HTTPException(status_code=502, detail="Payment provider error, please retry")
+    # persist provider id and payment_attempt response & update idempotency table
+    # update payment row
+    pay_id=await update_payment_provider_id(session,pay_public_id,provider_order_id)
+    
+    # update payment_attempt.provider_response (assume attempt_no=1)
+    await update_payment_attempt_psp_resp(session,pay_id,psp_resp)
+    await session.commit()
+
+    # update idempotency response
+    response_body = {
+        "order_public_id": order_data["order_public_id"],
+        "order_id": order_data["order_id"],
+        "payment_public_id": pay_public_id,
+        "payment_provider_id": provider_order_id,
+        "payment_client_payload": client_payload,
+        "status": "PENDING",
+        "message": "Provider order created; client should open provider checkout/deeplink.",
+    }
+    await update_idempotent_response(session, idempotency_key, 200, response_body)
+    await session.commit()
+    return response_body
     
 
 async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes: dict,
@@ -114,6 +129,59 @@ async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes
         resp.raise_for_status()
         data = resp.json()
         return data
+    
+
+def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,backoff_base: int = DEFAULT_BACKOFF_BASE):
+    async def retry_wrapper(*args, **kwargs):
+        last_exc: Optional[Exception] = None
+        for attempt_idx in range(1, max_retries + 1):
+            pay_status = PaymentAttemptStatus.FIRSTATTEMPT.value
+            attempt_id=await record_payment_attempt(
+                session,payment_id,attempt_idx,pay_status,resp=None)
+
+            try:
+                resp = await func(*args, **kwargs)
+                await update_payment_attempt_resp(
+                    session,attempt_id,PaymentAttemptStatus.SUCCESS.value,resp)
+                
+                return resp,None
+            except TRANSIENT_EXCEPTIONS as ex:
+                # transient network error — mark attempt as retrying, record last_exc, retry
+                await update_payment_attempt_resp(
+                    session,attempt_id,PaymentAttemptStatus.RETRYING.value,str(ex))
+                last_exc = ex
+            except httpx.HTTPStatusError as ex:
+                # inspect status code
+                status_code = ex.response.status_code if ex.response is not None else None
+                body_text = ex.response.text if ex.response is not None else str(ex)
+               
+                if status_code and 500 <= status_code < 600:
+                    # server error at provider -> retry
+                    await update_payment_attempt_resp(
+                    session,attempt_id,PaymentAttemptStatus.RETRYING.value,
+                    {"http_status": status_code, "body": f"5xx: {body_text}"})
+                    last_exc = ex
+                else:
+                    # 4xx or other non-retryable -> surface immediately
+                    await update_payment_attempt_resp(
+                    session,attempt_id,PaymentAttemptStatus.FAILED.value,
+                    {"http_status": status_code, "body": f"4xx: {body_text}"})
+
+                    return None, ex
+            except Exception as ex:
+                # unknown exception -> treat as transient/ambiguous, but retry a few times
+                await update_payment_attempt_resp(
+                    session,attempt_id,PaymentAttemptStatus.UNKNOWN.value,
+                    str(ex))
+                
+                last_exc = ex
+
+            # backoff before next try
+            await asyncio.sleep(min(backoff_base * (2 ** (attempt_idx - 1)), 8.0))
+        return None, last_exc
+
+    
+    return retry_wrapper
 
 # class PaymentWebhook:
 
@@ -191,8 +259,6 @@ async def update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_
     #-- emit an event for order confirmation and update invenotry and product stock in a single commit
     coomited_res_ids=await commit_reservations_and_decrement_stock(session, order_id)
     await session.commit ()
-
-    #** emit events for shiipin , email confiemation , cart updates etc .
 
     await mark_webhook_processed(session, ev)
     return {"status": "ok", "note": note}
