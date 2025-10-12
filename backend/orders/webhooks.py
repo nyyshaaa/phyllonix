@@ -11,12 +11,6 @@ from backend.orders.services import mark_webhook_processed, mark_webhook_receive
 webhooks_router=APIRouter()
 
 
-@webhooks_router.post("/payment")
-async def payment_status_webhook():
-    pass
-    # mark payment done & order confirmed in db 
-    # enqueue an event of order confirmation and push event to queue 
-
 
 @webhooks_router.post("/razorpay")
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
@@ -24,9 +18,9 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     
     # verify signature
     await verify_razorpay_signature(request, body)
-    
+    print("hereee")
     payload = json.loads(body)
-    provider_event_id = payload.get("id")
+    provider_event_id = request.headers.get("X-Razorpay-Event-Id")
     if not provider_event_id:
         # bad payload; acknowledge to avoid retries or log and 400
         raise HTTPException(status_code=400, detail="missing event id")

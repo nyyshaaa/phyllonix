@@ -447,8 +447,8 @@ class CheckoutSession(SQLModel, table=True):
     cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
     selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
-    status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
-    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    # status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
+    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
 
@@ -457,7 +457,7 @@ class CheckoutSession(SQLModel, table=True):
             "uq_checkout_active_cart",
             "user_id",
             unique=True,
-            postgresql_where= text(f"status = {CheckoutStatus.PROGRESS.value}")
+            postgresql_where=text("expires_at > now()")  
         ),
     )
 

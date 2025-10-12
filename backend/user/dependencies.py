@@ -7,16 +7,34 @@ from backend.config.settings import config_settings
 
 
 class Authentication(HTTPBearer):
-    def __init__(self,auto_error=True): 
+    # def __init__(self,auto_error=True): 
+    #     super().__init__(auto_error=auto_error)
+
+    # async def __call__(self, request:Request) -> http.HTTPAuthorizationCredentials|None:
+    #     auth_creds=await super().__call__(request)
+    #     token=auth_creds.credentials
+
+    #     decoded_token=self.decode_token(token)
+
+    #     if not decoded_token:
+    #         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired token provided.")
+        
+    #     return decoded_token
+    
+    #* for test of an endpoint 
+    def __init__(self,auto_error=False): 
         super().__init__(auto_error=auto_error)
 
-    async def __call__(self, request:Request) -> http.HTTPAuthorizationCredentials|None:
+    async def __call__(self, request:Request, token=None) -> http.HTTPAuthorizationCredentials|None:
         auth_creds=await super().__call__(request)
-        token=auth_creds.credentials
+        if not token:
+            token=auth_creds.credentials
 
+        print("token",token) 
         decoded_token=self.decode_token(token)
 
         if not decoded_token:
+            # return None
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired token provided.")
         
         return decoded_token

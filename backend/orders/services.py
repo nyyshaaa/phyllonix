@@ -4,12 +4,13 @@ import asyncio
 import hashlib
 import hmac
 import json
+import uuid
 from typing import Optional
 from fastapi import HTTPException, Request , status
 import httpx
 from sqlalchemy import select
 from backend.common.utils import now
-from backend.orders.repository import commit_reservations_and_decrement_stock, get_payment_order_id, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt, update_payment_attempt_psp_resp, update_payment_attempt_resp, update_payment_provider_id
+from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt_psp_resp, update_payment_attempt_resp, update_payment_provider_id
 from backend.config.settings import config_settings
 from backend.schema.full_schema import Order, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentStatus, PaymentWebhookEvent
 
@@ -23,11 +24,13 @@ DEFAULT_BACKOFF_BASE = 0.5
 
 
 async def validate_items_avblty(session,cart_items):
+    if isinstance(cart_items, str):
+        cart_items = json.loads(cart_items) 
     
     product_ids=[]
     product_data={}
     for it in cart_items:
-        product_ids.append(it["product_id"])
+        product_ids.append(int(it["product_id"]))
         product_data[int(it["product_id"])]={
         "stock_qty": int(it["product_stock"]),
         "requested_qty": int(it["quantity"]),
@@ -35,21 +38,64 @@ async def validate_items_avblty(session,cart_items):
 
     await items_avblty(session,product_ids,product_data)
 
+async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes: dict,
+                           idempotency_key: Optional[str] = None,timeout: float = 10.0) -> dict:
+    """
+    Create Razorpay order (server -> razorpay). Returns dict with provider order id and client payload.
+    amount_rs: integer rs 
+    receipt: your internal receipt id (e.g., "order_pubid")
+    notes: optional metadata
+    """
+    url = f"{PSP_API_BASE}/orders"
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if idempotency_key:
+        print("ikey",idempotency_key)
+        print(type(idempotency_key))
+        headers["Idempotency-Key"] = str(idempotency_key)
+    payload = {
+        "amount": amount_paise,
+        "currency": currency,
+        "receipt": receipt,
+        "notes": notes or {},
+    }
+    print(payload,type(payload))
+    async with httpx.AsyncClient(timeout=10.0, auth=(PSP_KEY_ID, PSP_KEY_SECRET)) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+        print("spsp_data",data)
+        return data
+
+
+async def pay_id_by_public_payid(session,pay_public_id):
+    stmt= select(Payment.id).where(Payment.public_id==pay_public_id)
+    res = await session.execute(stmt)
+    res = res.scalar_one_or_none()
+    return res
+
+
 #** check the commits placement here
-async def create_payment_intent(session,idempotency_key,order_totals,order_data):
+async def create_payment_intent(session,idempotency_key,order_totals,order_data,create_psp_order=create_psp_order):
     pay_public_id=order_data["pay_public_id"]
    
     # amount expected in paise
     amount_in_paise = order_totals["total"]*100
-    currency = "INR"
-    receipt = f"order_{order_data['order_public_id']}"
-    notes = {"order_public_id": order_data["order_public_id"], "payment_public_id": pay_public_id}
 
-    create_psp_order = retry_payments(create_psp_order,pay_public_id,session) 
+
+    currency = "INR"
+    # receipt = f"order_{uuid.uuid4().hex[:20]}"
+    receipt = f"order_{str(order_data['order_public_id'])[:20]}"
+    notes = {"order_public_id": str(order_data["order_public_id"]), "payment_public_id": str(pay_public_id)}
+    
+    pay_int_id= await pay_id_by_public_payid(session,pay_public_id)
+    create_psp_order = retry_payments(create_psp_order,pay_int_id,session) 
     psp_resp,psp_exc = await create_psp_order(amount_paise=amount_in_paise, currency=currency, 
                                         receipt=receipt, notes=notes,idempotency_key=idempotency_key)
     
     if psp_exc:
+        print("psp_exc",psp_exc)
         # await schedule_reconciliation_job(order_public_id=order_data["order_public_id"], payment_attempt_id=res.attempt_id)
         raise HTTPException(status_code=502, detail="Payment provider unreachable;order and payment in pending state")  
     # client will decide how to deal , 
@@ -91,10 +137,10 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data)
 
     # update idempotency response
     response_body = {
-        "order_public_id": order_data["order_public_id"],
+        "order_public_id": str(order_data["order_public_id"]),
         "order_id": order_data["order_id"],
-        "payment_public_id": pay_public_id,
-        "payment_provider_id": provider_order_id,
+        "payment_public_id": str(pay_public_id),
+        "payment_provider_id": str(provider_order_id),
         "payment_client_payload": client_payload,
         "status": "PENDING",
         "message": "Provider order created; client should open provider checkout/deeplink.",
@@ -104,31 +150,6 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data)
     return response_body
     
 
-async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes: dict,
-                           idempotency_key: Optional[str] = None,timeout: float = 10.0) -> dict:
-    """
-    Create Razorpay order (server -> razorpay). Returns dict with provider order id and client payload.
-    amount_rs: integer rs 
-    receipt: your internal receipt id (e.g., "order_pubid")
-    notes: optional metadata
-    """
-    url = f"{PSP_API_BASE}/orders"
-    headers = {
-        "Content-Type": "application/json",
-    }
-    if idempotency_key:
-        headers["Idempotency-Key"] = idempotency_key
-    payload = {
-        "amount": amount_paise,
-        "currency": currency,
-        "receipt": receipt,
-        "notes": notes or {},
-    }
-    async with httpx.AsyncClient(timeout=10.0, auth=(PSP_KEY_ID, PSP_KEY_SECRET)) as client:
-        resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-        return data
     
 
 def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,backoff_base: int = DEFAULT_BACKOFF_BASE):
@@ -141,6 +162,7 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
 
             try:
                 resp = await func(*args, **kwargs)
+                print("resp",resp)
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.SUCCESS.value,resp)
                 
@@ -173,8 +195,8 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.UNKNOWN.value,
                     str(ex))
-                
-                last_exc = ex
+                return None , ex
+                # last_exc = ex
 
             # backoff before next try
             await asyncio.sleep(min(backoff_base * (2 ** (attempt_idx - 1)), 8.0))
@@ -187,6 +209,7 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
 
 async def verify_razorpay_signature(request: Request, body: bytes):
     sig = request.headers.get("X-Razorpay-Signature")
+    print("sig",sig)
     if not sig:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing signature")
     expected = hmac.new(RAZORPAY_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
@@ -227,7 +250,6 @@ async def mark_webhook_received(session, provider_event_id: str, provider: str, 
 async def mark_webhook_processed(session, ev):
 
     ev.processed_at = now()
-    ev.attempts = (ev.attempts or 0) + 1
     session.add(ev)
     await session.flush()
 

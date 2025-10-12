@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from fastapi import HTTPException,status
 from sqlalchemy import Tuple, and_, case, func, select, text, update
-
+from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
 from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
@@ -47,7 +47,7 @@ async def items_avblty(session,product_ids,product_data) -> int:
     """Return available = stock_qty - sum(active reservations)."""
     item_errs=[]
     cond = (InventoryReservation.status == InventoryReserveStatus.ACTIVE.value) & (InventoryReservation.reserved_until > now())
-    reserved_expr = func.coalesce(func.sum(case([(cond, InventoryReservation.quantity)], else_=0)), 0).label("reserved_qty")
+    reserved_expr = func.coalesce(func.sum(case((cond, InventoryReservation.quantity), else_=0)), 0).label("reserved_qty")
    
     # sum of active reservations
     stmt = (
@@ -80,7 +80,6 @@ async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
    
     cs = CheckoutSession(
         user_id=user_id,
-        status=CheckoutStatus.PROGRESS.value,
         cart_snapshot={"cart_id": cart_id, "items": items},
         expires_at=reserved_until,
         selected_payment_method=None
@@ -98,7 +97,7 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     for it in cart_items:
         inv = InventoryReservation(
             product_id=it["product_id"],
-            checkout_session_id=cs_id,
+            checkout_id=cs_id,
             quantity=it["quantity"],
             reserved_until=reserved_until,
             status=InventoryReserveStatus.ACTIVE.value
@@ -107,26 +106,25 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     
 
 
-async def get_checkout_session(session,user_id):
+async def get_checkout_session(session,user_id,reserved_until):
   
     # Reuse active checkout session if exists
     stmt = select(CheckoutSession.public_id).where(
         CheckoutSession.user_id == user_id,
-        CheckoutSession.status == CheckoutStatus.PROGRESS.value,
         CheckoutSession.expires_at > now()
     )
     res = await session.execute(stmt)
     cs = res.scalar_one_or_none()
+    
     if cs:  
         return {
-            "checkout_id": cs.public_id
+            "checkout_id": cs
         }
     return None
     
 async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.cart_snapshot,CheckoutSession.expires_at
-                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id,CheckoutSession.status==CheckoutStatus.PROGRESS.value
-                          ).with_for_update()
+                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
     cs_dict = {"cs_id":cs[0],"cs_cart_snap":cs[1],"cs_expires_at":cs[2]}
@@ -146,7 +144,7 @@ async def get_checkout_details(session,checkout_id,user_id):
 
 async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,checkout_public_id,cs_expires_at):
     # Compute totals
-    subtotal = sum(int(it["base_price"]) * int(it["quantity"]) for it in items)
+    subtotal = sum(int(it["prod_base_price"]) * int(it["quantity"]) for it in items)
     tax = int(subtotal * 0.02)
     shipping = 50
     discount = 0
@@ -158,9 +156,9 @@ async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,che
 
     # Optionally extend TTL for slower payment methods like UPI
     if payment_method == "UPI":
-        cs_expires_at = now() + timedelta(minutes=UPI_RESERVATION_TTL_MINUTES)
+        cs_expires_at = cs_expires_at + timedelta(minutes=UPI_RESERVATION_TTL_MINUTES)
 
-    stmt=update(CheckoutSession.selected_payment_method).where(CheckoutSession.id==cs_id).values(selected_payment_method=payment_method)
+    stmt=update(CheckoutSession).where(CheckoutSession.id==cs_id).values(selected_payment_method=payment_method)
     await session.execute(stmt)
     
     #** if want to return with response
@@ -200,23 +198,23 @@ async def validate_checkout_nget_totals(session,checkout_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
                   ).where(CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
-    cs = res.scalar_one_or_none()
-    cs_id=cs.id
+    cs = res.one_or_none()
+    cs_id=cs[0]
     if not cs:
         raise HTTPException(status_code=404, detail="Checkout session not found")
 
     # expiration check
-    if cs.expires_at and cs.expires_at < now()+timedelta(seconds=40):
+    if cs[1] and cs[1] < now()+timedelta(seconds=40):
         raise HTTPException(status_code=410, detail="Checkout session expired")
 
     # ensure a payment method has been selected
-    if not cs.selected_payment_method:
+    if not cs[2]:
         raise HTTPException(status_code=400, detail="Payment method not selected")
 
-    payment_method = cs.selected_payment_method  # "UPI" or "COD"
+    payment_method = cs[2]  # "UPI" or "COD"
 
     # Load items from checkout snapshot
-    items = cs.cart_snapshot.get("items", []) if cs.cart_snapshot else []
+    items = cs[3].get("items", []) if cs[3] else []
     if not items:
         raise HTTPException(status_code=400, detail="Checkout has no items")
 
@@ -254,7 +252,7 @@ async def validate_reservations(session,cs_id,items,payment_method):
 def compute_final_total(items,payment_method):
     subtotal = 0
     for it in items:
-        subtotal += int(it["base_price"]) * int(it["quantity"])
+        subtotal += int(it["prod_base_price"]) * int(it["quantity"])
     tax = int(subtotal * 0.02)
     shipping = 0
     discount = 0
@@ -287,6 +285,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
         placed_at=None if payment_method == "UPI" else now(),
         created_at=now(),
         updated_at=now(),
+        shipping_address_json={"city":"central city","country":"america"}
     )
     session.add(order)
     await session.flush()  # to get order.id
@@ -298,8 +297,8 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
             product_id=it["product_id"],
             sku=None,
             quantity=it["quantity"],
-            unit_price_snapshot=it["base_price"],
-            tax_snapshot=int((it["base_price"] * it["quantity"]) * 0.02),
+            unit_price_snapshot=it["prod_base_price"],
+            tax_snapshot=int((it["prod_base_price"] * it["quantity"]) * 0.02),
             discount_snapshot=0,
         )
         session.add(oi)
@@ -315,28 +314,45 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
 
     if payment_method == "UPI" :
         pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"])
-        await commit_idempotent_order_place(session,i_key,order.id,
+        await commit_idempotent_order_place(session,user_id,i_key,order.id,
                                             None,response_body=None,owner_type="payment_pending")
         
         response["pay_public_id"]=pay_public_id
         return response
 
-    await commit_idempotent_order_place(session,i_key,order.id,
+    await commit_idempotent_order_place(session,user_id,i_key,order.id,
                                         200,response_body=response,owner_type="order_confirm")
 
     return response
 
 #** check this owner type thing and see if need to save event 
-async def commit_idempotent_order_place(session,idempotency_key,owner_id,response_code,response_body,owner_type):
+async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id,response_code,response_body,owner_type):
+    stmt = select(IdempotencyKey.id).where(IdempotencyKey.key==idempotency_key)
+    res = await session.execute(stmt)
+
+    res = res.scalar_one_or_none()
+    
+    if res :
+        return 
+
+        
     ik = IdempotencyKey(
             key=idempotency_key,
             owner_type=owner_type,
             owner_id=owner_id,
             response_code=response_code,
             response_body=response_body,
-            expires_at=now + timedelta(days=1),
+            expires_at=now() + timedelta(days=1),
+            created_by = user_id
         )
-    session.add(ik)
+    
+    try:
+        session.add(ik)
+    except IntegrityError:
+        session.rollback()
+        # stmt = select(IdempotencyKey).where(IdempotencyKey.key==idempotency_key)
+        # await session.execute(stmt)
+        
 
     
 
@@ -368,7 +384,7 @@ async def record_payment_init_pending(session,order_id,order_total):
 async def update_payment_provider_id(session,pay_public_id,provider_order_id):
     stmt = update(Payment).where(Payment.public_id==pay_public_id).values(provider_payment_id=provider_order_id).returning(Payment.id)
     res=await session.execute(stmt)
-    res=res.first[0] if res else None
+    res= res.scalar_one_or_none()
 
 #** also update provider event id and also check if to convert resp to any format 
 async def update_payment_attempt_psp_resp(session,pay_id,psp_resp):
@@ -381,7 +397,6 @@ async def update_payment_attempt_resp(session,attempt_id,status,psp_response):
                 ).values(
                     status=status,
                     provider_response=psp_response,
-                    updated_at=now()
                 )
     await session.execute(stmt)
 
@@ -422,12 +437,11 @@ async def get_payment_order_id(session,provider_payment_id):
 
 async def update_pay_success_get_orderid(session,provider_payment_id,payment_status):
     stmt = (
-    update(Payment.order_id)
+    update(Payment)
     .where(Payment.provider_payment_id == provider_payment_id) 
     .values(
         status=payment_status,
         paid_at=now(),
-        updated_at=now()
     ).returning(Payment.order_id))
     result=await session.execute(stmt)
     order_id = result.scalar_one_or_none()

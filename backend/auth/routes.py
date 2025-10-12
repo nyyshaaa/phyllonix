@@ -20,8 +20,8 @@ auth_router = APIRouter()
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
 async def login_user(request:Request,payload:SignIn, device_session_token: Optional[str] = Depends(device_session_plain),session: AsyncSession = Depends(get_session)):
     
-    access,refresh=await issue_auth_tokens(session,request,payload,device_session_token)
-    return {"message":{"access_token":access,"refresh_token":refresh}}
+    access,refresh,session_token=await issue_auth_tokens(session,request,payload,device_session_token)
+    return {"message":{"access_token":access,"refresh_token":refresh,"session_token":session_token}}
 
 #* make phone necessary for signup when app grows (not added now because of otp prices)
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)

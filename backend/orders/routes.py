@@ -3,13 +3,15 @@
 from datetime import timedelta
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from backend.config.settings import config_settings
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
 from backend.orders.repository import capture_cart_snapshot, create_checkout_session, get_checkout_details, get_checkout_session, order_totals_n_checkout_updates, place_order_with_items, reserve_inventory, spc_by_ikey, validate_checkout_nget_totals
 from backend.orders.services import create_payment_intent, validate_items_avblty
+from backend.schema.full_schema import Payment
 
 
 orders_router=APIRouter()
@@ -22,14 +24,14 @@ async def initiate_buy_now(request:Request,
     session: AsyncSession = Depends(get_session)):
 
     user_identifier=request.state.user_identifier
+    reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
 
-    checkout_public_id = await get_checkout_session(session,user_identifier)
+    checkout_public_id = await get_checkout_session(session,user_identifier,reserved_until)
 
     if checkout_public_id is None :
         cart_data = await capture_cart_snapshot(session, user_identifier)
-        cart_items=cart_data["cart_items"]
-        reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
-
+        cart_items=cart_data["items"]
+        
         checkout_public_id = await create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
     
     return {
@@ -58,7 +60,9 @@ async def get_order_summary(request:Request,checkout_id: str,
         raise HTTPException(status_code=400, detail="payment_method must be UPI or COD")
     
     cs=await get_checkout_details(session,checkout_id,user_identifier)
-    cart_items=cs["cs_cart_snap"]
+    cart_items=cs["cs_cart_snap"]["items"]
+    print("cart_items",cart_items)
+    print(type(cart_items))
     
     # Validate availability for each item
     await validate_items_avblty(session,cart_items)
@@ -70,7 +74,7 @@ async def get_order_summary(request:Request,checkout_id: str,
 
 # when clicked on proceed to pay with upi etc. call this 
 # order creation will happen here in final stage
-@orders_router.post("checkout/{checkout_id}/secure-confirm")
+@orders_router.post("/checkout/{checkout_id}/secure-confirm")
 async def place_order(request:Request,checkout_id: str,
     idempotency_key: str = Header(alias="Idempotency-Key"),
     session: AsyncSession = Depends(get_session)):
@@ -91,14 +95,86 @@ async def place_order(request:Request,checkout_id: str,
 
     pay_public_id=order_data.get("pay_public_id",None)
 
+    print("pay_public_id",pay_public_id)
+
     if pay_public_id:
-        order_pay_res=create_payment_intent(session,idempotency_key,order_totals,order_data)
+        order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_data)
         return order_pay_res
     
     return order_data
         
 
     
+# ----------------------------------------------------------------------------------------------------
+# for testing of upi app simulation 
+from fastapi.responses import HTMLResponse
+
+TEST_HTML_TEMPLATE = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Razorpay Checkout Test</title>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+  <h3>Razorpay Checkout Test</h3>
+  <p>Order: <strong id="ord"></strong></p>
+  <p>Amount (paise): <strong id="amt"></strong></p>
+  <button id="pay">Open Checkout</button>
+  <script>
+    const KEY = "{{KEY}}";
+    const ORDER_ID = "{{ORDER_ID}}";
+    const AMT = {{AMOUNT}};
+    document.getElementById("ord").textContent = ORDER_ID;
+    document.getElementById("amt").textContent = AMT;
+
+    document.getElementById("pay").addEventListener("click", function () {
+      const options = {
+        key: KEY,
+        order_id: ORDER_ID,
+        amount: AMT,
+        name: "Phyllonix (Test)",
+        description: "Test order",
+        prefill: { name: "Test User", email: "test@example.com" },
+        handler: function (response) {
+          alert("Checkout handler: " + JSON.stringify(response));
+        }
+      };
+      const rzp = new Razorpay(options);
+      rzp.open();
+    });
+  </script>
+</body>
+</html>
+"""
+
+@orders_router.get("/test/checkout/{order_public_id}", response_class=HTMLResponse)
+async def serve_test_checkout(request: Request, order_public_id: str, auth_token : str ,session = Depends(get_session)):
+    # 1) Ensure user is authenticated (or adjust logic if admin/testing)
+    # user_id = getattr(request.state, "user_identifier", None)
+    # if not user_id:
+    #     # if you want to allow local dev without auth, you can skip this check
+    #     raise HTTPException(status_code=401, detail="login required to open test checkout")
+
+    # 2) load provider order id and amount from DB by order_public_id
+    async with session as s:
+        stmt = select(Payment.provider_payment_id, Payment.amount, Payment.currency).where(Payment.provider_payment_id == order_public_id).limit(1)
+        res = await s.execute(stmt)
+        row = res.one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="payment/order not found")
+        provider_payment_id, amount, currency = row
+
+    if not provider_payment_id:
+        raise HTTPException(status_code=400, detail="provider_payment_id missing; create payment intent first")
+
+    # 3) get Razorpay public key from config/env
+    RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY # or read from env/config
+
+    # 4) render HTML with values injected
+    html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_payment_id).replace("{{AMOUNT}}", str(int(amount)))
+    return HTMLResponse(html)
+
     
 
 
@@ -111,9 +187,9 @@ async def place_order(request:Request,checkout_id: str,
 # -- next in webhooks file
 # ----------------------------------------------------------------------------------------------------
 
-@orders_router.get()
-async def get_all_orders():
-    pass
+# @orders_router.get()
+# async def get_all_orders():
+#     pass
 
 
 
