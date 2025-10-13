@@ -1,11 +1,11 @@
 
-
-
+from uuid6 import uuid7
 from datetime import timedelta
 from typing import Any, Dict, List
-
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
-from sqlalchemy import Tuple, and_, case, func, select, text, update
+from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
@@ -49,7 +49,7 @@ async def items_avblty(session,product_ids,product_data) -> int:
     cond = (InventoryReservation.status == InventoryReserveStatus.ACTIVE.value) & (InventoryReservation.reserved_until > now())
     reserved_expr = func.coalesce(func.sum(case((cond, InventoryReservation.quantity), else_=0)), 0).label("reserved_qty")
    
-    # sum of active reservations
+    # sum of active reservations for products in checkout 
     stmt = (
         select(InventoryReservation.product_id, reserved_expr)
         .where(InventoryReservation.product_id.in_(product_ids))
@@ -68,7 +68,8 @@ async def items_avblty(session,product_ids,product_data) -> int:
             item_errs.append({
                 "detail": f"Not enough stock for product {pid}: requested={requested_qty}, available={avbl}"
             })
-
+    
+    #* depending on business requirements just return raise 
     if item_errs:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"errors": item_errs})
 
@@ -76,21 +77,48 @@ async def items_avblty(session,product_ids,product_data) -> int:
 
 
 # create checkout session and resrver inventory atomically 
-async def create_checkout_session(session,user_id,cart_id,items,reserved_until):
-   
-    cs = CheckoutSession(
-        user_id=user_id,
-        cart_snapshot={"cart_id": cart_id, "items": items},
-        expires_at=reserved_until,
-        selected_payment_method=None
+async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_until):
+
+    values = {
+        "public_id": uuid7(),
+        "user_id": user_id,
+        "cart_snapshot": {"cart_id": cart_id, "items": items},
+        "expires_at": reserved_until,
+        "selected_payment_method": None
+    }
+
+    insert_stmt = (
+        pg_insert(CheckoutSession)
+        .values(**values)
+        .on_conflict_do_nothing(
+            index_elements=["user_id"],
+            index_where=text("is_active = true"),
+        )
+        .returning(CheckoutSession.public_id)
     )
-    session.add(cs)
-    await session.flush()  # get cs.id
 
-    cs_public_id = cs.public_id
+    try:
+        result = await session.execute(insert_stmt)
+        checkout_pid = result.scalar_one_or_none()
+        if checkout_pid:
+            await session.commit()
+            return checkout_pid
+        checkout_pid = await get_checkout_session(session,user_id)
 
-    await session.commit()
-    return cs_public_id
+        if checkout_pid:
+            return checkout_pid
+        
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Could not create checkout session please retry",
+        )
+    except IntegrityError as e:
+        print(e)
+        await session.rollback()
+        #* log the error for debug and audit 
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"Integrity Error other than unique violation occured in db")
+    
+
 
 
 async def reserve_inventory(session,cart_items,cs_id,reserved_until):
@@ -106,20 +134,22 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     
 
 
-async def get_checkout_session(session,user_id,reserved_until):
+async def get_checkout_session(session,user_id):
   
     # Reuse active checkout session if exists
-    stmt = select(CheckoutSession.public_id).where(
+    stmt = select(CheckoutSession.id,CheckoutSession.public_id,CheckoutSession.expires_at).where(
         CheckoutSession.user_id == user_id,
-        CheckoutSession.expires_at > now()
+        CheckoutSession.is_active == True,
     )
     res = await session.execute(stmt)
-    cs = res.scalar_one_or_none()
+    cs = res.one_or_none()
+
+    if not cs:
+        return None
     
-    if cs:  
-        return {
-            "checkout_id": cs
-        }
+    if cs[2] < now():  
+        await update_checkout_active(session,cs[0])
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
     return None
     
 async def get_checkout_details(session,checkout_id,user_id):
@@ -133,6 +163,7 @@ async def get_checkout_details(session,checkout_id,user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="checkout session not found")
 
     if cs_dict["cs_expires_at"] and cs_dict["cs_expires_at"] < now():
+        await update_checkout_active(session,cs[0])
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
 
     items = cs_dict["cs_cart_snap"].get("items", [])
@@ -142,7 +173,15 @@ async def get_checkout_details(session,checkout_id,user_id):
     return cs_dict 
 
 
-async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,checkout_public_id,cs_expires_at):
+async def update_checkout_active(session,cs_id):
+    stmt = update(CheckoutSession
+                  ).where(CheckoutSession.id == cs_id).values(is_active=False)
+    
+    await session.execute(stmt)
+    await session.commit()
+
+
+async def order_totals_n_checkout_method_updates(session,items,payment_method,cs_id,checkout_public_id,cs_expires_at):
     # Compute totals
     subtotal = sum(int(it["prod_base_price"]) * int(it["quantity"]) for it in items)
     tax = int(subtotal * 0.02)
@@ -182,9 +221,9 @@ async def order_totals_n_checkout_updates(session,items,payment_method,cs_id,che
         },
     }
 
-async def spc_by_ikey(session,i_key):
+async def spc_by_ikey(session,i_key,user_id):
     stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code
-                  ).where(IdempotencyKey.key == i_key)
+                  ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res:
@@ -192,11 +231,9 @@ async def spc_by_ikey(session,i_key):
         return order_npay_data
     return res
 
-
-#* recheck checkout retrieval and correct attr retreive format as per reqd fields
-async def validate_checkout_nget_totals(session,checkout_id):
+async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
-                  ).where(CheckoutSession.public_id == checkout_id).with_for_update()
+                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
     cs_id=cs[0]
@@ -205,6 +242,7 @@ async def validate_checkout_nget_totals(session,checkout_id):
 
     # expiration check
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
+        await update_checkout_active(session,cs[0])
         raise HTTPException(status_code=410, detail="Checkout session expired")
 
     # ensure a payment method has been selected
@@ -217,14 +255,9 @@ async def validate_checkout_nget_totals(session,checkout_id):
     items = cs[3].get("items", []) if cs[3] else []
     if not items:
         raise HTTPException(status_code=400, detail="Checkout has no items")
-
-    #** avoid the work of revalidating inventory hence optimising latency checked in earlier endpoint path . inventory hold expiry is longer than checkout expiry .    
-    # await validate_reservations(session,cs_id,items,payment_method)
-
-    order_totals=compute_final_total(items,payment_method)
-    return order_totals,payment_method
-
     
+    return items,payment_method
+
 
 async def validate_reservations(session,cs_id,items,payment_method):
     stmt = select(InventoryReservation).where(InventoryReservation.checkout_session_id == cs_id)
@@ -303,8 +336,6 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
         )
         session.add(oi)
 
-    #** update product stock and stuff via bg workers , emit order place event .
-
     response = {
         "order_public_id": order.public_id,
         "order_id": order.id,
@@ -381,8 +412,8 @@ async def record_payment_init_pending(session,order_id,order_total):
     return payment.public_id
 
 #** update staus as well
-async def update_payment_provider_id(session,pay_public_id,provider_order_id):
-    stmt = update(Payment).where(Payment.public_id==pay_public_id).values(provider_payment_id=provider_order_id).returning(Payment.id)
+async def update_payment_provider_id(session,pay_id,provider_order_id):
+    stmt = update(Payment).where(Payment.id==pay_id).values(provider_payment_id=provider_order_id).returning(Payment.id)
     res=await session.execute(stmt)
     res= res.scalar_one_or_none()
 

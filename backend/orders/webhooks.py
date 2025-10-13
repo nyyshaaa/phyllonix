@@ -1,6 +1,6 @@
 
 import json
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import  AsyncSession
 
 from backend.db.dependencies import get_session
@@ -12,7 +12,7 @@ webhooks_router=APIRouter()
 
 
 
-@webhooks_router.post("/razorpay")
+@webhooks_router.post("/razorpayy")
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     body = await request.body()
     
@@ -29,7 +29,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     # insert/mark webhook receipt (dedupe)
     if await webhook_event_already_processed(session, provider_event_id):
-            return {"status": "ok", "note": "already processed"}
+        return Response(content={"status": "ok", "note": "already processed"},status_code=200)
     
     ev = await mark_webhook_received(session, provider_event_id, provider, payload)
 
@@ -43,7 +43,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     if not provider_payment_id:
         # mark processed to stop retries
         await mark_webhook_processed(session, ev)
-        return {"status": "ok", "note": "no payment entity"}
+        return Response(content={"status": "ok", "note": "no payment entity"},status_code=200)
     
     update_status = await update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_status)
 

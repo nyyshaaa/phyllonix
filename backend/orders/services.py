@@ -6,7 +6,7 @@ import hmac
 import json
 import uuid
 from typing import Optional
-from fastapi import HTTPException, Request , status
+from fastapi import HTTPException, Request, Response , status
 import httpx
 from sqlalchemy import select
 from backend.common.utils import now
@@ -107,6 +107,7 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
         # never got definitive provider response
         # mark attempt as UNKNOWN and schedule background reconciliation
         await record_payment_attempt(
+                #** update attempt no to latest attempt plus 1
                 session,pay_public_id,DEFAULT_RETRIES+1,pay_status,resp="No provider order id in response")
 
         # await schedule_reconciliation_job(order_public_id=order_data["order_public_id"], payment_attempt_id=res.attempt_id)
@@ -127,12 +128,12 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
         },
     }
 
-    # persist provider id and payment_attempt response & update idempotency table
+
+    # safe to commit payment and idempotency tables separately 
+    # as in case of netowrk failures before recording full data in idempotenmcy and on retry razopay will retrun the earlier captured response .
+
     # update payment row
-    pay_id=await update_payment_provider_id(session,pay_public_id,provider_order_id)
-    
-    # update payment_attempt.provider_response (assume attempt_no=1)
-    await update_payment_attempt_psp_resp(session,pay_id,psp_resp)
+    pay_id=await update_payment_provider_id(session,pay_int_id,provider_order_id)
     await session.commit()
 
     # update idempotency response
@@ -191,9 +192,9 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
 
                     return None, ex
             except Exception as ex:
-                # unknown exception -> treat as transient/ambiguous, but retry a few times
+                # unknown exception -> treat as transient/ambiguous, don't retry
                 await update_payment_attempt_resp(
-                    session,attempt_id,PaymentAttemptStatus.UNKNOWN.value,
+                    session,attempt_id,PaymentAttemptStatus.FAILED.value,
                     str(ex))
                 return None , ex
                 # last_exc = ex
@@ -283,4 +284,4 @@ async def update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_
     await session.commit ()
 
     await mark_webhook_processed(session, ev)
-    return {"status": "ok", "note": note}
+    return Response(content={"status": "ok", "note": note},status_code=200)

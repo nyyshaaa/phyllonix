@@ -1,5 +1,4 @@
 
-
 from datetime import timedelta
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
@@ -9,7 +8,7 @@ from backend.config.settings import config_settings
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, create_checkout_session, get_checkout_details, get_checkout_session, order_totals_n_checkout_updates, place_order_with_items, reserve_inventory, spc_by_ikey, validate_checkout_nget_totals
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, place_order_with_items, reserve_inventory, spc_by_ikey, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.schema.full_schema import Payment
 
@@ -18,22 +17,17 @@ orders_router=APIRouter()
 
 
 # in cart (user clicks on procceed to buy)
-#**(done) create an index on user id and status of checkout for idempotency of /checkout/initiate or send i key 
 @orders_router.post("/checkout/initiate")
 async def initiate_buy_now(request:Request,
     session: AsyncSession = Depends(get_session)):
 
     user_identifier=request.state.user_identifier
     reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
-
-    checkout_public_id = await get_checkout_session(session,user_identifier,reserved_until)
-
-    if checkout_public_id is None :
-        cart_data = await capture_cart_snapshot(session, user_identifier)
-        cart_items=cart_data["items"]
-        
-        checkout_public_id = await create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
+   
+    cart_data = await capture_cart_snapshot(session, user_identifier)
+    cart_items=cart_data["items"]
     
+    checkout_public_id = await get_or_create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
     return {
         "checkout_id": checkout_public_id
     }
@@ -44,6 +38,7 @@ async def initiate_buy_now(request:Request,
 # most probably items won't run out of stock until payment second step so do reservation at 2nd level here
 
 # when user clicks on proceed with selected payment method 
+#** can use a checkout status to return early for dobule requests to reduce latency 
 @orders_router.post("/checkout/{checkout_id}/order-summary")
 async def get_order_summary(request:Request,checkout_id: str,
     payload: Dict[str, Any],
@@ -64,16 +59,22 @@ async def get_order_summary(request:Request,checkout_id: str,
     print("cart_items",cart_items)
     print(type(cart_items))
     
-    # Validate availability for each item
+    # Validate availability for each item , 
+    # err is raised even if non avblty for 1 item , in case want to allow avbl items tp proceed through return valid items from validate_items_avblty
     await validate_items_avblty(session,cart_items)
     await reserve_inventory(session,cart_items,cs["cs_id"],cs["cs_expires_at"])
-    res=await order_totals_n_checkout_updates(session,cart_items,payment_method,cs["cs_id"],checkout_id,cs["cs_expires_at"])
-    await session.commit()
+    res=await order_totals_n_checkout_method_updates(session,cart_items,payment_method,cs["cs_id"],checkout_id,cs["cs_expires_at"])
+    await session.commit()  
+    # commit inv reservation and payment method update under a single commit 
+    # so that if network fails for long time before checkout update it may give some other user's concurrent request to proceed through in case of low stock
+    # otherwise inventory will stay on hold because of this midway failed request .
+    # or commit seprately as well it is concurrent safe in the way that it won't cause bad states .
 
     return res
 
 # when clicked on proceed to pay with upi etc. call this 
 # order creation will happen here in final stage
+#** also store a request hash of items data for full enhanced security 
 @orders_router.post("/checkout/{checkout_id}/secure-confirm")
 async def place_order(request:Request,checkout_id: str,
     idempotency_key: str = Header(alias="Idempotency-Key"),
@@ -82,16 +83,20 @@ async def place_order(request:Request,checkout_id: str,
     user_identifier=request.state.user_identifier
     
     if not idempotency_key:
-        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for confirm")
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for order confirm")
+    # validate if checkout session is still active 
+    items,payment_method = await validate_checkout_get_items_paymethod(session,checkout_id,user_identifier)  
     
-    order_npay_data = await spc_by_ikey(session,idempotency_key)
-
+    order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
     if order_npay_data and order_npay_data["response_body"] is not None:
         return order_npay_data
+    
+    order_totals=compute_final_total(items,payment_method)
 
-    order_totals,payment_method = await validate_checkout_nget_totals(session,checkout_id)
     order_data = await place_order_with_items(session,user_identifier,payment_method,order_totals,idempotency_key)
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
+    
+    #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
 
     pay_public_id=order_data.get("pay_public_id",None)
 
