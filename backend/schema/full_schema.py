@@ -404,7 +404,7 @@ class Order(SQLModel, table=True):
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL"), index=True))
-    status: int = Field(default=OrderStatus.DRAFT.value, sa_column=Column(Integer, nullable=False, index=True))
+    status: int = Field(default=OrderStatus.PENDING_PAYMENT.value, sa_column=Column(Integer, nullable=False, index=True))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     subtotal: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))  # stored in rs
     tax: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
@@ -419,6 +419,15 @@ class Order(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+    __table_args__ = (
+        Index(
+            "uq_checkout_active_cart",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = OrderStatus.PENDING_PAYMENT.value")  
+        ),
+    )   #** recheck syntax and add migration for this . remove unnecesary indexes
 
 
 # Order --> OrderItems (1:many)

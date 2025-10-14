@@ -303,10 +303,16 @@ def compute_final_total(items,payment_method):
         "total": total,
     }
 
-
+#** modify it to be concurrent safe
+#** 1 idemotency key in table at first 
+#** 2 if creation of idempotency record happens flush and proceed to create order , orderitems and record payment initiation(paymnet pending) in same single commit 
+#** 3 update the idempotency table with response body and code under same single commit .
+#** 4 if integrity conflict occured in first idempotency creation check if response code and body exists 
+#** with ikey if yes retrurn otheriwse raise conflict issue to client so that user may safely retry .
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
     # Create Order
+    
     order = Order(
         user_id=user_id,
         # session_id=session_id,
@@ -319,7 +325,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
         placed_at=None if payment_method == "UPI" else now(),
         created_at=now(),
         updated_at=now(),
-        shipping_address_json={"city":"central city","country":"america"}
+        shipping_address_json={"city":"central city","country":"america"}  #** just a placeholder of address for testing,insert actual addresses here 
     )
     session.add(order)
     await session.flush()  # to get order.id
@@ -347,7 +353,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
     if payment_method == "UPI" :
         pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"])
         await commit_idempotent_order_place(session,user_id,i_key,order.id,
-                                            None,response_body=None,owner_type="payment_pending")
+                                            None,response_body=None,owner_type="pay_now")
         
         response["pay_public_id"]=pay_public_id
         return response
@@ -357,8 +363,9 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
 
     return response
 
-#** check this owner type thing and see if need to save event 
-async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id,response_code,response_body,owner_type):
+#** check if need to save event and also properly fix on conflict to do nothing or get data
+# idempotent in concurrency via i key 
+async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id,response_code,response_body,owner_type):# idempotent 
     stmt = select(IdempotencyKey.id).where(IdempotencyKey.key==idempotency_key)
     res = await session.execute(stmt)
 
@@ -389,7 +396,7 @@ async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id
     
 
 async def record_payment_init_pending(session,order_id,order_total):
-  
+    #** create partial indexon order id where status is pending for payment table to avoid multiple saves in concurrency 
     payment = Payment(
         order_id=order_id,
         # provider="razorpay", 
@@ -467,7 +474,7 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_success_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
+async def update_pay_status_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
 
     stmt = (
     update(Payment)

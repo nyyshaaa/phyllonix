@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request, Response , status
 import httpx
 from sqlalchemy import select
 from backend.common.utils import now
-from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt_resp, update_payment_provider_orderid
+from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_status_get_orderid, update_payment_attempt_resp, update_payment_provider_orderid
 from backend.config.settings import config_settings
 from backend.schema.full_schema import Order, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentStatus, PaymentWebhookEvent
 
@@ -262,7 +262,7 @@ async def mark_webhook_processed(session, ev):
 
 async def update_order_place_npay_states(session,provider_order_id,provider_payment_id,ev,psp_pay_status):
     payment_order_id = None
-    payment_status = PaymentStatus.FAILED.value  # Or whatever your default is
+    payment_status = PaymentStatus.PENDING.value  
     order_status = OrderStatus.PENDING_PAYMENT.value 
     note = "processed order and pay failure"
     if psp_pay_status in ("captured", "authorized", "success"):
@@ -271,7 +271,8 @@ async def update_order_place_npay_states(session,provider_order_id,provider_paym
         order_status = OrderStatus.CONFIRMED.value
         note = "processed order and pay success"
         
-    payment_order_id = await update_pay_success_get_orderid(session,provider_order_id,provider_payment_id,payment_status)
+    # if we don't have provider order id field in payments table or we din't save it , get payment public id from webhook note and update status and provider payment id by that .   
+    payment_order_id = await update_pay_status_get_orderid(session,provider_order_id,provider_payment_id,payment_status)
     print("payment_order_id",payment_order_id)
     await session.commit()
 
