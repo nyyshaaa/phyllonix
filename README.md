@@ -16,6 +16,14 @@ Image upload benchmark results experimented on this repo using two approaches --
 Almost always images won't be sent over backend server but directly to cloud for upload hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
+> Payments Current Plan & Payment testing(needs further refinements and additions) ----
+https://www.notion.so/place-order-full-recheck-28914b400ea7801885cfeaf6704e61d8
+[pay_tests_1.webm](https://github.com/user-attachments/assets/1df508f3-ea80-44f0-ac92-0f090df8a84f)
+[pay_tests_2.webm](https://github.com/user-attachments/assets/e4483391-1583-4a91-98ac-d26436f98db9)
+
+
+
+
 
 
 
