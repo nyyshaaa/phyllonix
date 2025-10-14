@@ -8,7 +8,7 @@ from backend.config.settings import config_settings
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, place_order_with_items, reserve_inventory, spc_by_ikey, validate_checkout_get_items_paymethod
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_active, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.schema.full_schema import Payment
 
@@ -85,7 +85,7 @@ async def place_order(request:Request,checkout_id: str,
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key header is required for order confirm")
     # validate if checkout session is still active 
-    items,payment_method = await validate_checkout_get_items_paymethod(session,checkout_id,user_identifier)  
+    cs_id,items,payment_method = await validate_checkout_get_items_paymethod(session,checkout_id,user_identifier)  
     
     order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
     if order_npay_data and order_npay_data["response_body"] is not None:
@@ -104,6 +104,7 @@ async def place_order(request:Request,checkout_id: str,
 
     if pay_public_id:
         order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_data)
+        await update_checkout_active(session,cs_id)
         return order_pay_res
     
     return order_data
@@ -163,21 +164,22 @@ async def serve_test_checkout(request: Request, order_public_id: str, auth_token
 
     # 2) load provider order id and amount from DB by order_public_id
     async with session as s:
-        stmt = select(Payment.provider_payment_id, Payment.amount, Payment.currency).where(Payment.provider_payment_id == order_public_id).limit(1)
+        stmt = select(Payment.provider_order_id, Payment.amount, Payment.currency).where(Payment.provider_order_id == order_public_id).limit(1)
         res = await s.execute(stmt)
         row = res.one_or_none()
         if row is None:
             raise HTTPException(status_code=404, detail="payment/order not found")
-        provider_payment_id, amount, currency = row
+        provider_order_id, amount, currency = row
 
-    if not provider_payment_id:
+    if not provider_order_id:
+        print("provider id no ")
         raise HTTPException(status_code=400, detail="provider_payment_id missing; create payment intent first")
 
     # 3) get Razorpay public key from config/env
     RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY # or read from env/config
 
     # 4) render HTML with values injected
-    html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_payment_id).replace("{{AMOUNT}}", str(int(amount)))
+    html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_order_id).replace("{{AMOUNT}}", str(int(amount)))
     return HTMLResponse(html)
 
     
@@ -198,4 +200,68 @@ async def serve_test_checkout(request: Request, order_public_id: str, auth_token
 
 
 
+# ----------------------------------------------------------------------------------------------------
+# {
+#     "checkout_id": "0199e109-3bf2-71bb-9b81-7cb08d2ab17e",
+#     "selected_payment_method": "UPI",
+#     "items": [
+#         {
+#             "cart_item_id": 12,
+#             "product_id": 22,
+#             "quantity": 3,
+#             "prod_base_price": 500,
+#             "product_stock": 25
+#         },
+#         {
+#             "cart_item_id": 6,
+#             "product_id": 25,
+#             "quantity": 14,
+#             "prod_base_price": 1000,
+#             "product_stock": 1000
+#         }
+#     ],
+#     "summary": {
+#         "subtotal": 15500,
+#         "tax": 310,
+#         "shipping": 50,
+#         "cod_fee": 0,
+#         "discount": 0,
+#         "total": 15860
+#     }
+# }
 
+
+# {
+#     "order_public_id": "0199e115-c099-7e6c-8a52-fbb9785e319f",
+#     "order_id": 30,
+#     "payment_public_id": "0199e115-c0b6-7843-8a2e-15d5724313b9",
+#     "payment_provider_id": "order_RTEI04YXKKfWgX",
+#     "payment_client_payload": {
+#         "provider": "razorpay",
+#         "provider_order_id": "order_RTEI04YXKKfWgX",
+#         "provider_raw": {
+#             "amount": 1581000,
+#             "amount_due": 1581000,
+#             "amount_paid": 0,
+#             "attempts": 0,
+#             "created_at": 1760417924,
+#             "currency": "INR",
+#             "entity": "order",
+#             "id": "order_RTEI04YXKKfWgX",
+#             "notes": {
+#                 "order_public_id": "0199e115-c099-7e6c-8a52-fbb9785e319f",
+#                 "payment_public_id": "0199e115-c0b6-7843-8a2e-15d5724313b9"
+#             },
+#             "offer_id": null,
+#             "receipt": "order_0199e115-c099-7e6c-8",
+#             "status": "created"
+#         },
+#         "checkout_hint": {
+#             "type": "provider_order",
+#             "order_id": "order_RTEI04YXKKfWgX",
+#             "note": "Use Razorpay Checkout or construct UPI deeplink / checkout flow using provider SDK"
+#         }
+#     },
+#     "status": "PENDING",
+#     "message": "Provider order created; client should open provider checkout/deeplink."
+# }

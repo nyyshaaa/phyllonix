@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request, Response , status
 import httpx
 from sqlalchemy import select
 from backend.common.utils import now
-from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt_psp_resp, update_payment_attempt_resp, update_payment_provider_id
+from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_success_get_orderid, update_payment_attempt_resp, update_payment_provider_orderid
 from backend.config.settings import config_settings
 from backend.schema.full_schema import Order, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentStatus, PaymentWebhookEvent
 
@@ -100,8 +100,10 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
         raise HTTPException(status_code=502, detail="Payment provider unreachable;order and payment in pending state")  
     # client will decide how to deal , 
     # client can show pending for some duration to user until not reachable and then give and option to retyr by sending messages like payment is pending
-
+    
+    print(psp_resp)
     provider_order_id = psp_resp.get("id") 
+    print(provider_order_id)
     if provider_order_id is None:
         pay_status=PaymentAttemptStatus.UNKNOWN.value
         # never got definitive provider response
@@ -132,8 +134,8 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
     # safe to commit payment and idempotency tables separately 
     # as in case of netowrk failures before recording full data in idempotenmcy and on retry razopay will retrun the earlier captured response .
 
-    # update payment row
-    pay_id=await update_payment_provider_id(session,pay_int_id,provider_order_id)
+    # update order row
+    pay_id=await update_payment_provider_orderid(session,pay_int_id,provider_order_id)
     await session.commit()
 
     # update idempotency response
@@ -162,7 +164,11 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
                 session,payment_id,attempt_idx,pay_status,resp=None)
 
             try:
+                
                 resp = await func(*args, **kwargs)
+                print("here")
+                if attempt_idx == 1 :
+                    raise httpx.ConnectError(message="connect err ")
                 print("resp",resp)
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.SUCCESS.value,resp)
@@ -216,7 +222,6 @@ async def verify_razorpay_signature(request: Request, body: bytes):
     expected = hmac.new(RAZORPAY_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         raise HTTPException(status_code=400, detail="invalid signature")
-    return True
 
 
 async def webhook_event_already_processed(session, provider_event_id: str) -> bool:
@@ -255,17 +260,19 @@ async def mark_webhook_processed(session, ev):
     await session.flush()
 
 
-async def update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_status):
+async def update_order_place_npay_states(session,provider_order_id,provider_payment_id,ev,psp_pay_status):
     payment_order_id = None
     payment_status = PaymentStatus.FAILED.value  # Or whatever your default is
     order_status = OrderStatus.PENDING_PAYMENT.value 
     note = "processed order and pay failure"
     if psp_pay_status in ("captured", "authorized", "success"):
+        print("captured")
         payment_status = PaymentStatus.SUCCESS.value
         order_status = OrderStatus.CONFIRMED.value
         note = "processed order and pay success"
         
-    payment_order_id = await update_pay_success_get_orderid(session,provider_payment_id,payment_status)
+    payment_order_id = await update_pay_success_get_orderid(session,provider_order_id,provider_payment_id,payment_status)
+    print("payment_order_id",payment_order_id)
     await session.commit()
 
     if not payment_order_id:
@@ -273,15 +280,15 @@ async def update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_
         # mark event processed so provider stops retrying
         await mark_webhook_processed(session, ev)
         return {"status": "ok", "note": "payment not found"}
-
     order_id = await update_order_status_get_orderid(session,payment_order_id,order_status)
     await session.commit()
+    print(order_id)
 
     # commit reservations & decrement stock (idempotent inside)
     #** for high concurrency or when db is shared or distributed for different product stocks --
     #-- emit an event for order confirmation and update invenotry and product stock in a single commit
-    coomited_res_ids=await commit_reservations_and_decrement_stock(session, order_id)
-    await session.commit ()
+    # coomited_res_ids=await commit_reservations_and_decrement_stock(session, order_id)
+    # await session.commit ()
 
     await mark_webhook_processed(session, ev)
-    return Response(content={"status": "ok", "note": note},status_code=200)
+    return {"status": "ok", "note": note}

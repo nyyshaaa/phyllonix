@@ -104,6 +104,7 @@ async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_
             await session.commit()
             return checkout_pid
         checkout_pid = await get_checkout_session(session,user_id)
+        print(checkout_pid)
 
         if checkout_pid:
             return checkout_pid
@@ -150,7 +151,7 @@ async def get_checkout_session(session,user_id):
     if cs[2] < now():  
         await update_checkout_active(session,cs[0])
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
-    return None
+    return cs[1]
     
 async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.cart_snapshot,CheckoutSession.expires_at
@@ -256,7 +257,7 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
     if not items:
         raise HTTPException(status_code=400, detail="Checkout has no items")
     
-    return items,payment_method
+    return cs_id,items,payment_method
 
 
 async def validate_reservations(session,cs_id,items,payment_method):
@@ -412,8 +413,8 @@ async def record_payment_init_pending(session,order_id,order_total):
     return payment.public_id
 
 #** update staus as well
-async def update_payment_provider_id(session,pay_id,provider_order_id):
-    stmt = update(Payment).where(Payment.id==pay_id).values(provider_payment_id=provider_order_id).returning(Payment.id)
+async def update_payment_provider_orderid(session,pay_id,provider_order_id):
+    stmt = update(Payment).where(Payment.id==pay_id).values(provider_order_id=provider_order_id).returning(Payment.id)
     res=await session.execute(stmt)
     res= res.scalar_one_or_none()
 
@@ -466,16 +467,19 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_success_get_orderid(session,provider_payment_id,payment_status):
+async def update_pay_success_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
+
     stmt = (
     update(Payment)
-    .where(Payment.provider_payment_id == provider_payment_id) 
+    .where(Payment.provider_order_id == provider_order_id) 
     .values(
         status=payment_status,
         paid_at=now(),
+        provider_payment_id=provider_payment_id
     ).returning(Payment.order_id))
     result=await session.execute(stmt)
     order_id = result.scalar_one_or_none()
+    print("order ",order_id)
     return order_id
 
 async def update_order_status_get_orderid(session,payment_order_id,order_status):
@@ -511,7 +515,7 @@ async def commit_reservations_and_decrement_stock(session,order_id):
         )
         .where(
             InventoryReservation.order_id == order_id,
-            InventoryReservation.status.in_(InventoryReserveStatus.ACTIVE.value),
+            InventoryReservation.status.is_(InventoryReserveStatus.ACTIVE.value),
         )
         .with_for_update()  # lock reservations so other txs don't concurrently commit them
     )

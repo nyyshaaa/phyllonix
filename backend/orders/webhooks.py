@@ -21,6 +21,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     print("hereee")
     payload = json.loads(body)
     provider_event_id = request.headers.get("X-Razorpay-Event-Id")
+
     if not provider_event_id:
         # bad payload; acknowledge to avoid retries or log and 400
         raise HTTPException(status_code=400, detail="missing event id")
@@ -29,7 +30,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     # insert/mark webhook receipt (dedupe)
     if await webhook_event_already_processed(session, provider_event_id):
-        return Response(content={"status": "ok", "note": "already processed"},status_code=200)
+        return {"status": "ok", "note": "already processed"}
     
     ev = await mark_webhook_received(session, provider_event_id, provider, payload)
 
@@ -37,17 +38,20 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     # Extract payment entity safely (Razorpay payload nests under payload.payment.entity)
     payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {}) or {}
     provider_payment_id = payment_entity.get("id") or payment_entity.get("payment_id")
+    provider_order_id = payment_entity.get("order_id")
     psp_pay_status = payment_entity.get("status")  # e.g., 'captured', 'failed', 'authorized'
 
     # If it's not a payment event, can ignore or handle other events (order.paid etc)
     if not provider_payment_id:
         # mark processed to stop retries
         await mark_webhook_processed(session, ev)
-        return Response(content={"status": "ok", "note": "no payment entity"},status_code=200)
+        return {"status": "ok", "note": "no payment entity"}
+
     
-    update_status = await update_order_place_npay_states(session,provider_payment_id,ev,psp_pay_status)
+    update_status = await update_order_place_npay_states(session,provider_order_id,provider_payment_id,ev,psp_pay_status)
 
     #** emit events for shiipin , email confiemation , cart updates etc .
+
     return update_status
     
 

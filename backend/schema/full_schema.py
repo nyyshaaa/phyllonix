@@ -414,6 +414,7 @@ class Order(SQLModel, table=True):
     shipping_address_json: dict = Field(sa_column=Column(JSON, nullable=False))
     billing_address_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # e.g., "CARD", "UPI", "COD"
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
@@ -496,10 +497,11 @@ class IdempotencyKey(SQLModel, table=True):
 
 class PaymentStatus(enum.IntEnum):
     PENDING = 0
-    AUTHORIZED = 10
-    SUCCESS = 20
-    FAILED = 30
-    REFUNDED = 40
+    CAPTURED = 10
+    AUTHORIZED = 20
+    SUCCESS = 30
+    FAILED = 40
+    REFUNDED = 50
 
 class PaymentAttemptStatus(enum.IntEnum):
     FIRSTATTEMPT = 0
@@ -517,6 +519,7 @@ class Payment(SQLModel, table=True):
     order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False, index=True))
     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
     provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
     status: int = Field(default=PaymentStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
     amount: int = Field(sa_column=Column(BigInteger, nullable=False))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
