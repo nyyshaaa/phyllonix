@@ -398,7 +398,7 @@ class CheckoutStatus(enum.IntEnum):
 
 # User --> Orders (1:many) 
 # Product <--> Order(many to many)
-class Order(SQLModel, table=True):
+class Orders(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
@@ -420,14 +420,6 @@ class Order(SQLModel, table=True):
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
-    __table_args__ = (
-        Index(
-            "uq_checkout_active_cart",
-            "user_id",
-            unique=True,
-            postgresql_where=text("status = OrderStatus.PENDING_PAYMENT.value")  
-        ),
-    )   #** recheck syntax and add migration for this . remove unnecesary indexes
 
 
 # Order --> OrderItems (1:many)
@@ -435,7 +427,7 @@ class Order(SQLModel, table=True):
 class OrderItem(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False))
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False))
     product_id: int = Field(sa_column=Column(Integer, ForeignKey("product.id", ondelete="RESTRICT"), nullable=False))
     sku: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     quantity: int = Field(sa_column=Column(Integer, nullable=False))
@@ -525,7 +517,7 @@ class Payment(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
-    order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False, index=True))
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
     provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
     provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))

@@ -396,7 +396,7 @@ async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id
     
 
 async def record_payment_init_pending(session,order_id,order_total):
-    #** create partial indexon order id where status is pending for payment table to avoid multiple saves in concurrency 
+   
     payment = Payment(
         order_id=order_id,
         # provider="razorpay", 
