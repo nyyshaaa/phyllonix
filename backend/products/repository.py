@@ -1,6 +1,7 @@
 
+from datetime import datetime
 from fastapi import HTTPException,status
-from sqlalchemy import select, text, update
+from sqlalchemy import and_, desc, or_, select, text, update
 
 from backend.common.utils import now
 from backend.schema.full_schema import Product, ProductCategory, ProductCategoryLink
@@ -68,4 +69,26 @@ async def replace_catgs(session,product_id,cat_ids):
     )
     
     await add_product_categories(session,product_id, cat_ids)
+
+
+def keyset_filter(created_at_val: datetime, last_id: str):
+    # ordering: created_at DESC (newest first), id ASC as tiebreaker
+    # For rows AFTER the page cursor (i.e., older items), we want:
+    #   (created_at < cursor_created_at) OR (created_at = cursor_created_at AND id > last_id)
+    return or_(
+        Product.created_at < created_at_val,
+        and_(Product.created_at == created_at_val, Product.id > last_id)
+    )
     
+
+async def fetch_prods(session,cursor_vals,limit):
+    stmt = select(Product)
+    if cursor_vals:
+        created_at_val, last_id = cursor_vals
+        stmt = stmt.where(keyset_filter(created_at_val, last_id))
+    # ordering: newest first
+    stmt = stmt.order_by(desc(Product.created_at), Product.id).limit(limit + 1)  # fetch one extra to detect has_more
+
+    result = await session.execute(stmt)
+    rows = result.all()
+    return rows 

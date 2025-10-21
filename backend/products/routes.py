@@ -1,14 +1,18 @@
 
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request,status
+from fastapi.params import Query
 
 from backend.db.dependencies import get_session
 from backend.products.dependency import require_permissions
-from backend.products.models import ProductCreateIn, ProductUpdateIn
+from backend.products.models import ProductCreateIn, ProductRead, ProductUpdateIn, ProductsPage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.products.repository import patch_product, product_by_public_id, replace_catgs, validate_catgs
+from backend.products.repository import fetch_prods, patch_product, product_by_public_id, replace_catgs, validate_catgs
 from backend.products.services import create_product_with_catgs
 from backend.image_uploads.routes import prod_images_router
+from backend.products.utils import decode_cursor, encode_cursor
+from backend.schema.full_schema import Product
 
 
 prods_public_router=APIRouter()
@@ -24,6 +28,7 @@ async def create_product(request:Request,payload: ProductCreateIn, session: Asyn
     product_res=await create_product_with_catgs(session,payload,user_identifier)
     return {"message":"product created","product":product_res}
 
+#** not tested yet
 @prods_admin_router.patch("/{product_public_id}", dependencies=[require_permissions("product:update")])
 async def update_product(request:Request,product_public_id: str,
                          payload: ProductUpdateIn, session: AsyncSession = Depends(get_session)):
@@ -44,4 +49,44 @@ async def update_product(request:Request,product_public_id: str,
     await replace_catgs(session,product_id,cat_ids)
 
     return {"message":"product updated"}
+
+#** currently using created at to sort products , later chnage it to use popularity score .
+@prods_public_router.get("/products", response_model=ProductsPage)
+async def get_products(
+    limit: int = Query(20, ge=1, le=100),
+    cursor: Optional[str] = Query(None, description="Opaque signed cursor token"),
+    session: AsyncSession = Depends(get_session)):
+    
+    token = cursor
+    # decode cursor if present
+    cursor_vals = None
+    if token:
+        try:
+            prod_created_at, last_prod_id = decode_cursor(token, max_age=24*3600)  # optional max_age
+            cursor_vals = (prod_created_at, last_prod_id)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid cursor: {e}")
+
+ 
+    rows = await fetch_prods(session,cursor_vals,limit)
+
+    has_more = len(rows) > limit
+    page_items = rows[:limit]
+
+    # prepare response DTO items
+    items_out = []
+    for p in page_items:
+        items_out.append(ProductRead(
+            id=str(p.id),
+            name=p.name,
+            price=int(getattr(p, "price", 0)),
+            created_at=p.created_at
+        ))
+
+    next_cursor = None
+    if has_more:
+        last = page_items[-1]
+        next_cursor = encode_cursor(last.created_at, last.id, ttl_seconds=3600)
+
+    return ProductsPage(items=items_out, next_cursor=next_cursor, has_more=has_more)
 
