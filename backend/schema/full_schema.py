@@ -318,7 +318,6 @@ class ProviderWebhookEvent(SQLModel, table=True):
     provider: str = Field(sa_column=Column(String(100), nullable=True))           # e.g. 'cloudinary'
     payload: dict = Field(sa_column=Column(JSONB, nullable=False))
     received_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-    # processed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     attempts: Optional[int] = Field(default=0, sa_column=Column(Integer, nullable=True))
 
@@ -399,13 +398,13 @@ class CheckoutStatus(enum.IntEnum):
 
 # User --> Orders (1:many) 
 # Product <--> Order(many to many)
-class Order(SQLModel, table=True):
+class Orders(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL"), index=True))
-    status: int = Field(default=OrderStatus.DRAFT.value, sa_column=Column(Integer, nullable=False, index=True))
+    status: int = Field(default=OrderStatus.PENDING_PAYMENT.value, sa_column=Column(Integer, nullable=False, index=True))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     subtotal: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))  # stored in rs
     tax: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
@@ -415,10 +414,12 @@ class Order(SQLModel, table=True):
     shipping_address_json: dict = Field(sa_column=Column(JSON, nullable=False))
     billing_address_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # e.g., "CARD", "UPI", "COD"
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
 
 
 # Order --> OrderItems (1:many)
@@ -426,7 +427,7 @@ class Order(SQLModel, table=True):
 class OrderItem(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False))
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False))
     product_id: int = Field(sa_column=Column(Integer, ForeignKey("product.id", ondelete="RESTRICT"), nullable=False))
     sku: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     quantity: int = Field(sa_column=Column(Integer, nullable=False))
@@ -448,8 +449,9 @@ class CheckoutSession(SQLModel, table=True):
     cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
     selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
-    status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
-    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    # status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
+    is_active: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default=text('true')))
+    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
 
@@ -458,7 +460,7 @@ class CheckoutSession(SQLModel, table=True):
             "uq_checkout_active_cart",
             "user_id",
             unique=True,
-            postgresql_where= text(f"status = {CheckoutStatus.PROGRESS.value}")
+            postgresql_where=text("is_active = true")  
         ),
     )
 
@@ -496,19 +498,29 @@ class IdempotencyKey(SQLModel, table=True):
 
 class PaymentStatus(enum.IntEnum):
     PENDING = 0
-    AUTHORIZED = 10
+    CAPTURED = 10
+    AUTHORIZED = 20
+    SUCCESS = 30
+    FAILED = 40
+    REFUNDED = 50
+
+class PaymentAttemptStatus(enum.IntEnum):
+    FIRSTATTEMPT = 0
+    RETRYING = 10
     SUCCESS = 20
     FAILED = 30
-    REFUNDED = 40
+    UNKNOWN = 40
+
 
 # Payments & payment attempts / events
 class Payment(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
-    order_id: int = Field(sa_column=Column(Integer, ForeignKey("order.id", ondelete="CASCADE"), nullable=False, index=True))
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
     provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
     status: int = Field(default=PaymentStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
     amount: int = Field(sa_column=Column(BigInteger, nullable=False))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
@@ -520,19 +532,20 @@ class PaymentAttempt(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     payment_id: int = Field(sa_column=Column(Integer, ForeignKey("payment.id", ondelete="CASCADE"), nullable=False, index=True))
-    attempt_no: int = Field(default=1, sa_column=Column(Integer, nullable=False))
+    attempt_no: int = Field(sa_column=Column(Integer, nullable=False))
+    status: int = Field(sa_column=Column(Integer, nullable=False))
     provider_response: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
-# class PaymentWebhookEvent(SQLModel, table=True):
+class PaymentWebhookEvent(SQLModel, table=True):
     
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
-#     provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
-#     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-#     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
+    provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=False, index=True))
+    payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
 # --------------------------------------------------------------------------------------------------------------------------------
 

@@ -49,11 +49,11 @@ def create_app():
     
 
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth",
-                                                                             f"{version_prefix}/admin/uploads"],
+                                                                             f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks/razorpay"],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     # app.add_middleware(DeviceSessionMiddleware,session=async_session)
 
-    # register_all_exceptions(app)
+    register_all_exceptions(app)
     return app
 
 app=create_app()
