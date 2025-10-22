@@ -82,7 +82,7 @@ def keyset_filter(created_at_val: datetime, last_id: str):
     
 
 async def fetch_prods(session,cursor_vals,limit):
-    stmt = select(Product)
+    stmt = select(Product.id, Product.name, Product.price, Product.created_at)
     if cursor_vals:
         created_at_val, last_id = cursor_vals
         stmt = stmt.where(keyset_filter(created_at_val, last_id))

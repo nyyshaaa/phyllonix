@@ -8,13 +8,14 @@ import json
 import os
 from typing import Optional, Tuple
 
+#** change this secret
 CURSOR_SECRET = os.getenv("PHYL_CURSOR_SECRET", "dev-secret-change-me").encode()
 
 def _sign(payload_bytes: bytes) -> str:
     sig = hmac.new(CURSOR_SECRET, payload_bytes, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(sig).decode().rstrip("=")
 
-
+#** chnage data types of cursor when cursor is chnaged
 def decode_cursor(token: str, max_age: Optional[int] = None) -> Tuple[datetime, str]:
     try:
         token_part, sig_part = token.split(".")
@@ -33,14 +34,14 @@ def decode_cursor(token: str, max_age: Optional[int] = None) -> Tuple[datetime, 
     created_at_iso, id_value = payload["s"]
     return datetime.fromisoformat(created_at_iso), id_value
 
-
-def encode_cursor(created_at: datetime, id_value: str, ttl_seconds: int = 3600) -> str:
+#** chnage data types of cursor when cursor is chnaged
+def encode_cursor(last_cursor: datetime, last_cursor_id: str, ttl_seconds: int = 3600) -> str:
     payload = {
         "t": int(time.time()),
         "ttl": ttl_seconds,
-        "s": [created_at.isoformat(), str(id_value)]
+        "s": [last_cursor.isoformat(), str(last_cursor_id)]
     }
-    raw = json.dumps(payload, separators=(",", ":"), default=str).encode()
-    token = base64.urlsafe_b64encode(raw).decode().rstrip("=")
-    sig = _sign(raw)
-    return f"{token}.{sig}"
+    raw_bytes = json.dumps(payload, separators=(",", ":"), default=str).encode()
+    bytes_encoded = base64.urlsafe_b64encode(raw_bytes).decode().rstrip("=")
+    bytes_signed = _sign(raw_bytes)
+    return f"{bytes_encoded}.{bytes_signed}"

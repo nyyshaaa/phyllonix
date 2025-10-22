@@ -61,32 +61,30 @@ async def get_products(
     # decode cursor if present
     cursor_vals = None
     if token:
-        try:
-            prod_created_at, last_prod_id = decode_cursor(token, max_age=24*3600)  # optional max_age
-            cursor_vals = (prod_created_at, last_prod_id)
-        except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid cursor: {e}")
-
- 
+        # errors if any will be raised at decode cursor level 
+        prod_created_at, last_prod_id = decode_cursor(token, max_age=24*3600)  # optional max_age
+        cursor_vals = (prod_created_at, last_prod_id)
+        
     rows = await fetch_prods(session,cursor_vals,limit)
 
     has_more = len(rows) > limit
-    page_items = rows[:limit]
+    page_rows = rows[:limit]
 
-    # prepare response DTO items
     items_out = []
-    for p in page_items:
-        items_out.append(ProductRead(
-            id=str(p.id),
-            name=p.name,
-            price=int(getattr(p, "price", 0)),
-            created_at=p.created_at
-        ))
+    for p in page_rows:
+        m = p._mapping  # SQLAlchemy Row -> mapping of selected columns
+        items_out.append({
+            "id": str(m["id"]),
+            "name": m["name"],
+            "price": int(m["price"] or 0),
+            "created_at": m["created_at"].isoformat()
+        })
 
     next_cursor = None
     if has_more:
-        last = page_items[-1]
+        last = page_rows[-1]._mapping
         next_cursor = encode_cursor(last.created_at, last.id, ttl_seconds=3600)
-
-    return ProductsPage(items=items_out, next_cursor=next_cursor, has_more=has_more)
+    
+    response = {"items": items_out, "next_cursor": next_cursor, "has_more": has_more}
+    return response
 
