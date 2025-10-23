@@ -34,13 +34,13 @@ async def product_by_public_id(session,product_pid,user_id):
     product=res.one_or_none()
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return product
+    return {"product_id":product[0],"product_owner_id":product[1]}
 
-async def patch_product(session,updates,product_id):
+async def patch_product(session,updates,user_id,product_id):
     stmt = (
     update(Product)
-    .where(Product.id == product_id)
-    .values(**updates, updated_at=now)
+    .where(Product.id == product_id,Product.owner_id==user_id)
+    .values(**updates, updated_at=now())
     .returning(Product.id)  
     )
 
@@ -82,7 +82,7 @@ def keyset_filter(created_at_val: datetime, last_id: str):
     
 
 async def fetch_prods(session,cursor_vals,limit):
-    stmt = select(Product.id, Product.name, Product.base_price, Product.created_at)
+    stmt = select(Product.id,Product.public_id, Product.name, Product.base_price, Product.created_at)
     if cursor_vals:
         created_at_val, last_id = cursor_vals
         stmt = stmt.where(keyset_filter(created_at_val, last_id))

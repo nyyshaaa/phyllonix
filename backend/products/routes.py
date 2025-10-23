@@ -34,21 +34,23 @@ async def create_product(request:Request,payload: ProductCreateIn, session: Asyn
 @prods_admin_router.patch("/{product_public_id}", dependencies=[require_permissions("product:update")])
 async def update_product(request:Request,product_public_id: str,
                          payload: ProductUpdateIn, session: AsyncSession = Depends(get_session)):
-                         
+    print("heree patch ")
     cat_ids=await validate_catgs(session,payload.category_ids)
     user_identifier=request.state.user_identifier
 
     product = await product_by_public_id(session, product_public_id, user_identifier)
 
-    if product.owner_id!=user_identifier:
+    if product["product_owner_id"] != user_identifier:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update.")
 
     updates = payload.model_dump(exclude_unset=True)
-    updates.pop("category_ids")
+    updates.pop("category_ids",None)
 
-    product_id = await patch_product(session, updates, user_identifier,product.id)
+    product_id = await patch_product(session, updates, user_identifier, product["product_id"])
 
-    await replace_catgs(session,product_id,cat_ids)
+    # if cat_ids is not None:
+    #     await replace_catgs(session,product_id,cat_ids)
+    await session.commit()
 
     return {"message":"product updated"}
 
@@ -82,6 +84,7 @@ async def get_products(
             m = p._mapping  # SQLAlchemy Row -> mapping of selected columns
             items_out.append({
                 "id": str(m["id"]),
+                "public_id": str(m["public_id"]),
                 "name": m["name"],
                 "price": int(m["base_price"] or 0),
                 "created_at": m["created_at"].isoformat()

@@ -72,6 +72,7 @@ async def cache_get_or_set(
         #         return value
         # mode == "wait" or stale refresh not required
         try:
+            print("deserializing cache hit")
             return deserialize(raw)
         except Exception:
             await redis_client.delete(key)
@@ -84,9 +85,11 @@ async def cache_get_or_set(
     if locked:
         try:
             value = await loader()
+            print("lock loading from db")
             try:
                 await set_bytes(key, serialize(value), ttl)
-            except Exception:
+            except Exception as e:
+                print("set fails", e)
                 # if set fails, still return value
                 pass
             return value
