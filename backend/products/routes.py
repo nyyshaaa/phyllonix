@@ -53,7 +53,7 @@ async def update_product(request:Request,product_public_id: str,
     return {"message":"product updated"}
 
 #** currently using created at to sort products , later chnage it to use popularity score .
-@prods_public_router.get("/products")
+@prods_public_router.get("/")
 async def get_products(
     limit: int = Query(20, ge=1, le=100),
     cursor: Optional[str] = Query(None, description="Opaque signed cursor token"),
@@ -83,7 +83,7 @@ async def get_products(
             items_out.append({
                 "id": str(m["id"]),
                 "name": m["name"],
-                "price": int(m["price"] or 0),
+                "price": int(m["base_price"] or 0),
                 "created_at": m["created_at"].isoformat()
             })
 

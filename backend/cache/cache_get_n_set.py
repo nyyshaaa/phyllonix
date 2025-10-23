@@ -77,6 +77,7 @@ async def cache_get_or_set(
             await redis_client.delete(key)
             raw = None
 
+    print("cache miss")
     # cache miss => try lock
     lock_key = key + ":lock"
     locked = await redis_client.set(lock_key, "1", nx=True, ex=REDIS_LOCK_TIMEOUT)
