@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     RZPAY_SECRET:str
     RZPAY_GATEWAY_URL:str
     RAZORPAY_WEBHOOK_SECRET:str
+    REDIS_HOST : str
+    REDIS_PORT : int
+    REDIS_DB : int
 
     class Config:
         env_file = ".env"

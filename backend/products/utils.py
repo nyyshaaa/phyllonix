@@ -45,3 +45,19 @@ def encode_cursor(last_cursor: datetime, last_cursor_id: str, ttl_seconds: int =
     bytes_encoded = base64.urlsafe_b64encode(raw_bytes).decode().rstrip("=")
     bytes_signed = _sign(raw_bytes)
     return f"{bytes_encoded}.{bytes_signed}"
+
+
+
+def make_params_key(limit: int, cursor_token: Optional[str], q: Optional[str] = None, category: Optional[str] = None) -> str:
+    # Keep suffix stable and deterministic. We include cursor token directly (it's opaque).
+    # If cursor is a long token, you may hash it to keep key short
+    parts = [f"limit={limit}"]
+    parts.append(f"cursor={cursor_token or ''}")
+    if q:
+        parts.append(f"q={q}")
+    if category:
+        parts.append(f"cat={category}")
+    joined = "|".join(parts)
+    if len(joined) > 200:
+        return hashlib.sha256(joined.encode()).hexdigest()
+    return joined

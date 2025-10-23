@@ -27,15 +27,3 @@ class ProductUpdateIn(BaseModel):
     class ConfigDict:
         json_schema_extra = "forbid"
 
-class ProductRead(BaseModel):
-    id: str
-    name: str
-    price: int
-    created_at: datetime
-    # add fields you care about
-
-class ProductsPage(BaseModel):
-    items: List[ProductRead]
-    next_cursor: Optional[str]
-    has_more: bool
-
