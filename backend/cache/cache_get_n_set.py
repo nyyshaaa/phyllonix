@@ -3,8 +3,9 @@
 
 import asyncio
 from typing import Any, Callable, Optional
+import uuid
 from backend.cache._cache import REDIS_LOCK_TIMEOUT, redis_client
-from backend.cache.utils import build_key, deserialize, serialize
+from backend.cache.utils import build_key, deserialize, release_lock, serialize
 
 CATALOG_VERSION_KEY = "phyl:catalog:version"
 
@@ -19,7 +20,7 @@ async def bump_catalog_version():
     await redis_client.incr(CATALOG_VERSION_KEY)
 
 
-async def cache_get_or_set(
+async def cache_get_or_set_product_listings(
     namespace: str,
     key_suffix: str,
     ttl: int,
@@ -37,40 +38,17 @@ async def cache_get_or_set(
     loader: zero-arg async callable closure that returns the fresh value to cache.
     """
     # include catalog version in namespace/key to enable global invalidation
-    version = await redis_client.get(CATALOG_VERSION_KEY)
-    if version is None:
-        # initialize version to 1 if missing
-        await redis_client.set(CATALOG_VERSION_KEY, "1")
-        version = "1"
-    version_str = version.decode() if isinstance(version, (bytes, bytearray)) else str(version)
-    key = build_key("phyl", namespace, f"v{version_str}", key_suffix)
+    # version = await redis_client.get(CATALOG_VERSION_KEY)
+    # if version is None:
+    #     # initialize version to 1 if missing
+    #     await redis_client.set(CATALOG_VERSION_KEY, "1")
+    #     version = "1"
+    # version_str = version.decode() if isinstance(version, (bytes, bytearray)) else str(version)
+    key = build_key("phyl", namespace, key_suffix)
     raw = await get_bytes(key)
     if raw is not None:
         # we have a cached value
-        # if mode == "stale":
-        #     ttl_remaining = await redis_client.ttl(key)  # -2 if missing, -1 if no ttl
-        #     try:
-        #         value = deserialize(raw)
-        #     except Exception:
-        #         # corrupted entry -> remove and treat as miss
-        #         await redis_client.delete(key)
-        #         raw = None
-        #         value = None
-        #     if raw is not None:
-        #         # if nearing expiry, attempt to refresh in background
-        #         if ttl_remaining is not None and isinstance(ttl_remaining, int) and ttl_remaining >= 0 and ttl_remaining <= stale_window:
-        #             got = await redis_client.set(lock_key, "1", nx=True, ex=lock_timeout)
-        #             if got:
-        #                 # spawn background refresh
-        #                 async def _bg_refresh():
-        #                     try:
-        #                         new_val = await loader()
-        #                         await redis_client.set(key, _serialize(new_val), ex=ttl)
-        #                     finally:
-        #                         await redis_client.delete(lock_key)
-        #                 asyncio.create_task(_bg_refresh())
-        #         return value
-        # mode == "wait" or stale refresh not required
+        #** may add background refresh when ttl is nearing expiry for stale modes
         try:
             print("deserializing cache hit")
             return deserialize(raw)
@@ -79,11 +57,22 @@ async def cache_get_or_set(
             raw = None
 
     print("cache miss")
+
     # cache miss => try lock
     lock_key = key + ":lock"
-    locked = await redis_client.set(lock_key, "1", nx=True, ex=REDIS_LOCK_TIMEOUT)
+    token = uuid.uuid4().hex
+    locked = await redis_client.set(lock_key, token, nx=True, ex=REDIS_LOCK_TIMEOUT)
     if locked:
         try:
+            # re-check cache: another process may have populated while we raced for lock 
+            # as in like someone acquired lock and released it as well , so in case we try to acquire lock after that .
+            raw_after = await get_bytes(key)
+            if raw_after is not None:
+                try:
+                    return deserialize(raw_after)
+                except Exception:
+                    await redis_client.delete(key)
+                
             value = await loader()
             print("lock loading from db")
             try:
@@ -94,7 +83,7 @@ async def cache_get_or_set(
                 pass
             return value
         finally:
-            await redis_client.delete(lock_key)
+            await release_lock(redis_client, lock_key, token)
     else:
         # someone else is computing 
         if mode == "wait":
@@ -119,19 +108,19 @@ async def cache_get_or_set(
             except Exception:
                 pass
             return val
-        # else:
-        #     # mode == "stale": short wait then fallback to compute
-        #     await asyncio.sleep(0.15)
-        #     raw_after = await redis_client.get(key)
-        #     if raw_after is not None:
-        #         try:
-        #             return deserialize(raw_after)
-        #         except Exception:
-        #             await redis_client.delete(key)
-        #     # fallback to compute (do NOT take lock here to avoid heavy thundering)
-        #     val = await loader()
-        #     try:
-        #         await redis_client.set(key, serialize(val), ex=ttl)
-        #     except Exception:
-        #         pass
-        #     return val
+        else:
+            # mode == "stale": short wait then fallback to compute
+            await asyncio.sleep(0.15)
+            raw_after = await redis_client.get(key)
+            if raw_after is not None:
+                try:
+                    return deserialize(raw_after)
+                except Exception:
+                    await redis_client.delete(key)
+            # fallback to compute (do NOT take lock here to avoid heavy thundering)
+            val = await loader()
+            try:
+                await redis_client.set(key, serialize(val), ex=ttl)
+            except Exception:
+                pass
+            return val

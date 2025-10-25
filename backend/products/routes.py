@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request,status
 from fastapi.params import Query
 
-from backend.cache.cache_get_n_set import cache_get_or_set
+from backend.cache.cache_get_n_set import cache_get_or_set_product_listings
 from backend.db.dependencies import get_session
 from backend.products.constants import PRODUCT_LIST_TTL
 from backend.products.dependency import require_permissions
@@ -98,6 +98,6 @@ async def get_products(
         response = {"items": items_out, "next_cursor": next_cursor, "has_more": has_more}
         return response
     
-    results = await cache_get_or_set("products_listing", key_suffix, PRODUCT_LIST_TTL, loader)
+    results = await cache_get_or_set_product_listings("products_listing", key_suffix, PRODUCT_LIST_TTL, loader)
     return results
 

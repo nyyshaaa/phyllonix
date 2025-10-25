@@ -19,3 +19,22 @@ def serialize(obj: Any) -> bytes:
 
 def deserialize(b: bytes) -> Any:
     return msgpack.unpackb(b, raw=False)
+
+
+_RELEASE_LOCK_LUA = """
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+else
+  return 0
+end
+"""
+
+async def release_lock(redis_client, lock_key: str, token: str):
+    try:
+        await redis_client.eval(_RELEASE_LOCK_LUA, 1, lock_key, token)
+    except Exception:
+        # best-effort cleanup, failures are non-fatal
+        try:
+            await redis_client.delete(lock_key)
+        except Exception:
+            pass
