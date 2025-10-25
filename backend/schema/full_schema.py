@@ -253,8 +253,6 @@ class Product(SQLModel, table=True):
     images: List["ProductImage"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     prod_categories: List["ProductCategory"] = Relationship(back_populates="products", link_model=ProductCategoryLink)
 
-    
-
     # price_options: List["PriceOption"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 # 1 image content id can belong to many product images
