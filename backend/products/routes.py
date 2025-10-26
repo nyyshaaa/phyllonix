@@ -113,9 +113,9 @@ async def get_product_details(
    
     user_identifier=request.state.user_identifier
 
-    product_details = await fetch_prod_details(session, product_public_id)
+    # product_details = await fetch_prod_details(session, product_public_id)
 
-    await cache_get_n_set_product_details(session, product_public_id,fetch_prod_details)
+    product_details = await cache_get_n_set_product_details(session, product_public_id,fetch_prod_details)
 
     return product_details
      

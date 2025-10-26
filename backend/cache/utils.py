@@ -38,3 +38,4 @@ async def release_lock(redis_client, lock_key: str, token: str):
             await redis_client.delete(lock_key)
         except Exception:
             pass
+

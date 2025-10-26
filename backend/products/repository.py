@@ -69,7 +69,7 @@ async def get_prod_details_imgs_ncats(session, product_id: int):
         raise HTTPException(status_code=404, detail="Product not found")
 
     return {
-        "public_id": product.public_id,
+        "public_id": str(product.public_id),
         "stock_qty": product.stock_qty,
         "name": product.name,
         "description": product.description,

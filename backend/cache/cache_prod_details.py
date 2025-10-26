@@ -23,6 +23,7 @@ async def cache_get_n_set_product_details(session, product_public_id: str,get_pr
     token = uuid.uuid4().hex
     locked = await redis_client.set(lock_key, token, nx=True, ex=REDIS_LOCK_TIMEOUT)
 
+    print("cache miss")
     if locked:
         try:
             # Re-check cache after acquiring lock
@@ -38,7 +39,8 @@ async def cache_get_n_set_product_details(session, product_public_id: str,get_pr
             updated_at = product_details.get("updated_at")
            
             updated_at_ts = int(updated_at.timestamp())
-
+            
+            product_details["updated_at"] = updated_at.isoformat()
             product_details["_cached_at"] = updated_at_ts
 
             # Store in cache
@@ -68,6 +70,7 @@ async def cache_get_n_set_product_details(session, product_public_id: str,get_pr
         updated_at = product_details.get("updated_at")
            
         updated_at_ts = int(updated_at.timestamp())
+        product_details["updated_at"] = updated_at.isoformat()
         product_details["_cached_at"] = updated_at_ts
 
         # Store in cache
