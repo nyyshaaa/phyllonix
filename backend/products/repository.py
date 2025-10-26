@@ -51,9 +51,10 @@ async def get_prod_details_imgs_ncats(session, product_id: int):
                 Product.description,
                 Product.base_price,
                 Product.specs,
+                Product.updated_at
             ),
             # fetch categories in a second query
-            selectinload(Product.categories).load_only(
+            selectinload(Product.prod_categories).load_only(
                 ProductCategory.id,
                 ProductCategory.name,
             ),
@@ -74,13 +75,27 @@ async def get_prod_details_imgs_ncats(session, product_id: int):
         "description": product.description,
         "base_price": product.base_price,
         "specs": product.specs,
-        "categories": [{"id": c.id, "name": c.name} for c in product.categories],
+        "updated_at": product.updated_at,
+        "categories": [{"id": c.id, "name": c.name} for c in product.prod_categories],
     }
 
-async def get_public_id_by_pid(session,product_pid):
+async def get_product_id_by_pid(session,product_pid):
     stmt = select(Product.id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
     res = await session.execute(stmt)
-    return res.scalar_one_or_none()
+    res = res.scalar_one_or_none()
+
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    return res
+
+
+async def fetch_prod_details(session, product_public_id):
+    product_id = await get_product_id_by_pid(session,product_public_id)
+
+    product_details = await get_prod_details_imgs_ncats(session,product_id)
+
+    return product_details
 
 async def patch_product(session,updates,user_id,product_id):
     stmt = (

@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request,status
 from fastapi.params import Query
 
 from backend.cache.cache_get_n_set import cache_get_or_set_product_listings
+from backend.cache.cache_prod_details import cache_get_n_set_product_details
 from backend.db.dependencies import get_session
 from backend.products.constants import PRODUCT_LIST_TTL
 from backend.products.dependency import require_permissions
 from backend.products.models import ProductCreateIn, ProductUpdateIn
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.products.repository import fetch_prods, get_prod_details_imgs_ncats, get_product_ids_by_pid, get_public_id_by_pid, patch_product, replace_catgs, validate_catgs
+from backend.products.repository import fetch_prod_details, fetch_prods, get_product_ids_by_pid, patch_product, replace_catgs, validate_catgs
 from backend.products.services import create_product_with_catgs
 from backend.image_uploads.routes import prod_images_router
 from backend.products.utils import decode_cursor, encode_cursor, make_params_key
@@ -112,9 +113,9 @@ async def get_product_details(
    
     user_identifier=request.state.user_identifier
 
-    product_id = await get_public_id_by_pid(session,product_public_id)
+    product_details = await fetch_prod_details(session, product_public_id)
 
-    product_details = await get_prod_details_imgs_ncats(session,product_id)
+    await cache_get_n_set_product_details(session, product_public_id,fetch_prod_details)
 
     return product_details
      
