@@ -2,7 +2,7 @@
 from datetime import datetime
 from fastapi import HTTPException,status
 from sqlalchemy import and_, desc, or_, select, text, update
-
+from sqlalchemy.orm import selectinload , load_only
 from backend.common.utils import now
 from backend.schema.full_schema import Product, ProductCategory, ProductCategoryLink
 
@@ -28,13 +28,59 @@ async def add_product_categories(session,product_id, cat_ids):
         await session.execute(text(insert_sql), params)
 
 
-async def product_by_public_id(session,product_pid,user_id):
+async def get_product_ids_by_pid(session,product_pid,user_id):
     stmt=select(Product.id,Product.owner_id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
     res=await session.execute(stmt)
     product=res.one_or_none()
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return {"product_id":product[0],"product_owner_id":product[1]}
+
+
+#** images not joined for now .
+#** may use postgres specific single query join and aggregate for better perf .
+async def get_prod_details_imgs_ncats(session, product_id: int):
+    q = (
+        select(Product)
+        .options(
+            # load only these columns for Product (SQLAlchemy will still include PK)
+            load_only(
+                Product.public_id,
+                Product.stock_qty,
+                Product.name,
+                Product.description,
+                Product.base_price,
+                Product.specs,
+            ),
+            # fetch categories in a second query
+            selectinload(Product.categories).load_only(
+                ProductCategory.id,
+                ProductCategory.name,
+            ),
+            # fetch images in a second query
+        )
+        .where(Product.id == product_id)
+    )
+
+    res = await session.execute(q)
+    product = res.scalar_one_or_none()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    return {
+        "public_id": product.public_id,
+        "stock_qty": product.stock_qty,
+        "name": product.name,
+        "description": product.description,
+        "base_price": product.base_price,
+        "specs": product.specs,
+        "categories": [{"id": c.id, "name": c.name} for c in product.categories],
+    }
+
+async def get_public_id_by_pid(session,product_pid):
+    stmt = select(Product.id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
+    res = await session.execute(stmt)
+    return res.scalar_one_or_none()
 
 async def patch_product(session,updates,user_id,product_id):
     stmt = (

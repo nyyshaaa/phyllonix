@@ -10,7 +10,7 @@ from backend.products.dependency import require_permissions
 from backend.products.models import ProductCreateIn, ProductUpdateIn
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.products.repository import fetch_prods, patch_product, product_by_public_id, replace_catgs, validate_catgs
+from backend.products.repository import fetch_prods, get_prod_details_imgs_ncats, get_product_ids_by_pid, get_public_id_by_pid, patch_product, replace_catgs, validate_catgs
 from backend.products.services import create_product_with_catgs
 from backend.image_uploads.routes import prod_images_router
 from backend.products.utils import decode_cursor, encode_cursor, make_params_key
@@ -34,14 +34,15 @@ async def create_product(request:Request,payload: ProductCreateIn, session: Asyn
 @prods_admin_router.patch("/{product_public_id}", dependencies=[require_permissions("product:update")])
 async def update_product(request:Request,product_public_id: str,
                          payload: ProductUpdateIn, session: AsyncSession = Depends(get_session)):
-    print("heree patch ")
+
     cat_ids=await validate_catgs(session,payload.category_ids)
+
     user_identifier=request.state.user_identifier
 
-    product = await product_by_public_id(session, product_public_id, user_identifier)
+    product = await get_product_ids_by_pid(session, product_public_id, user_identifier)
 
     if product["product_owner_id"] != user_identifier:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update.")
 
     updates = payload.model_dump(exclude_unset=True)
     updates.pop("category_ids",None)
@@ -55,7 +56,7 @@ async def update_product(request:Request,product_public_id: str,
     return {"message":"product updated"}
 
 #** currently using created at to sort products , later chnage it to use popularity score .
-@prods_public_router.get("/")
+@prods_public_router.get("")
 async def get_products(
     limit: int = Query(20, ge=1, le=100),
     cursor: Optional[str] = Query(None, description="Opaque signed cursor token"),
@@ -67,11 +68,12 @@ async def get_products(
     # decode cursor if present
     cursor_vals = None
     if token:
-        # errors if any will be raised at decode cursor level 
         prod_created_at, last_prod_id = decode_cursor(token, max_age=24*3600)  # optional max_age
-        cursor_vals = (prod_created_at, last_prod_id)
+        cursor_vals = (prod_created_at, int(last_prod_id))
 
     key_suffix = make_params_key(limit, cursor, q, category)
+
+    print("Cursor values:", cursor_vals)
         
     async def loader():
         rows = await fetch_prods(session,cursor_vals,limit)
@@ -101,3 +103,22 @@ async def get_products(
     results = await cache_get_or_set_product_listings("products_listing", key_suffix, PRODUCT_LIST_TTL, loader)
     return results
 
+
+@prods_public_router.get("/{product_public_id}")
+async def get_product_details(
+    request:Request,
+    product_public_id: str,
+    session: AsyncSession = Depends(get_session)):
+   
+    user_identifier=request.state.user_identifier
+
+    product_id = await get_public_id_by_pid(session,product_public_id)
+
+    product_details = await get_prod_details_imgs_ncats(session,product_id)
+
+    return product_details
+     
+
+    
+
+ 
