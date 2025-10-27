@@ -97,6 +97,7 @@ async def save_device_state(session,request,user_id):
 async def issue_auth_tokens(session,request,payload,device_session):
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
+    print(user.public_id)
     
     session_id=None
     session_token_plain = device_session

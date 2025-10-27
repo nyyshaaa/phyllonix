@@ -8,6 +8,9 @@ import json
 import os
 import time
 from typing import Optional, Tuple
+from uuid import UUID
+
+from fastapi import HTTPException,status
 
 #** change this secret
 CURSOR_SECRET = os.getenv("PHYL_CURSOR_SECRET", "dev-secret-change-me").encode()
@@ -62,3 +65,10 @@ def make_params_key(limit: int, cursor_token: Optional[str], q: Optional[str] = 
     if len(joined) > 200:
         return hashlib.sha256(joined.encode()).hexdigest()
     return joined
+
+
+def validate_uuid(value: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid UUID")

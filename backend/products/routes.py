@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.products.repository import fetch_prod_details, fetch_prods, get_product_ids_by_pid, patch_product, replace_catgs, validate_catgs
 from backend.products.services import create_product_with_catgs
 from backend.image_uploads.routes import prod_images_router
-from backend.products.utils import decode_cursor, encode_cursor, make_params_key
+from backend.products.utils import decode_cursor, encode_cursor, make_params_key, validate_uuid
 from backend.schema.full_schema import Product
 
 
@@ -33,9 +33,9 @@ async def create_product(request:Request,payload: ProductCreateIn, session: Asyn
 
 #** not tested yet
 @prods_admin_router.patch("/{product_public_id}", dependencies=[require_permissions("product:update")])
-async def update_product(request:Request,product_public_id: str,
-                         payload: ProductUpdateIn, session: AsyncSession = Depends(get_session)):
-
+async def update_product(request:Request,payload: ProductUpdateIn, product_public_id: str,
+                          session: AsyncSession = Depends(get_session)):
+    validate_uuid(product_public_id)
     cat_ids=await validate_catgs(session,payload.category_ids)
 
     user_identifier=request.state.user_identifier
