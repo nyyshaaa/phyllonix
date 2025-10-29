@@ -26,7 +26,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             # if any(request.url.path.startswith(p) for p in self.maybe_auth_paths):
             #     return await call_next(request)
             
-            #* for testing otherwise only user retrun jsornresponse block of error 
+            #** for testing otherwise only user retrun jsornresponse block of error 
             token=request.query_params.get("auth_token")
             print("token",token)
             auth_token=await Authentication()(request,token=token)
@@ -64,7 +64,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             sid=user_authdata.get("sid")
             # if sid is None:
             #     pass
-            #** create device session and link to user and also populate cookie .
+            #** create device session and link to user and also populate cookie . but most certainly not needed keep device session avbl before logging user and also save it .
 
             device_revoked=user_authdata.get("revoked_at")
             if device_revoked is not None:
@@ -73,7 +73,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                     status_code=status.HTTP_403_FORBIDDEN,
                 )
             # client should trigger user logout and also revoke refresh token for that user and device .
-            
             
 
             # Attach the identifier to the request state to use in other middlewares

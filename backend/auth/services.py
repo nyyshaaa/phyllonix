@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
-from backend.auth.repository import get_user_role_ids, identify_device_session, identify_user, save_refresh_token,  user_id_by_email
+from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_auth_fields, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, rotate_refresh_token_value, save_refresh_token, select_device_auth_fields_for_update, select_device_session_fields_for_update, update_device_session_last_activity,  user_id_by_email
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_session_token_plain, verify_password
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
@@ -22,7 +22,6 @@ async def link_user_role(session,user_id):
 #* promote roles via a separate endpoint 
 
 
-#** create partial index on email 
 async def create_user(session,payload):
 
     user_id = await user_id_by_email(session,payload["email"])
@@ -69,7 +68,7 @@ async def save_device_state(session,request,user_id):
 
     # create device session row + session token (opaque) and store hashed form
      
-    #** check if to mix device fingerprint in creating device session 
+
     session_token_plain = make_session_token_plain()
     print("plain session",session_token_plain)
     session_token_hash = hash_token(session_token_plain)
@@ -112,10 +111,14 @@ async def issue_auth_tokens(session,request,payload,device_session):
 
     refresh_token=await save_refresh_token(session,session_id,user_id)
     await session.commit()
+
+    # Cache: set device:{device_public_id} in Redis (cache-aside). (ADD LATER)
+    # await redis.set(f"device:{device_public_id}", {...}, ex=SLIDING_WINDOW_seconds)
+
     # create access token with public_id
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
-
+     
     return access_token,refresh_token,session_token_plain
 
 
@@ -124,7 +127,7 @@ async def validate_refresh_and_fetch_user(session,plain_token):
     hashed_token=hash_token(plain_token)
     now=datetime.now(timezone.utc)
 
-     # Single-query join: fetch token + user + role rows in one go
+    # Single-query join: fetch token + user + role rows in one go
     stmt = (
         select(
             Users.public_id.label("public_id"),
@@ -156,6 +159,55 @@ async def validate_refresh_and_fetch_user(session,plain_token):
         "role_version":first.role_version,
         "role_ids": role_ids
     }
+
+async def validate_refresh_and_update_refresh(session,plain_token,user_id):
+    hashed_token=hash_token(plain_token)
+    now=datetime.now(timezone.utc)
+
+    locked_device_auth = await get_device_auth(session, hashed_token,user_id)
+
+    if not locked_device_auth:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    if locked_device_auth.expires_at <= now + timedelta(minutes=1):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
+
+    if locked_device_auth.revoked_at is not None:
+        # handle reuse: revoke device session and all its tokens, notify, log
+        # await _handle_reuse_and_revoke(session, locked_device_auth["device_session_id"], reason="reuse_detected")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token reuse detected; session revoked")
+    
+    ds_row = await get_device_session_fields(session, user_id,ds_id=locked_device_auth.device_session_id)
+    if not ds_row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session missing")
+    
+    if ds_row["revoked_at"] is not None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session revoked")
+    if ds_row["session_expires_at"] and now >= ds_row["session_expires_at"]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session absolute expiry reached")
+
+    if locked_device_auth.expires_at and now >= locked_device_auth.expires_at:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
+    
+    # rotate: revoke current token and create a new one
+    await rotate_refresh_token_value(session,locked_device_auth,now)
+
+    refresh_plain=await save_refresh_token(session,ds_row["id"],user_id)
+
+    await update_device_session_last_activity(session, ds_row["id"], now)
+    
+    await session.commit()
+
+    # Post-commit: invalidate device cache (hook for your Redis)
+    # await redis.delete(f"device:{ds.public_id}")   # add when you wire redis
+
+    # fetch user to get public_id, role_version if needed (can cache user metadata to avoid DB hit)
+    user_claims=await fetch_user_claims(session,user_id)
+
+    return user_claims
+     
+    
+
 
 async def provide_access_token(claims_dict):
     

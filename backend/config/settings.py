@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     JWT_SECRET :str
     JWT_ALGO : str
     ACCESS_TOKEN_EXPIRE_MINUTES : str
-    REFRESH_TOKEN_EXPIRE_DAYS : str
+    REFRESH_TOKEN_EXPIRE_HOURS : str
     PASS_HASH_SCHEME:str
     TOKEN_HASH_ALGO:str
     DEFAULT_ROLE:str

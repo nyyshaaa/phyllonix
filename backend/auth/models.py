@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class SignupIn(BaseModel):
     email: str = Field(..., example="user@example.com")
-    password: str = Field(..., example="StrongPassw0rd!")
+    password: str = Field(..., example="StrongPassword")
     name: Optional[str] = Field(None, example="Full Name")
 
 class SignIn(BaseModel):
