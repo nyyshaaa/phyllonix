@@ -58,7 +58,7 @@ async def signup_validation(payload=Body(...)):
 #** change it to cookies for mobile and web browsers . 
 
 def device_session_plain(device_header: Optional[str] = Header(None, alias="X-Device-Token"),
-                         device_cookie:Optional[str]=Cookie(None,alias="px_device")):
+                         device_cookie:Optional[str]=Cookie(None,alias="session_token")):
     return device_header or device_cookie
 
 def device_session_pid(device_header: Optional[str] = Header(None, alias="X-Device-Id"),

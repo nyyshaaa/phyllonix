@@ -2,7 +2,7 @@
 from sqlalchemy import select, text, update
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
-from backend.schema.full_schema import Cart, CartItem, Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
+from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_HOURS, hash_token, make_refresh_plain, verify_password
 
@@ -36,7 +36,7 @@ async def identify_user(session,email,password):
     return user
 
 async def save_refresh_token(session,ds_id,user_id):
-
+    now = datetime.now(timezone.utc)
     await session.execute(
         update(DeviceAuthToken)
         .where(
@@ -50,7 +50,7 @@ async def save_refresh_token(session,ds_id,user_id):
     # create hashed refresh token , Insert new refresh token
     refresh_plain = make_refresh_plain()
     refresh_hash = hash_token(refresh_plain)
-    now = datetime.now(timezone.utc)
+    
     refresh_row = DeviceAuthToken(
         device_session_id=ds_id,
         user_id=user_id,
@@ -81,7 +81,7 @@ async def identify_device_session(session,device_session):
 
 async def link_user_device(session,ds_id,user_id):
     stmt = update(DeviceSession).where(DeviceSession.id==ds_id
-                                       ).values(user_id==user_id,last_activity_at=datetime.now(timezone.utc))
+                                       ).values(user_id=user_id,last_activity_at=datetime.now(timezone.utc))
     res= await session.execute(stmt)
 
 async def get_device_auth(session, token_hash,user_id):
@@ -177,3 +177,9 @@ async def revoke_device_nget_id(session, device_public_id):
     res = await session.execute(stmt)
     ds_id = res.scalar.one_or_none()
     return ds_id
+
+async def revoke_device_ref_tokens(session,ds_id):
+    stmt =  update(DeviceAuthToken
+                   ).where(DeviceAuthToken.device_session_id == ds_id
+                   ).values(revoked_at=datetime.now(timezone.utc), revoked_by="user", revoked_reason="logout")
+    await session.execute(stmt)

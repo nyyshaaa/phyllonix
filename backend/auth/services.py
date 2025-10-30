@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
 from uuid6 import uuid7
-from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_auth_fields, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, link_user_device_state, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, select_device_auth_fields_for_update, select_device_session_fields_for_update, update_device_session_last_activity,  user_id_by_email
-from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_session_token_plain, verify_password
+from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
+from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
@@ -100,8 +100,8 @@ async def issue_auth_tokens(session,payload,device_session):
     user_id=user.id
     print(user.public_id)
     
-    session_token_plain = device_session
     ds=await identify_device_session(session,device_session)
+    print("ds",ds)
 
     if ds["revoked_at"] is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
@@ -110,6 +110,7 @@ async def issue_auth_tokens(session,payload,device_session):
 
     if not ds["user_id"]:
         await link_user_device(session, session_id, user_id)
+        print("linked user to device session")
         
         # await merge_guest_cart_into_user(session, user_id, session_id)
    
@@ -123,7 +124,7 @@ async def issue_auth_tokens(session,payload,device_session):
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
      
-    return access_token,refresh_token,session_token_plain
+    return access_token,refresh_token
 
 
 async def validate_refresh_and_fetch_user(session,plain_token):

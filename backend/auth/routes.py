@@ -2,13 +2,13 @@ import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response , status
 from fastapi.params import Cookie
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.constants import REFRESH_TOKEN_TTL_SECONDS
 from backend.auth.dependencies import device_session_pid, device_session_plain, signup_validation
 from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
-from backend.auth.utils import create_access_token
 from backend.db.dependencies import get_session
 from sqlalchemy.exc import InterfaceError,OperationalError
 
@@ -27,16 +27,16 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
     if not device_session_token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Please retry login")
 
-    access,refresh=await issue_auth_tokens(session,request,payload,device_session_token)
+    access,refresh=await issue_auth_tokens(session,payload,device_session_token)
 
-
-    response = Response(status_code=200)
+    response = JSONResponse(
+        content={"message":{"access_token":access,"refresh_token":refresh}},
+        status_code=200
+    )
+    
     response.set_cookie("refresh", refresh, httponly=True, secure=True, path="/auth/refresh",
                         max_age=REFRESH_TOKEN_TTL_SECONDS, samesite="Lax")
-    # keep session token cookie (if it's the same raw presented token, you may not need to set it again)
-    # set device_public_id cookie , frontend visibility (optional)
-    response.media_type = "application/json"
-    response.body = {"message":{"access_token":access,"refresh_token":refresh}}
+
     return response
 
 
