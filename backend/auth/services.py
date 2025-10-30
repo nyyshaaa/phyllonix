@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
-from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_auth_fields, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, rotate_refresh_token_value, save_refresh_token, select_device_auth_fields_for_update, select_device_session_fields_for_update, update_device_session_last_activity,  user_id_by_email
+from uuid6 import uuid7
+from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_auth_fields, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, link_user_device_state, rotate_refresh_token_value, save_refresh_token, select_device_auth_fields_for_update, select_device_session_fields_for_update, update_device_session_last_activity,  user_id_by_email
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_session_token_plain, verify_password
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
@@ -72,7 +73,8 @@ async def save_device_state(session,request,user_id):
     session_token_plain = make_session_token_plain()
     print("plain session",session_token_plain)
     session_token_hash = hash_token(session_token_plain)
-
+    
+   
     ds = DeviceSession(
         session_token_hash=session_token_hash,
         user_id=user_id,
@@ -90,25 +92,27 @@ async def save_device_state(session,request,user_id):
 
     print("ds_id",ds.id)
 
-    return ds.id,session_token_plain
+    return ds.id,ds.public_id,session_token_plain
         
 
-async def issue_auth_tokens(session,request,payload,device_session):
+async def issue_auth_tokens(session,payload,device_session):
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
     print(user.public_id)
     
-    session_id=None
     session_token_plain = device_session
-    if device_session:
-        session_id=await identify_device_session(session,device_session)
-    
-    # create device session , refresh token and save
-    if not session_id:
-        session_id,session_token_plain=await save_device_state(session,request,user_id)
-    
-    # await merge_guest_cart_into_user(session, user_id, session_id)
+    ds=await identify_device_session(session,device_session)
 
+    if ds["revoked_at"] is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
+
+    session_id = ds["id"]
+
+    if not ds["user_id"]:
+        await link_user_device(session, session_id, user_id)
+        
+        # await merge_guest_cart_into_user(session, user_id, session_id)
+   
     refresh_token=await save_refresh_token(session,session_id,user_id)
     await session.commit()
 

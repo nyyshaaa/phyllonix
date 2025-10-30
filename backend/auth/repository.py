@@ -36,7 +36,18 @@ async def identify_user(session,email,password):
     return user
 
 async def save_refresh_token(session,ds_id,user_id):
-    # create hashed refresh token (rotation pattern)
+
+    await session.execute(
+        update(DeviceAuthToken)
+        .where(
+            DeviceAuthToken.device_session_id == ds_id,
+            DeviceAuthToken.user_id == user_id,
+            DeviceAuthToken.revoked_at.is_(None)
+        )
+        .values(revoked_at = now, revoked_by = "rotated", revoked_reason = "new_login")
+    )
+
+    # create hashed refresh token , Insert new refresh token
     refresh_plain = make_refresh_plain()
     refresh_hash = hash_token(refresh_plain)
     now = datetime.now(timezone.utc)
@@ -62,11 +73,16 @@ async def get_user_role_ids(session,user_id):
 
 async def identify_device_session(session,device_session):
     device_session_hash=hash_token(device_session)
-    stmt=select(DeviceSession.id
-                ).where(DeviceSession.session_token_hash==device_session_hash,
-                        DeviceSession.revoked_at == None)
+    stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.user_id
+                ).where(DeviceSession.session_token_hash==device_session_hash).with_for_update()
     res= await session.execute(stmt)
-    return res.scalar_one_or_none()
+    res = res.one_or_none()
+    return {"id":res[0],"revoked_at":res[1],"user_id":res[2]}
+
+async def link_user_device(session,ds_id,user_id):
+    stmt = update(DeviceSession).where(DeviceSession.id==ds_id
+                                       ).values(user_id==user_id,last_activity_at=datetime.now(timezone.utc))
+    res= await session.execute(stmt)
 
 async def get_device_auth(session, token_hash,user_id):
     

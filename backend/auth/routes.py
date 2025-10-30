@@ -1,9 +1,11 @@
+import json
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response , status
 from fastapi.params import Cookie
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
-from backend.auth.dependencies import device_session_plain, signup_validation
+from backend.auth.constants import REFRESH_TOKEN_TTL_SECONDS
+from backend.auth.dependencies import device_session_pid, device_session_plain, signup_validation
 from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
 from backend.auth.utils import create_access_token
@@ -19,15 +21,24 @@ auth_router = APIRouter()
 @auth_router.post("/login")
 @guard_with_circuit(db_circuit)
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def login_user(request:Request,payload:SignIn, device_session_token: Optional[str] = Depends(device_session_plain),
+async def login_user(request:Request,payload:SignIn,device_session_token: Optional[str] = Depends(device_session_plain),
                      session: AsyncSession = Depends(get_session)):
     
-    access,refresh,session_token=await issue_auth_tokens(session,request,payload,device_session_token)
+    if not device_session_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Please retry login")
 
-    # In production: set RT as HttpOnly Secure SameSite cookie.
-    # response.set_cookie("refresh", raw_refresh, httponly=True, secure=True, samesite="Lax",
-    #                     path="/auth/refresh", max_age=int(REFRESH_TOKEN_SESSION_TTL.total_seconds()))
-    return {"message":{"access_token":access,"refresh_token":refresh,"session_token":session_token}}
+    access,refresh=await issue_auth_tokens(session,request,payload,device_session_token)
+
+
+    response = Response(status_code=200)
+    response.set_cookie("refresh", refresh, httponly=True, secure=True, path="/auth/refresh",
+                        max_age=REFRESH_TOKEN_TTL_SECONDS, samesite="Lax")
+    # keep session token cookie (if it's the same raw presented token, you may not need to set it again)
+    # set device_public_id cookie , frontend visibility (optional)
+    response.media_type = "application/json"
+    response.body = {"message":{"access_token":access,"refresh_token":refresh}}
+    return response
+
 
 #* make phone necessary for signup when app grows (not added now because of otp prices)
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
