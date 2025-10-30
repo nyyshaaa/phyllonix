@@ -147,9 +147,14 @@ class AuthMethod(str, enum.Enum):
 class DeviceSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     # hashed session token (e.g., sha256 hex = 64 chars) - unique so no duplicate tokens
-    session_token_hash: str = Field(sa_column=Column(String(128), nullable=False, unique=True, index=True))
+    session_token_hash: str = Field(sa_column=Column(String(128), nullable=True, unique=True, index=True))
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=True))
+    
+    public_id: Optional[uuid7] = Field(
+    default=None,
+    sa_column=Column("public_id", UUID(as_uuid=True), unique=True, index=True, nullable=False),
+    )
 
     # metadata...
     device_name: Optional[str] = Field(default=None, sa_column=Column(String(128)))
