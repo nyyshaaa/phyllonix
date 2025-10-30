@@ -170,3 +170,10 @@ async def rotate_refresh_token_value(session,locked_device_auth,now):
     locked_device_auth.revoked_by = "rotated"
     locked_device_auth.revoked_reason = "rotation"
     session.add(locked_device_auth)
+
+async def revoke_device_nget_id(session, device_public_id):
+    stmt = update(DeviceSession).where(DeviceSession.public_id == device_public_id
+                                       ).values(revoked_at=datetime.now(timezone.utc)).returning(DeviceSession.id)
+    res = await session.execute(stmt)
+    ds_id = res.scalar.one_or_none()
+    return ds_id

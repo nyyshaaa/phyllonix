@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.constants import REFRESH_TOKEN_TTL_SECONDS
 from backend.auth.dependencies import device_session_pid, device_session_plain, signup_validation
 from backend.auth.models import SignIn, SignupIn
-from backend.auth.services import create_user, issue_auth_tokens, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
+from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
 from backend.auth.utils import create_access_token
 from backend.db.dependencies import get_session
 from sqlalchemy.exc import InterfaceError,OperationalError
@@ -92,39 +92,25 @@ async def refresh(request:Request,refresh_cookie: Optional[str] = Cookie(None),
     return {"message":{"access_token":access}}
 
 
-# @auth_router.post("/auth/logout")
-# async def logout(device_public_id: str, session = Depends(get_session)):
-#     """
-#     Revoke a single device session and all its tokens.
-#     Clears cookies client-side (cookie clearing done by client or Set-Cookie with Max-Age=0).
-#     """
-#     now = datetime.now(timezone.utc)
+@auth_router.post("/auth/logout")
+async def logout(device_public_id: str = Depends(device_session_pid), session = Depends(get_session)):
+   
+    await logout_device_session(session,device_public_id)
+ 
+    res = Response(status_code=status.HTTP_204_NO_CONTENT)
+   
+    res.delete_cookie(key="refresh", path="/auth/refresh")
+    res.delete_cookie(key="session_token", path="/")
+    res.delete_cookie(key="device_public_id", path="/")
 
-#     # find ds
-#     stmt = select(DeviceSession).where(DeviceSession.public_id == device_public_id)
-#     res = await session.execute(stmt)
-#     ds = res.scalars().first()
-#     if not ds:
-#         # idempotent: treat missing as success
-#         return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-#     async with session.begin():
-#         ds.revoked_at = now
-#         session.add(ds)
-#         # revoke tokens atomically
-#         await session.execute(
-#             DeviceAuthToken.__table__.update()
-#             .where(DeviceAuthToken.device_session_id == ds.id)
-#             .values(revoked_at=now, revoked_by="user", revoked_reason="logout")
-#         )
-
-#     # invalidate caches (add when integrating Redis)
-#     # await redis.delete(f"device:{device_public_id}")
-#     # optionally clear refresh cookie: Set-Cookie header from the client or server response
-
-#     return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return res
 
 
+
+
+
+
+# --------------------------------------------------------------------------------------------------------------
 @auth_router.get("/health")
 @guard_with_circuit(db_circuit)
 @retry_async(attempts=1, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
@@ -139,17 +125,6 @@ async def health_check(session:AsyncSession=Depends(get_session)):
 
     return {"status": "healthy"}
 
-
-@auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(
-    request: Request,
-    refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),   #** to be retrieved from cookies for real use cases in browsers
-    session: AsyncSession = Depends(get_session),
-):
-    
-    user_identifier=request.state.user_identifier
-
-    pass
 
 
 @auth_router.get("/retries_cb_test")

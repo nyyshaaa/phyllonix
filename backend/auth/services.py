@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
 from uuid6 import uuid7
-from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_auth_fields, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, link_user_device_state, rotate_refresh_token_value, save_refresh_token, select_device_auth_fields_for_update, select_device_session_fields_for_update, update_device_session_last_activity,  user_id_by_email
+from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_auth_fields, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, link_user_device_state, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, select_device_auth_fields_for_update, select_device_session_fields_for_update, update_device_session_last_activity,  user_id_by_email
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, hash_password, hash_token, make_session_token_plain, verify_password
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
@@ -229,6 +229,22 @@ async def get_or_create_device_session(session,request,device_session_plain,user
         session_id=await save_device_state(session,request,user_id)
 
     return session_id
+
+
+async def logout_device_session(session,device_public_id):
+    now = datetime.now(timezone.utc)
+
+    ds_id = revoke_device_nget_id(session, device_public_id)
+
+    # revoke tokens atomically
+    await revoke_device_ref_tokens(session,ds_id)
+
+    await session.commit()
+
+    # invalidate caches (add when integrating Redis)
+    # await redis.delete(f"device:{device_public_id}")
+    # optionally clear refresh cookie: Set-Cookie header from the client or server response
+
 
 
 
