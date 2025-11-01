@@ -2,11 +2,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.params import Header
 from sqlalchemy.ext.asyncio import  AsyncSession
-
 from backend.auth.services import save_device_state
 from backend.common.constants import SESSION_TOKEN_COOKIE_MAX_AGE
 from backend.db.dependencies import get_session
 from fastapi.responses import JSONResponse
+from backend.config.admin_config import admin_config
+
+current_env = admin_config.ENV
 
 home_router = APIRouter()
 
@@ -21,8 +23,13 @@ async def session_init(
 
     await session.commit()
 
+    resp = {"message": {"device_public_id": str(ds_public_id)}} 
+    if current_env=="dev":
+        resp["message"]["session_token"]=ds_token_plain
+
+
     response = JSONResponse(
-        content={"message": {"device_public_id": str(ds_public_id)}},
+        content=resp,
         status_code=200
     )
     response.set_cookie(

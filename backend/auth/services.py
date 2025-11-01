@@ -76,6 +76,7 @@ async def save_device_state(session,request,user_id):
     
    
     ds = DeviceSession(
+        public_id=uuid7(),
         session_token_hash=session_token_hash,
         user_id=user_id,
         device_name=device_name,

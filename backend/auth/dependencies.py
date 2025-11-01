@@ -62,5 +62,10 @@ def device_session_plain(device_header: Optional[str] = Header(None, alias="X-De
     return device_header or device_cookie
 
 def device_session_pid(device_header: Optional[str] = Header(None, alias="X-Device-Id"),
-                         device_cookie:Optional[str]=Cookie(None,alias="px_device_id")):
+                         device_cookie:Optional[str]=Cookie(None,alias="device_public_id")):
     return device_header or device_cookie
+
+def refresh_token(refresh_header: Optional[str] = Header(None, alias="X-Refresh-Token"),
+                refresh_cookie:Optional[str]=Cookie(None,alias="refresh_token")):
+    return refresh_header or refresh_cookie
+

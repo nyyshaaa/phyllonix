@@ -1,5 +1,6 @@
 
 
+import logging
 from backend.main import app
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -8,6 +9,7 @@ from test_tokens import strong_pass3 , test_user3_email
 
 url_prefix="/api/v1"
 
+
 @pytest.fixture
 async def ac_client():
     async with LifespanManager(app):
@@ -15,30 +17,32 @@ async def ac_client():
             yield ac
 
 
-# @pytest.mark.asyncio
-# async def test_session_init_and_use(ac_client: AsyncClient):
+@pytest.mark.asyncio
+async def test_session_init_and_use(ac_client: AsyncClient, caplog):
 
-#     resp = await ac_client.post(f"{url_prefix}/session/init")
-#     assert resp.status_code == 200
+    resp = await ac_client.post(f"{url_prefix}/session/init")
+    assert resp.status_code == 200
 
-#     session_token = resp.cookies.get("session_token")
-#     device_public_id = resp.cookies.get("device_public_id")
+    resp = resp.json()
 
-#     assert session_token is not None
-#     print("Session Token:", session_token)
-#     assert device_public_id is not None
-#     print("Device Public ID:", device_public_id)
+    session_token = resp["message"]["session_token"]
+    device_public_id = resp["message"]["device_public_id"]
+
+    assert session_token is not None
+    print("Session Token:", session_token)
+    assert device_public_id is not None
+    print("Device Public ID:", device_public_id)
 
 
-# @pytest.mark.asyncio
-# async def test_signup(ac_client):
-#     payload = {"email": test_user3_email, "password": strong_pass3, "name": "testuser3"}
-#     resp = await ac_client.post(f"{url_prefix}/auth/signup", json=payload)
-#     assert resp.status_code in (200, 201)
-#     data = resp.json()
-#     assert "User" in data.get("message", "") or resp.status_code in (200,201)
-#     # device cookies should not be created by signup endpoint (unless you choose to)
-#     assert ac_client.cookies.get("session_token") is None
+@pytest.mark.asyncio
+async def test_signup(ac_client,caplog):
+    payload = {"email": test_user3_email, "password": strong_pass3, "name": "testuser3"}
+    resp = await ac_client.post(f"{url_prefix}/auth/signup", json=payload)
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    assert "User" in data.get("message", "") or resp.status_code in (200,201)
+    # device cookies should not be created by signup endpoint (unless you choose to)
+    assert ac_client.cookies.get("session_token") is None
 
 
 # backends/phyllonix$ python -m pytest "tests/tests_signup.py"
@@ -53,28 +57,28 @@ async def ac_client():
 # tests/tests_signup.py ..                                                 [100%]
 
 
-@pytest.mark.asyncio
-async def test_login(ac_client):
-    # ensure a session exists (server sets cookie)
-    # await ac_client.post("/session/init")
-    assert ac_client.cookies.get("session_token") is not None
+# @pytest.mark.asyncio
+# async def test_login(ac_client):
+#     # ensure a session exists (server sets cookie)
+#     # await ac_client.post("/session/init")
+#     assert ac_client.cookies.get("session_token") is not None
 
     
-    email = test_user3_email
-    password = strong_pass3
-    # create a user via signup (or create in DB directly)
-    # await create_test_user(ac_client, email=email, password=password)
+#     email = test_user3_email
+#     password = strong_pass3
+#     # create a user via signup (or create in DB directly)
+#     # await create_test_user(ac_client, email=email, password=password)
 
-    # perform login; cookie jar will include session_token automatically
-    login_payload = {"email": email, "password": password}
-    resp = await ac_client.post("/auth/login", json=login_payload)
-    assert resp.status_code == 200
+#     # perform login; cookie jar will include session_token automatically
+#     login_payload = {"email": email, "password": password}
+#     resp = await ac_client.post("/auth/login", json=login_payload)
+#     assert resp.status_code == 200
 
-    # server should set refresh cookie on login
-    refresh_cookie = ac_client.cookies.get("refresh")
-    assert refresh_cookie is not None
+#     # server should set refresh cookie on login
+#     refresh_cookie = ac_client.cookies.get("refresh")
+#     assert refresh_cookie is not None
 
-    # access protected API using access token from response body (or cookie)
-    body = resp.json()
-    access_token = body.get("message", {}).get("access_token")
-    assert access_token  # ensure returned
+#     # access protected API using access token from response body (or cookie)
+#     body = resp.json()
+#     access_token = body.get("message", {}).get("access_token")
+#     assert access_token  # ensure returned

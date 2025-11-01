@@ -6,16 +6,19 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.constants import REFRESH_TOKEN_TTL_SECONDS
-from backend.auth.dependencies import device_session_pid, device_session_plain, signup_validation
+from backend.auth.dependencies import device_session_pid, device_session_plain, refresh_token, signup_validation
 from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
 from backend.db.dependencies import get_session
 from sqlalchemy.exc import InterfaceError,OperationalError
-
 from backend.common.circuit_breaker import db_circuit, guard_with_circuit
 from backend.common.retries import retry_async, is_recoverable_exception
+from backend.config.admin_config import admin_config
+
+current_env = admin_config.ENV
 
 auth_router = APIRouter()
+
 
 #* sign in via both mobile or email(only email for now)
 @auth_router.post("/login")
@@ -29,12 +32,16 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
 
     access,refresh=await issue_auth_tokens(session,payload,device_session_token)
 
+    resp = {"message":{"access_token":access}}
+    if current_env=="dev":
+        resp["message"]["refresh_token"]=refresh
+
     response = JSONResponse(
-        content={"message":{"access_token":access,"refresh_token":refresh}},
+        content=resp,
         status_code=200
     )
-    
-    response.set_cookie("refresh", refresh, httponly=True, secure=True, path="/auth/refresh",
+
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, path="/auth/refresh",
                         max_age=REFRESH_TOKEN_TTL_SECONDS, samesite="Lax")
 
     return response
@@ -56,13 +63,10 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
 @auth_router.post("/refresh")
 @guard_with_circuit(db_circuit)
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def refresh(request:Request,refresh_cookie: Optional[str] = Cookie(None),
-                  refresh_header: Optional[str] = Header(None, alias="X-Refresh-Token"),
+async def refresh_auth(request:Request,refresh_token : str = Depends(refresh_token),
                    session=Depends(get_session)):
     
     user_identifier=request.state.user_identifier
-
-    refresh_token = refresh_cookie or refresh_header
     
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
@@ -71,12 +75,15 @@ async def refresh(request:Request,refresh_cookie: Optional[str] = Cookie(None),
     
     access=await provide_access_token(claims_dict)
 
+    resp = {"message":{"access_token":access}}
+    if current_env=="dev":
+        resp["message"]["refresh_token"]=refresh_plain
+
     response = JSONResponse(
-        content={"message":{"access_token":access,"refresh_token":refresh_plain}},
+        content=resp,
         status_code=200
     )
-
-    response.set_cookie("refresh", refresh_plain, httponly=True, secure=True, path="/auth/refresh",
+    response.set_cookie("refresh_token", refresh_plain, httponly=True, secure=True, path="/auth/refresh",
                         max_age=REFRESH_TOKEN_TTL_SECONDS, samesite="Lax")
 
     return response
