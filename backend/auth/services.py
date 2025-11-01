@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from fastapi import HTTPException,status
 from uuid6 import uuid7
-from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
+from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
 from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
@@ -113,8 +113,8 @@ async def issue_auth_tokens(session,payload,device_session):
         print("linked user to device session")
         
         # await merge_guest_cart_into_user(session, user_id, session_id)
-   
-    refresh_token=await save_refresh_token(session,session_id,user_id)
+
+    refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
     await session.commit()
 
     # Cache: set device:{device_public_id} in Redis (cache-aside). (ADD LATER)
@@ -169,35 +169,51 @@ async def validate_refresh_and_update_refresh(session,plain_token,user_id):
     hashed_token=hash_token(plain_token)
     now=datetime.now(timezone.utc)
 
-    locked_device_auth = await get_device_auth(session, hashed_token,user_id)
+    device_auth = await get_device_auth(session, hashed_token,user_id)
 
-    if not locked_device_auth:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    if not device_auth:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token or doesn't belong to user")
 
-    if locked_device_auth.expires_at <= now + timedelta(minutes=1):
+    if device_auth.expires_at <= now + timedelta(minutes=1):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
-
-    if locked_device_auth.revoked_at is not None:
-        # handle reuse: revoke device session and all its tokens, notify, log
-        # await _handle_reuse_and_revoke(session, locked_device_auth["device_session_id"], reason="reuse_detected")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token reuse detected; session revoked")
     
-    ds_row = await get_device_session_fields(session, user_id,ds_id=locked_device_auth.device_session_id)
+    ds_id = device_auth.device_session_id
+
+    
+    ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id)
     if not ds_row:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session missing")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session unauthorized or invalid")
     
     if ds_row["revoked_at"] is not None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session revoked")
     if ds_row["session_expires_at"] and now >= ds_row["session_expires_at"]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session absolute expiry reached")
+    
+    locked_device_auth = await get_device_auth(session, hashed_token,user_id,take_lock=True)
 
-    if locked_device_auth.expires_at and now >= locked_device_auth.expires_at:
+    # benign_revoked = False
+    if locked_device_auth.revoked_at is not None:
+        # If revoked_by indicates rotation we consider it benign concurrency (i.e., another concurrent
+        # request rotated it). May use 'rotated'/'rotation' or other sentinel values.
+        # Another check: if revoked_by == 'user' (explicit logout) treat as non-benign.
+        if locked_device_auth.revoked_by in (None, "rotation", "rotated", "rotated_by_device"):
+            # assume rotation-style revocation; allow to continue but mark
+            benign_revoked = True
+        else:
+            # revoked by admin/system or marked as 'reuse_detected' => handle as misuse
+            # Revoke entire device session and all its tokens (for security) and return 403
+            await revoke_device_and_tokens(session, ds_id, revoked_by="reuse_detetction")
+            # optionally alert / record security event here
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Refresh token reuse detected; session revoked")
+
+    if now + timedelta(seconds=40)>= locked_device_auth.expires_at:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
     
     # rotate: revoke current token and create a new one
-    await rotate_refresh_token_value(session,locked_device_auth,now)
+    # await rotate_refresh_token_value(session,locked_device_auth,now)  # not required as we already revoke all existing tokens in save refresh_token
 
-    refresh_plain=await save_refresh_token(session,ds_row["id"],user_id)
+    refresh_plain=await save_refresh_token(session,ds_row["id"],user_id,revoked_by="rotation")
 
     await update_device_session_last_activity(session, ds_row["id"], now)
     
@@ -209,7 +225,7 @@ async def validate_refresh_and_update_refresh(session,plain_token,user_id):
     # fetch user to get public_id, role_version if needed (can cache user metadata to avoid DB hit)
     user_claims=await fetch_user_claims(session,user_id)
 
-    return user_claims
+    return user_claims,refresh_plain
      
     
 

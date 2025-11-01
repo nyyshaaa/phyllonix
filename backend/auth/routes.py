@@ -56,24 +56,6 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
 @auth_router.post("/refresh")
 @guard_with_circuit(db_circuit)
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def refresh(refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),
-                   session=Depends(get_session)):
-    
-    if not refresh_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
-    
-    claims_dict=await validate_refresh_and_fetch_user(session,refresh_token)
-
-    print(claims_dict)
-
-    access=await provide_access_token(claims_dict)
-
-    return {"message":{"access_token":access}}
-
-
-@auth_router.post("/refresh")
-@guard_with_circuit(db_circuit)
-@retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
 async def refresh(request:Request,refresh_cookie: Optional[str] = Cookie(None),
                   refresh_header: Optional[str] = Header(None, alias="X-Refresh-Token"),
                    session=Depends(get_session)):
@@ -85,11 +67,19 @@ async def refresh(request:Request,refresh_cookie: Optional[str] = Cookie(None),
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
 
-    claims_dict=await validate_refresh_and_update_refresh(session,refresh_token,user_identifier)
+    claims_dict,refresh_plain=await validate_refresh_and_update_refresh(session,refresh_token,user_identifier)
     
     access=await provide_access_token(claims_dict)
 
-    return {"message":{"access_token":access}}
+    response = JSONResponse(
+        content={"message":{"access_token":access,"refresh_token":refresh_plain}},
+        status_code=200
+    )
+
+    response.set_cookie("refresh", refresh_plain, httponly=True, secure=True, path="/auth/refresh",
+                        max_age=REFRESH_TOKEN_TTL_SECONDS, samesite="Lax")
+
+    return response
 
 
 @auth_router.post("/auth/logout")

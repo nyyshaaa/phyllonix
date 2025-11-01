@@ -35,7 +35,7 @@ async def identify_user(session,email,password):
     
     return user
 
-async def save_refresh_token(session,ds_id,user_id):
+async def save_refresh_token(session,ds_id,user_id,revoked_by):
     now = datetime.now(timezone.utc)
     await session.execute(
         update(DeviceAuthToken)
@@ -44,7 +44,7 @@ async def save_refresh_token(session,ds_id,user_id):
             DeviceAuthToken.user_id == user_id,
             DeviceAuthToken.revoked_at.is_(None)
         )
-        .values(revoked_at = now, revoked_by = "rotated", revoked_reason = "new_login")
+        .values(revoked_at = now, revoked_by = revoked_by)
     )
 
     # create hashed refresh token , Insert new refresh token
@@ -84,15 +84,13 @@ async def link_user_device(session,ds_id,user_id):
                                        ).values(user_id=user_id,last_activity_at=datetime.now(timezone.utc))
     res= await session.execute(stmt)
 
-async def get_device_auth(session, token_hash,user_id):
+async def get_device_auth(session, token_hash,user_id,take_lock: bool = False):
     
-    stmt = (
-        select(
-            DeviceAuthToken.id
-        )
-        .where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id)
-        .with_for_update()  # row-level lock
-    )
+    if take_lock:
+        stmt = select(DeviceAuthToken.id).where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id
+                                         ).with_for_update()
+    else:
+        stmt = select(DeviceAuthToken.id).where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id)
     res = await session.execute(stmt)
     row = res.scalars().first()
     if not row:
@@ -181,5 +179,20 @@ async def revoke_device_nget_id(session, device_public_id):
 async def revoke_device_ref_tokens(session,ds_id):
     stmt =  update(DeviceAuthToken
                    ).where(DeviceAuthToken.device_session_id == ds_id
-                   ).values(revoked_at=datetime.now(timezone.utc), revoked_by="user", revoked_reason="logout")
+                   ).values(revoked_at=datetime.now(timezone.utc), revoked_by="logout")
     await session.execute(stmt)
+
+
+async def revoke_device_and_tokens(session, ds_id: int, revoked_by):
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        update(DeviceAuthToken)
+        .where(DeviceAuthToken.device_session_id == ds_id,
+               DeviceAuthToken.revoked_at.is_(None))
+        .values(revoked_at = now, revoked_by = revoked_by)
+    )
+    await session.execute(
+        update(DeviceSession)
+        .where(DeviceSession.id == ds_id)
+        .values(revoked_at = now)
+    )
