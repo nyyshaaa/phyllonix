@@ -7,6 +7,7 @@ from backend.image_uploads.webhooks import uploads_router
 from backend.cart.routes import carts_router
 from backend.orders.routes import orders_router
 from backend.orders.webhooks import webhooks_router
+from backend.common.routes import home_router
 
 
 
@@ -21,6 +22,7 @@ public_routers.include_router(prods_public_router, prefix="/products",tags=["pro
 public_routers.include_router(carts_router,prefix="/cart",tags=["cart"])
 public_routers.include_router(orders_router,tags=["orders"])
 public_routers.include_router(webhooks_router,prefix="/webhooks",tags=["webhooks"])
+public_routers.include_router(home_router,tags=["home"])
 
 #--------------------------------------------------------------------------------------------------------
 

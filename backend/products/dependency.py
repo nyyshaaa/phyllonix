@@ -16,7 +16,7 @@ def require_permissions(perm:str):
         stmt=(
             select(RolePermission.id)
             .join(Permission, Permission.id == RolePermission.permission_id)
-            .where(Permission.name == 'product:create',RolePermission.role_id.in_(list(user_roles))).limit(1)
+            .where(Permission.name == perm,RolePermission.role_id.in_(list(user_roles))).limit(1)
         )
         
         res=await session.execute(stmt)

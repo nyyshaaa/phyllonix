@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     JWT_SECRET :str
     JWT_ALGO : str
     ACCESS_TOKEN_EXPIRE_MINUTES : str
-    REFRESH_TOKEN_EXPIRE_DAYS : str
+    REFRESH_TOKEN_EXPIRE_HOURS : str
     PASS_HASH_SCHEME:str
     TOKEN_HASH_ALGO:str
     DEFAULT_ROLE:str
@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     RZPAY_SECRET:str
     RZPAY_GATEWAY_URL:str
     RAZORPAY_WEBHOOK_SECRET:str
+    REDIS_HOST : str
+    REDIS_PORT : int
+    REDIS_DB : int
 
     class Config:
         env_file = ".env"

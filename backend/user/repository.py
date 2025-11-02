@@ -62,9 +62,9 @@ async def save_user_avatar(session, user_id: int, image_path: str,final_path:str
 
 
 
-async def userauth_by_public_id(session,user_pid,ds_token):
+async def user_n_ds_by_public_id(session,user_pid,ds_token):
     if not ds_token:
-        stmt=select(Users.id).where(Users.public_id==user_pid)
+        stmt=select(Users.id).where(Users.public_id==user_pid,Users.deleted_at==None)
         res=await session.execute(stmt)
         user=res.first()
         user= {"user_id":user[0],"sid":None,"revoked":None}
@@ -72,11 +72,20 @@ async def userauth_by_public_id(session,user_pid,ds_token):
 
     ds_token__hash=hash_token(ds_token)
     stmt=select(Users.id,DeviceSession.id,DeviceSession.revoked_at).join(DeviceSession,DeviceSession.user_id==Users.id
-                               ).where(Users.public_id==user_pid,
+                               ).where(Users.public_id==user_pid,Users.deleted_at==None,
                                        DeviceSession.session_token_hash==ds_token__hash)
     res=await session.execute(stmt)
     user=res.first()
     user= {"user_id":user[0],"sid":user[1],"revoked":user[2]}
+    return user
+
+
+async def userauth_by_public_id(session,user_pid):
+   
+    stmt=select(Users.id).where(Users.public_id==user_pid,Users.deleted_at==None)
+    res=await session.execute(stmt)
+    user=res.first()
+    user= {"user_id":user[0],"sid":None,"revoked":None}
     return user
 
 

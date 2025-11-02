@@ -1,7 +1,8 @@
 
+from datetime import datetime
 from fastapi import HTTPException,status
-from sqlalchemy import select, text, update
-
+from sqlalchemy import and_, desc, or_, select, text, update
+from sqlalchemy.orm import selectinload , load_only
 from backend.common.utils import now
 from backend.schema.full_schema import Product, ProductCategory, ProductCategoryLink
 
@@ -27,19 +28,80 @@ async def add_product_categories(session,product_id, cat_ids):
         await session.execute(text(insert_sql), params)
 
 
-async def product_by_public_id(session,product_pid,user_id):
+async def get_product_ids_by_pid(session,product_pid,user_id):
     stmt=select(Product.id,Product.owner_id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
     res=await session.execute(stmt)
     product=res.one_or_none()
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return product
+    return {"product_id":product[0],"product_owner_id":product[1]}
 
-async def patch_product(session,updates,product_id):
+
+#** images not joined for now .
+#** may use postgres specific single query join and aggregate for better perf .
+async def get_prod_details_imgs_ncats(session, product_id: int):
+    q = (
+        select(Product)
+        .options(
+            # load only these columns for Product (SQLAlchemy will still include PK)
+            load_only(
+                Product.public_id,
+                Product.stock_qty,
+                Product.name,
+                Product.description,
+                Product.base_price,
+                Product.specs,
+                Product.updated_at
+            ),
+            # fetch categories in a second query
+            selectinload(Product.prod_categories).load_only(
+                ProductCategory.id,
+                ProductCategory.name,
+            ),
+            # fetch images in a second query
+        )
+        .where(Product.id == product_id)
+    )
+
+    res = await session.execute(q)
+    product = res.scalar_one_or_none()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    return {
+        "public_id": str(product.public_id),
+        "stock_qty": product.stock_qty,
+        "name": product.name,
+        "description": product.description,
+        "base_price": product.base_price,
+        "specs": product.specs,
+        "updated_at": product.updated_at,
+        "categories": [{"id": c.id, "name": c.name} for c in product.prod_categories],
+    }
+
+async def get_product_id_by_pid(session,product_pid):
+    stmt = select(Product.id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
+    res = await session.execute(stmt)
+    res = res.scalar_one_or_none()
+
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    return res
+
+
+async def fetch_prod_details(session, product_public_id):
+    product_id = await get_product_id_by_pid(session,product_public_id)
+
+    product_details = await get_prod_details_imgs_ncats(session,product_id)
+
+    return product_details
+
+async def patch_product(session,updates,user_id,product_id):
     stmt = (
     update(Product)
-    .where(Product.id == product_id)
-    .values(**updates, updated_at=now)
+    .where(Product.id == product_id,Product.owner_id==user_id)
+    .values(**updates, updated_at=now())
     .returning(Product.id)  
     )
 
@@ -68,4 +130,26 @@ async def replace_catgs(session,product_id,cat_ids):
     )
     
     await add_product_categories(session,product_id, cat_ids)
+
+
+def keyset_filter(created_at_val: datetime, last_id: str):
+    # ordering: created_at DESC (newest first), id ASC as tiebreaker
+    # For rows AFTER the page cursor (i.e., older items), we want:
+    #   (created_at < cursor_created_at) OR (created_at = cursor_created_at AND id > last_id)
+    return or_(
+        Product.created_at < created_at_val,
+        and_(Product.created_at == created_at_val, Product.id > last_id)
+    )
     
+
+async def fetch_prods(session,cursor_vals,limit):
+    stmt = select(Product.id,Product.public_id, Product.name, Product.base_price, Product.created_at)
+    if cursor_vals:
+        created_at_val, last_id = cursor_vals
+        stmt = stmt.where(keyset_filter(created_at_val, last_id))
+    # ordering: newest first
+    stmt = stmt.order_by(desc(Product.created_at), Product.id).limit(limit + 1)  # fetch one extra to detect has_more
+
+    result = await session.execute(stmt)
+    rows = result.all()
+    return rows 

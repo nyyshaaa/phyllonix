@@ -12,7 +12,7 @@ from sqlalchemy import select
 from backend.common.utils import now
 from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_order_status_get_orderid, update_pay_status_get_orderid, update_payment_attempt_resp, update_payment_provider_orderid
 from backend.config.settings import config_settings
-from backend.schema.full_schema import Order, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentStatus, PaymentWebhookEvent
+from backend.schema.full_schema import Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentStatus, PaymentWebhookEvent
 
 PSP_API_BASE=config_settings.RZPAY_GATEWAY_URL
 PSP_KEY_ID=config_settings.RZPAY_KEY

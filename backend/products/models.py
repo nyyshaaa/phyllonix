@@ -1,5 +1,6 @@
 
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -23,6 +24,5 @@ class ProductUpdateIn(BaseModel):
     specs: Optional[Dict[str, Any]] = None
     category_ids: Optional[List[int]] = None  
 
-    class ConfigDict:
-        json_schema_extra = "forbid"
+    model_config = {"extra": "forbid"} # disallow extra fields
 

@@ -9,7 +9,7 @@ from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Order, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -313,7 +313,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
 
     # Create Order
     
-    order = Order(
+    order = Orders(
         user_id=user_id,
         # session_id=session_id,
         status=OrderStatus.PENDING_PAYMENT.value if payment_method == "UPI" else OrderStatus.CONFIRMED.value,
@@ -492,14 +492,14 @@ async def update_pay_status_get_orderid(session,provider_order_id,provider_payme
 async def update_order_status_get_orderid(session,payment_order_id,order_status):
   
     stmt = (
-        update(Order)
-        .where(Order.id == payment_order_id)
+        update(Orders)
+        .where(Orders.id == payment_order_id)
         .values(
             status=order_status,
             placed_at=func.now(),
             updated_at=func.now()
         )
-        .returning(Order.id)
+        .returning(Orders.id)
     )
     result = await session.execute(stmt)
     order_id = result.scalar_one_or_none()
