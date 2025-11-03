@@ -1,0 +1,16 @@
+
+global:
+  scrape_interval: 4s
+
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+
+  - job_name: 'chlorophyll'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:8000']
+      # Assuming the FastAPI app is running on localhost:8000
+
+# node_exporter is at localhost:9100

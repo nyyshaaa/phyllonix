@@ -12,7 +12,7 @@ from backend.__init__ import setup_logger
 from backend.api.__init__ import version_prefix,cur_version
 from backend.background_workers.base_worker import BasePubSubWorker
 from backend.config.admin_config import admin_config
-
+from metrics.custom_instrumentator import instrumentator
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
@@ -56,6 +56,8 @@ def create_app():
     # app.add_middleware(DeviceSessionMiddleware,session=async_session)
 
     register_all_exceptions(app)
+    # instrumentator.instrument(app).expose(app, endpoint="/metrics")
+    
     return app
 
 app=create_app()
