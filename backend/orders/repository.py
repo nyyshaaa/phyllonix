@@ -130,16 +130,29 @@ async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_
     
 
 async def reserve_inventory(session,cart_items,cs_id,reserved_until):
+
+    to_insert = []
+
     for it in cart_items:
-        inv = InventoryReservation(
-            product_id=it["product_id"],
-            checkout_id=cs_id,
-            quantity=it["quantity"],
-            reserved_until=reserved_until,
-            status=InventoryReserveStatus.ACTIVE.value
-        )
-        session.add(inv)
-    
+        row = {
+            "product_id": int(it["product_id"]),
+            "checkout_session_id": cs_id,  
+            "quantity": int(it["quantity"]),
+            "reserved_until": reserved_until,
+            "status": InventoryReserveStatus.ACTIVE.value,
+            "created_at": now(),
+            "updated_at": now(),
+        }
+        to_insert.append(row)
+
+    insert_stmt = pg_insert(InventoryReservation).values(to_insert)
+    insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["checkout_id", "product_id"])
+
+    try:
+        await session.execute(insert_stmt)
+        
+    except IntegrityError as bulk_exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"{bulk_exc} exception occured while reserving inventory")
 
 
 async def get_checkout_session(session,user_id):
