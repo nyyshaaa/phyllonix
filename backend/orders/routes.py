@@ -8,7 +8,7 @@ from backend.config.settings import config_settings
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_active, validate_checkout_get_items_paymethod
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_activeness, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.schema.full_schema import Payment
 
@@ -35,7 +35,7 @@ async def initiate_buy_now(request:Request,
 
 # client should get the checkout id recived from initiate_buy_now ,store it and set it in url 
 # ask to user for payment options in ui , users can select payment methods 
-# most probably items won't run out of stock until payment second step so do reservation at 2nd level here
+# most certainly items won't run out of stock until payment second step so do reservation at 2nd level here 
 
 # when user clicks on proceed with selected payment method 
 #** can use a checkout status to return early for dobule requests to reduce latency 
@@ -104,7 +104,7 @@ async def place_order(request:Request,checkout_id: str,
 
     if pay_public_id:
         order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_data)
-        await update_checkout_active(session,cs_id)
+        await update_checkout_activeness(session,cs_id)
         return order_pay_res
     
     return order_data

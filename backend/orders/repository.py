@@ -156,13 +156,15 @@ async def get_checkout_session(session,user_id):
         return None
     
     if cs[2] < now():  
-        await update_checkout_active(session,cs[0])
+        await update_checkout_activeness(session,cs[0])
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
     return cs[1]
     
 async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.cart_snapshot,CheckoutSession.expires_at
-                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id).with_for_update()
+                  ).where(CheckoutSession.user_id==user_id,CheckoutSession.is_active.is_(True),
+                          CheckoutSession.public_id==checkout_id
+                          ).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
     cs_dict = {"cs_id":cs[0],"cs_cart_snap":cs[1],"cs_expires_at":cs[2]}
@@ -170,8 +172,8 @@ async def get_checkout_details(session,checkout_id,user_id):
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="checkout session not found")
 
-    if cs_dict["cs_expires_at"] and cs_dict["cs_expires_at"] < now():
-        await update_checkout_active(session,cs[0])
+    if cs_dict["cs_expires_at"] < now():
+        await update_checkout_activeness(session,cs[0],is_active=False)
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
 
     items = cs_dict["cs_cart_snap"].get("items", [])
@@ -181,7 +183,7 @@ async def get_checkout_details(session,checkout_id,user_id):
     return cs_dict 
 
 
-async def update_checkout_active(session,cs_id):
+async def update_checkout_activeness(session,cs_id,is_active:bool = False):
     stmt = update(CheckoutSession
                   ).where(CheckoutSession.id == cs_id).values(is_active=False)
     
@@ -250,7 +252,7 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
 
     # expiration check
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
-        await update_checkout_active(session,cs[0])
+        await update_checkout_activeness(session,cs[0])
         raise HTTPException(status_code=410, detail="Checkout session expired")
 
     # ensure a payment method has been selected

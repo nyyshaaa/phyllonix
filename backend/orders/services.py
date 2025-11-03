@@ -24,8 +24,8 @@ DEFAULT_BACKOFF_BASE = 0.5
 
 
 async def validate_items_avblty(session,cart_items):
-    if isinstance(cart_items, str):
-        cart_items = json.loads(cart_items) 
+    # if isinstance(cart_items, str):
+    #     cart_items = json.loads(cart_items) 
     
     product_ids=[]
     product_data={}
