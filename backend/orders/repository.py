@@ -26,7 +26,7 @@ async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
     first = rows[0]
     cart_id = int(first.cart_id)
     if cart_id is None :
-        raise HTTPException()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found for user")
         
     items = []
     for r in rows:
@@ -76,15 +76,21 @@ async def items_avblty(session,product_ids,product_data) -> int:
     
 
 
-# create checkout session and resrver inventory atomically 
 async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_until):
+    """Create a new checkout session for the user and if active valid checkout exists return that .
+    On conflcit integrity don't raise get valid checkout if avbl .
+    Catch other integrity issues and rollback .
+    """
 
     values = {
         "public_id": uuid7(),
         "user_id": user_id,
         "cart_snapshot": {"cart_id": cart_id, "items": items},
         "expires_at": reserved_until,
-        "selected_payment_method": None
+        "selected_payment_method": None,
+        "is_active": True,
+        "created_at": now(),
+        "updated_at": now(),
     }
 
     insert_stmt = (
@@ -100,9 +106,12 @@ async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_
     try:
         result = await session.execute(insert_stmt)
         checkout_pid = result.scalar_one_or_none()
+        
         if checkout_pid:
             await session.commit()
             return checkout_pid
+        
+        # conflict happened , return existing checkout is active 
         checkout_pid = await get_checkout_session(session,user_id)
         print(checkout_pid)
 
@@ -111,7 +120,7 @@ async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_
         
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Could not create checkout session please retry",
+            detail="Could not create checkout session please retry",   # if other txn marked checkout inactive after processing and we returned no chekout_pid via get 
         )
     except IntegrityError as e:
         print(e)
@@ -119,8 +128,6 @@ async def get_or_create_checkout_session(session,user_id,cart_id,items,reserved_
         #* log the error for debug and audit 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"Integrity Error other than unique violation occured in db")
     
-
-
 
 async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     for it in cart_items:
@@ -140,7 +147,7 @@ async def get_checkout_session(session,user_id):
     # Reuse active checkout session if exists
     stmt = select(CheckoutSession.id,CheckoutSession.public_id,CheckoutSession.expires_at).where(
         CheckoutSession.user_id == user_id,
-        CheckoutSession.is_active == True,
+        CheckoutSession.is_active.is_(True),
     )
     res = await session.execute(stmt)
     cs = res.one_or_none()
