@@ -24,8 +24,6 @@ DEFAULT_BACKOFF_BASE = 0.5
 
 
 async def validate_items_avblty(session,cart_items):
-    # if isinstance(cart_items, str):
-    #     cart_items = json.loads(cart_items) 
     
     product_ids=[]
     product_data={}
@@ -39,6 +37,7 @@ async def validate_items_avblty(session,cart_items):
     await items_avblty(session,product_ids,product_data)
 
 async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes: dict,
+                           
                            idempotency_key: Optional[str] = None,timeout: float = 10.0) -> dict:
     """
     Create Razorpay order (server -> razorpay). Returns dict with provider order id and client payload.

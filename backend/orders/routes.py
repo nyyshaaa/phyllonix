@@ -8,8 +8,9 @@ from backend.config.settings import config_settings
 from backend.common.utils import now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_activeness, validate_checkout_get_items_paymethod
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, order_totals_n_checkout_method_updates, order_totals_n_checkout_updates, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
+from backend.orders.utils import compute_order_totals
 from backend.schema.full_schema import Payment
 
 
@@ -23,11 +24,8 @@ async def initiate_buy_now(request:Request,
 
     user_identifier=request.state.user_identifier
     reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
-   
-    cart_data = await capture_cart_snapshot(session, user_identifier)
-    cart_items=cart_data["items"]
-    
-    checkout_public_id = await get_or_create_checkout_session(session,user_identifier,cart_data["cart_id"],cart_items,reserved_until)
+
+    checkout_public_id = await get_or_create_checkout_session(session, user_identifier, reserved_until)
     return {
         "checkout_id": checkout_public_id
     }
@@ -38,11 +36,10 @@ async def initiate_buy_now(request:Request,
 # most certainly items won't run out of stock until payment second step so do reservation at 2nd level here 
 
 # when user clicks on proceed with selected payment method 
-#** can use a checkout status to return early for dobule requests to reduce latency 
 @orders_router.post("/checkout/{checkout_id}/order-summary")
 async def get_order_summary(request:Request,checkout_id: str,
     payload: Dict[str, Any],
-    session: AsyncSession = Depends(get_session),):
+    session: AsyncSession = Depends(get_session)):
     """
     POST /checkout/{checkout_id}/select-method
     Body: { "payment_method": "UPI"|"COD" }
@@ -55,16 +52,27 @@ async def get_order_summary(request:Request,checkout_id: str,
         raise HTTPException(status_code=400, detail="payment_method must be UPI or COD")
     
     cs=await get_checkout_details(session,checkout_id,user_identifier)
-    cart_items=cs["cs_cart_snap"]["items"]
-    print("cart_items",cart_items)
-    print(type(cart_items))
+
+    items = cs["cs_cart_snap"].get("items", [])
+    pay_method=cs["cs_pay_method"]
+
+    if items and pay_method:
+        res=compute_order_totals(items,pay_method,checkout_id,cs["cs_expires_at"])
+        return res
     
+    # take locks on product rows to get a direct xclusive lock 
+    cart_data = await capture_cart_snapshot(session, user_identifier)
+    cart_items = cart_data["items"]
+
     # Validate availability for each item , 
     # err is raised even if non avblty for 1 item , in case want to allow avbl items tp proceed through return valid items from validate_items_avblty
     await validate_items_avblty(session,cart_items)
+
     await reserve_inventory(session,cart_items,cs["cs_id"],cs["cs_expires_at"])
-    res=await order_totals_n_checkout_method_updates(session,cart_items,payment_method,cs["cs_id"],checkout_id,cs["cs_expires_at"])
+    await update_checkout_cart_n_paymethod(session,cs["cs_id"],payment_method,cart_items)
     await session.commit()  
+    res=compute_order_totals(cart_items,payment_method,checkout_id,cs["cs_expires_at"])
+    
     # commit inv reservation and payment method update under a single commit 
     # so that if network fails for long time before checkout update it may give some other user's concurrent request to proceed through in case of low stock
     # otherwise inventory will stay on hold because of this midway failed request .
