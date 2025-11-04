@@ -10,13 +10,11 @@ def now() -> datetime:
 
 
 def build_success(data: Dict[str, Any],
-                  meta: Optional[Dict[str, Any]] = None,
                   trace_id: Optional[str] = None) -> Dict[str, Any]:
     return {
         "status": "ok",
         "data": data,
         "error": None,
-        "meta": meta or {},
         "trace_id": trace_id,
     }
 
@@ -27,7 +25,6 @@ def build_error(code: str,
         "status": "error",
         "data": None,
         "error": {"code": code, "details": details},
-        "meta": {},
         "trace_id": trace_id,
     }
 

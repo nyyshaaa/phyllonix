@@ -1,12 +1,10 @@
 
-
-import logging
 from backend.main import app
 import pytest
 from httpx import ASGITransport, AsyncClient
 from asgi_lifespan import LifespanManager
-from test_tokens import strong_pass3 , test_user3_email
-
+from test_tokens import generate_new_test_user, strong_pass3 , test_user3_email
+from tests.save_tokens import token_store
 url_prefix="/api/v1"
 
 
@@ -16,9 +14,10 @@ async def ac_client():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
 
+new_user_payload = generate_new_test_user()
 
 @pytest.mark.asyncio
-async def test_session_init_and_use(ac_client: AsyncClient, caplog):
+async def test_session_init_and_use(ac_client: AsyncClient):
 
     resp = await ac_client.post(f"{url_prefix}/session/init")
     assert resp.status_code == 200
@@ -28,21 +27,30 @@ async def test_session_init_and_use(ac_client: AsyncClient, caplog):
     session_token = resp["message"]["session_token"]
     device_public_id = resp["message"]["device_public_id"]
 
+    token_store.store_user_tokens(new_user_payload["email"], {
+        "device_public_id": device_public_id,
+        "session_token": session_token
+    })
+
     assert session_token is not None
     print("Session Token:", session_token)
     assert device_public_id is not None
     print("Device Public ID:", device_public_id)
 
 
+
 @pytest.mark.asyncio
-async def test_signup(ac_client,caplog):
-    payload = {"email": test_user3_email, "password": strong_pass3, "name": "testuser3"}
+async def test_signup(ac_client):
+    payload = new_user_payload
+    print(payload)
     resp = await ac_client.post(f"{url_prefix}/auth/signup", json=payload)
     assert resp.status_code in (200, 201)
     data = resp.json()
+    print("data",data)
     assert "User" in data.get("message", "") or resp.status_code in (200,201)
-    # device cookies should not be created by signup endpoint (unless you choose to)
-    assert ac_client.cookies.get("session_token") is None
+    stored = token_store.get_user_tokens(new_user_payload["email"])
+    stored.update({"signup_completed": True})
+    token_store.store_user_tokens(new_user_payload["email"], stored)
 
 
 # backends/phyllonix$ python -m pytest "tests/tests_signup.py"

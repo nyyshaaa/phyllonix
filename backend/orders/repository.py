@@ -136,12 +136,11 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     for it in cart_items:
         row = {
             "product_id": int(it["product_id"]),
-            "checkout_session_id": cs_id,  
+            "checkout_id": cs_id,  
             "quantity": int(it["quantity"]),
             "reserved_until": reserved_until,
             "status": InventoryReserveStatus.ACTIVE.value,
             "created_at": now(),
-            "updated_at": now(),
         }
         to_insert.append(row)
 
@@ -177,7 +176,7 @@ async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.cart_snapshot,CheckoutSession.selected_payment_method
                   ).where(CheckoutSession.user_id==user_id,CheckoutSession.is_active.is_(True),
                           CheckoutSession.public_id==checkout_id
-                          ).with_for_update()
+                          )
     res = await session.execute(stmt)
     cs = res.one_or_none()
     cs_dict = {"cs_id":cs[0],"cs_expires_at":cs[1],"cs_cart_snap":cs[2],"cs_pay_method":cs[3]}
@@ -188,9 +187,6 @@ async def get_checkout_details(session,checkout_id,user_id):
     if cs_dict["cs_expires_at"] < now():
         await update_checkout_activeness(session,cs[0],is_active=False)
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
-
-    items = cs_dict["cs_cart_snap"].get("items", [])
-    pay_method=cs_dict["cs_pay_method"]
     
     return cs_dict 
 

@@ -3,7 +3,8 @@ from backend.main import app
 import pytest
 from httpx import ASGITransport, AsyncClient
 from asgi_lifespan import LifespanManager
-from test_tokens import strong_pass3 , test_user3_email , session_token_user3
+from test_tokens import current_user_payload,current_user2_payload
+from tests.save_tokens import token_store
 
 url_prefix="/api/v1"
 
@@ -20,17 +21,16 @@ async def ac_client():
 #     assert resp.status_code == 200
 #     return ac_client
 
+current_user_payload = current_user2_payload
+
 @pytest.mark.asyncio
 async def test_login(ac_client):
 
-    email = test_user3_email
-    password = strong_pass3
-    # create a user via signup (or create in DB directly)
-    # await create_test_user(ac_client, email=email, password=password)
-
-    # print("Session token before login:", ac_client.cookies.get("session_token"))
-
-    headers = {"X-Device-Token": session_token_user3}
+    email = current_user_payload["email"]
+    password = current_user_payload["password"]
+   
+    user_tokens = token_store.get_user_tokens(email)
+    headers = {"X-Device-Token": user_tokens["session_token"]}
 
     # perform login; cookie jar will include session_token automatically
     payload = {"email": email, "password": password}
@@ -51,6 +51,13 @@ async def test_login(ac_client):
     body = resp.json()
     access_token = body.get("message", {}).get("access_token")
     refresh_token = body.get("message", {}).get("refresh_token")
+
+    user_tokens.update({
+        "refresh_token": refresh_token,
+        "access_token" : access_token
+    })
+    token_store.store_user_tokens(current_user_payload["email"], user_tokens)
+
     assert access_token  # ensure returned
     assert refresh_token  # ensure returned in dev env
     print("Access Token:", access_token)

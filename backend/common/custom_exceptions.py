@@ -47,13 +47,13 @@ def create_exception_handler(detail_fn: DetailFn) -> Callable[[Request, PhyllExc
         )
     return exception_handler
 
-async def http_exception_handler(request: Request, exc: HTTPException):
-    details = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
-    code = getattr(exc,"status_code")
-    # message = detail.get("message", str(detail.get("message", exc.detail)))
-    # details = detail.get("details")
-    payload = build_error(code=code, details=details, trace_id=None)
-    return JSONResponse(payload, status_code=code)
+# async def http_exception_handler(request: Request, exc: HTTPException):
+#     details = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+#     code = getattr(exc,"status_code")
+#     # message = detail.get("message", str(detail.get("message", exc.detail)))
+#     # details = detail.get("details")
+#     payload = build_error(code=code, details=details, trace_id=None)
+#     return JSONResponse(payload, status_code=code)
 
 async def fallback_handler(request: Request, exc: Exception):
     
@@ -87,9 +87,9 @@ def register_all_exceptions(app: FastAPI):
     # for exc_class,fn in mapping:
     #     app.add_exception_handler(exc_class,create_exception_handler(fn))
 
-    app.add_exception_handler(
-        HTTPException,
-        http_exception_handler)
+    # app.add_exception_handler(
+    #     HTTPException,
+    #     http_exception_handler)
 
     app.add_exception_handler(
         Exception, # catch all unidentified/unhandled exceptions

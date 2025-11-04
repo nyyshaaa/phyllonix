@@ -47,14 +47,15 @@ def create_app():
         #** optional middleware guard (adds header/ip check)
         # app.add_middleware(AdminGuardMiddleware)
     
-
+    # app.add_middleware(DeviceSessionMiddleware,session=async_session,paths=[f"{version_prefix}/cart/items",
+    #                                                                         f"{version_prefix}/checkout"])
+    
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/login",
                                                                              f"{version_prefix}/auth/signup",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks/razorpay"],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
-    # app.add_middleware(DeviceSessionMiddleware,session=async_session)
-
+    
     register_all_exceptions(app)
     # instrumentator.instrument(app).expose(app, endpoint="/metrics")
     

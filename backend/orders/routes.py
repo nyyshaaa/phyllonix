@@ -1,11 +1,11 @@
 
 from datetime import timedelta
 from typing import Any, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config.settings import config_settings
-from backend.common.utils import now
+from backend.common.utils import build_success, json_ok, now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
 from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
@@ -26,9 +26,12 @@ async def initiate_buy_now(request:Request,
     reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
 
     checkout_public_id = await get_or_create_checkout_session(session, user_identifier, reserved_until)
-    return {
-        "checkout_id": checkout_public_id
+    data = {
+        "checkout_id": str(checkout_public_id),
+        "reserved_until": str(reserved_until),
     }
+    payload = build_success(data, trace_id=None)
+    return json_ok(payload, status_code=status.HTTP_201_CREATED)
 
 
 # client should get the checkout id recived from initiate_buy_now ,store it and set it in url 
@@ -53,12 +56,13 @@ async def get_order_summary(request:Request,checkout_id: str,
     
     cs=await get_checkout_details(session,checkout_id,user_identifier)
 
-    items = cs["cs_cart_snap"].get("items", [])
+    items = cs["cs_cart_snap"].get("items", []) if cs["cs_cart_snap"] else None
     pay_method=cs["cs_pay_method"]
 
     if items and pay_method:
         res=compute_order_totals(items,pay_method,checkout_id,cs["cs_expires_at"])
-        return res
+        payload = build_success(res, trace_id=None)
+        return json_ok(payload)
     
     # take locks on product rows to get a direct xclusive lock 
     cart_data = await capture_cart_snapshot(session, user_identifier)
@@ -72,13 +76,14 @@ async def get_order_summary(request:Request,checkout_id: str,
     await update_checkout_cart_n_paymethod(session,cs["cs_id"],payment_method,cart_items)
     await session.commit()  
     res=compute_order_totals(cart_items,payment_method,checkout_id,cs["cs_expires_at"])
-    
+
+    payload = build_success(res, trace_id=None)
+    return json_ok(payload)
     # commit inv reservation and payment method update under a single commit 
     # so that if network fails for long time before checkout update it may give some other user's concurrent request to proceed through in case of low stock
     # otherwise inventory will stay on hold because of this midway failed request .
     # or commit seprately as well it is concurrent safe in the way that it won't cause bad states .
 
-    return res
 
 # when clicked on proceed to pay with upi etc. call this 
 # order creation will happen here in final stage

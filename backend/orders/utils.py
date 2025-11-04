@@ -31,7 +31,7 @@ def compute_order_totals(items,payment_method,checkout_public_id,cs_expires_at):
     # },
 
     return {
-        "checkout_id": checkout_public_id,
+        "checkout_id": str(checkout_public_id),
         "selected_payment_method": payment_method,
         "items": items,
         "summary": {
