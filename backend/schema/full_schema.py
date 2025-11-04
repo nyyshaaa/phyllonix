@@ -147,7 +147,7 @@ class AuthMethod(str, enum.Enum):
 class DeviceSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     # hashed session token (e.g., sha256 hex = 64 chars) - unique so no duplicate tokens
-    session_token_hash: str = Field(sa_column=Column(String(128), nullable=True, unique=True, index=True))
+    session_token_hash: str = Field(sa_column=Column(String(128), nullable=False, unique=True, index=True))
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=True))
     
@@ -351,7 +351,7 @@ class Cart(SQLModel, table=True):
     )
     session_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("devicesession.id", ondelete="SET NULL"), nullable=True, index=True,unique=True),
+        sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), nullable=True, index=True,unique=True),
     )
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
@@ -360,7 +360,6 @@ class Cart(SQLModel, table=True):
     user: Optional["Users"] = Relationship(back_populates="cart")   # (guest cart)a cart may have no user 
     cart_items: List["CartItem"] = Relationship(back_populates="cart")
 
-# set deleted_at when item is added to order , hard delete after some time .
 # CartItem is like join table as well for product and cart (product <--> cart many to many)
 class CartItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -373,7 +372,6 @@ class CartItem(SQLModel, table=True):
 
     cart: "Cart" = Relationship(back_populates="cart_items")
 
-    # unique constraint for insertion safety at db level
     __table_args__ = (
         UniqueConstraint("cart_id", "product_id", name="uq_cart_product"),
     )

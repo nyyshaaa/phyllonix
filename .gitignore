@@ -27,3 +27,5 @@ syntax_checks/
 assets/
 
 experimental/
+
+saved_test_tokens.json

@@ -48,9 +48,9 @@ async def signup_validation(payload=Body(...)):
     #     # Here we reject to enforce stronger correctness; change to log/warn if you prefer.
     #     raise HTTPException(status_code=400, detail="Email domain does not accept mail (no MX record)")
 
-    is_valid, status = validate_password(payload["password"])
+    is_valid, detail = validate_password(payload["password"])
     if not is_valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=status)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     
     return payload
     
