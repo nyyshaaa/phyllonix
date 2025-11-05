@@ -65,13 +65,12 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
 async def refresh_auth(request:Request,refresh_token : str = Depends(refresh_token),
                    session=Depends(get_session)):
-    
-    user_identifier=request.state.user_identifier
+
     
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
 
-    claims_dict,refresh_plain=await validate_refresh_and_update_refresh(session,refresh_token,user_identifier)
+    claims_dict,refresh_plain=await validate_refresh_and_update_refresh(session,refresh_token)
     
     access=await provide_access_token(claims_dict)
 

@@ -22,8 +22,7 @@ async def test_refresh(ac_client):
     
     user_tokens = token_store.get_user_tokens(current_user["email"])
 
-    res = await ac_client.post(f"{url_prefix}/auth/refresh", headers={"X-Refresh-Token": user_tokens["refresh_token"],
-                                                "Authorization": f"Bearer {user_tokens["access_token"]}"})
+    res = await ac_client.post(f"{url_prefix}/auth/refresh", headers={"X-Refresh-Token": user_tokens["refresh_token"]})
 
     assert res.status_code == 200 
     body = res.json()

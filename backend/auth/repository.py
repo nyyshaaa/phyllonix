@@ -91,13 +91,13 @@ async def link_user_device(session,ds_id,user_id):
                                        ).values(user_id=user_id,last_activity_at=datetime.now(timezone.utc))
     res= await session.execute(stmt)
 
-async def get_device_auth(session, token_hash,user_id,take_lock: bool = False):
+async def get_device_auth(session, token_hash,take_lock: bool = False):
     
     if take_lock:
-        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id
+        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash
                                          ).with_for_update()
     else:
-        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id)
+        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash)
     res = await session.execute(stmt)
     row = res.scalar_one_or_none()
     if not row:
