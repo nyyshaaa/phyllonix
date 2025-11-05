@@ -21,6 +21,23 @@ https://www.notion.so/place-order-full-recheck-28914b400ea7801885cfeaf6704e61d8
 [pay_tests_1.webm](https://github.com/user-attachments/assets/1df508f3-ea80-44f0-ac92-0f090df8a84f)
 [pay_tests_2.webm](https://github.com/user-attachments/assets/e4483391-1583-4a91-98ac-d26436f98db9)
 
+concurrency tests for inventory reservation without direct xclusive locks and with xclusive locks 
+
+test_two_users_concurrent_order_summary_reservation
+without xclusive direct lock it causes oversell as both concurrent requests succeed when product stock was available so that only 1 checkout can succeed 
+<img width="1444" height="188" alt="image" src="https://github.com/user-attachments/assets/f70fe577-ff39-4f7c-9c32-22eea6ba9240" />
+<img width="1431" height="59" alt="image" src="https://github.com/user-attachments/assets/e3f20f75-ac26-491d-9c55-1dfab123d4ce" />
+<img width="1448" height="457" alt="image" src="https://github.com/user-attachments/assets/adad7d6e-157f-48fa-9d55-d7162ddec7be" />
+
+with xclusive locks only 1 checkout request succeeds other informs about not available qty for the product .
+<img width="1440" height="307" alt="image" src="https://github.com/user-attachments/assets/d035bd90-0b29-490a-8400-1bb2a8d5be75" />
+
+
+
+
+
+
+
 
 
 
