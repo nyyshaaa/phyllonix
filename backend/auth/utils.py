@@ -14,7 +14,7 @@ JWT_ALGO = config_settings.JWT_ALGO
 DEFAULT_ROLE=config_settings.DEFAULT_ROLE
 
 ACCESS_TOKEN_EXPIRE_MINUTES = int(config_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-REFRESH_TOKEN_EXPIRE_HOURS = int(config_settings.REFRESH_TOKEN_EXPIRE_HOURS)
+REFRESH_TOKEN_EXPIRE = int(config_settings.REFRESH_TOKEN_EXPIRE)
 
 pwd_context = CryptContext(schemes=[PASS_HASH_SCHEME], deprecated="auto")
 

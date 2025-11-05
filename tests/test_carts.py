@@ -20,7 +20,7 @@ async def ac_client():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
 
-current_user_payload = current_user_payload
+current_user_payload = current_user2_payload
 
 @pytest.mark.asyncio
 async def test_add_to_cart_user_logged(ac_client):
@@ -29,7 +29,7 @@ async def test_add_to_cart_user_logged(ac_client):
     # device_headers = {"X-Device-Token": user_tokens["session_token"]}
     headers = {"Authorization" : f"Bearer {user_tokens["access_token"]}"}
 
-    resp = await ac_client.post(f"/api/v1/cart/items/0199a984-e686-71e6-ac75-b6a39394adc9",headers=headers)
+    resp = await ac_client.post(f"/api/v1/cart/items/019a5479-a604-7c9c-8d75-999cc4e5ac20",headers=headers)
     assert resp.status_code == 201, resp.text
 
     payload = resp.json()

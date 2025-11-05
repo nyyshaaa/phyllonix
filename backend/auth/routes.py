@@ -63,7 +63,7 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
 @auth_router.post("/refresh")
 @guard_with_circuit(db_circuit)
 @retry_async(attempts=4, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def refresh_auth(request:Request,refresh_token : str = Depends(refresh_token),
+async def refresh_auth(refresh_token : str = Depends(refresh_token),
                    session=Depends(get_session)):
 
     

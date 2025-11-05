@@ -134,6 +134,7 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     to_insert = []
 
     for it in cart_items:
+        print("cs_id",cs_id)
         row = {
             "product_id": int(it["product_id"]),
             "checkout_id": cs_id,  
@@ -201,6 +202,7 @@ async def update_checkout_activeness(session,cs_id,is_active:bool = False):
 
 
 async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
+    print("in update checkout part ", cs_id)
     stmt=update(CheckoutSession).where(CheckoutSession.id==cs_id
                                        ).values(selected_payment_method=payment_method,
                                                 cart_snapshot=items)

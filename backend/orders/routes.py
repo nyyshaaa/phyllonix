@@ -50,6 +50,8 @@ async def get_order_summary(request:Request,checkout_id: str,
     Returns server-validated order summary. Does NOT create final Order.
     """
     user_identifier=request.state.user_identifier
+    print("user_identifier",user_identifier)
+
     payment_method = payload.get("payment_method")
     if payment_method not in ("UPI", "COD"):
         raise HTTPException(status_code=400, detail="payment_method must be UPI or COD")
@@ -75,6 +77,7 @@ async def get_order_summary(request:Request,checkout_id: str,
     await reserve_inventory(session,cart_items,cs["cs_id"],cs["cs_expires_at"])
     await update_checkout_cart_n_paymethod(session,cs["cs_id"],payment_method,cart_items)
     await session.commit()  
+    print(f"req {user_identifier} reserved items for checkout {checkout_id} with payment method {payment_method}")
     res=compute_order_totals(cart_items,payment_method,checkout_id,cs["cs_expires_at"])
 
     payload = build_success(res, trace_id=None)
