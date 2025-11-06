@@ -19,7 +19,8 @@ async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
                Product.id.label("product_id"), CartItem.quantity, Product.base_price , Product.stock_qty)
         .join(Cart,Cart.id==CartItem.cart_id)
         .join(Product, Product.id == CartItem.product_id)
-        .where(Cart.user_id == user_id).with_for_update(of=Product, nowait=False) 
+        .where(Cart.user_id == user_id)
+        .with_for_update(of=Product, nowait=False) 
     )
     res = await session.execute(stmt)
     rows = res.all()
@@ -220,28 +221,30 @@ async def spc_by_ikey(session,i_key,user_id):
 
 async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
-                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id).with_for_update()
+                  ).where(CheckoutSession.user_id==user_id,CheckoutSession.is_active.is_(True),
+                      CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
     cs_id=cs[0]
     if not cs:
-        raise HTTPException(status_code=404, detail="Checkout session not found")
-
-    # expiration check
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
+    
+    #** check concurrency here it may lead one request to fail and one to succeed , 
+    # by default concurrent requests must not be allowed for this endpoint from frontend side
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
         await update_checkout_activeness(session,cs[0])
-        raise HTTPException(status_code=410, detail="Checkout session expired")
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Checkout session expired")
 
     # ensure a payment method has been selected
     if not cs[2]:
-        raise HTTPException(status_code=400, detail="Payment method not selected")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment method not selected")
 
     payment_method = cs[2]  # "UPI" or "COD"
 
     # Load items from checkout snapshot
     items = cs[3].get("items", []) if cs[3] else []
     if not items:
-        raise HTTPException(status_code=400, detail="Checkout has no items")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Checkout has no items")
     
     return cs_id,items,payment_method
 
@@ -308,7 +311,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
         shipping=order_totals["shipping"],
         discount=order_totals["discount"],
         total=order_totals["total"],
-        placed_at=None if payment_method == "UPI" else now(),
+        placed_at= now(),
         created_at=now(),
         updated_at=now(),
         shipping_address_json={"city":"central city","country":"america"}  #** just a placeholder of address for testing,insert actual addresses here 

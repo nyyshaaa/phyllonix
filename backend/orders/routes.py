@@ -88,9 +88,9 @@ async def get_order_summary(request:Request,checkout_id: str,
     # or commit seprately as well it is concurrent safe in the way that it won't cause bad states .
 
 
-# when clicked on proceed to pay with upi etc. call this 
+# when clicked on proceed to pay with upi etc or just for creating order with pay later option. call this 
 # order creation will happen here in final stage
-#** also store a request hash of items data for full enhanced security 
+#** also store a request hash of items data for full enhanced security (send it from frontend side to identify requests along with idempotency)
 @orders_router.post("/checkout/{checkout_id}/secure-confirm")
 async def place_order(request:Request,checkout_id: str,
     idempotency_key: str = Header(alias="Idempotency-Key"),

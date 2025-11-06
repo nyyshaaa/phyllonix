@@ -65,7 +65,7 @@ async def test_two_users_concurrent_order_summary_reservation(ac_client):
     b_ok = res_b.status_code in success_codes
 
     assert not (a_ok and b_ok), "Both users succeeded but product stock should prevent this (6 total, requests 3 & 6)"
-    # assert a_ok or b_ok, "Neither user succeeded - unexpected (one should succeed given stock=6)"
+    assert a_ok or b_ok, "Neither user succeeded - unexpected (one should succeed given stock=6)"
 
     # Ensure the failing response is a meaningful error (insufficient stock / conflict)
     if a_ok:
@@ -90,3 +90,10 @@ async def test_two_users_concurrent_order_summary_reservation(ac_client):
 # User-a body: {"status":"ok","data":{"checkout_id":"019a54e6-565c-74bf-be97-828b763ef0a5","selected_payment_method":"UPI","items":[{"cart_item_id":13,"product_id":25,"quantity":5,"prod_base_price":500,"product_stock":1000},{"cart_item_id":15,"product_id":530,"quantity":5,"prod_base_price":500,"product_stock":6}],"summary":{"subtotal":5000,"tax":100,"shipping":50,"cod_fee":0,"discount":0,"total":5150}},"error":null,"trace_id":null}
 # User-b body: {"detail":{"errors":[{"detail":"Not enough stock for product 530: requested=5, available=1"}]}}
 # user-a succeeded, user-b failed as expected
+
+
+
+# --------------------------------------------------------
+# >       assert not (a_ok and b_ok), "Both users succeeded but product stock should prevent this (6 total, requests 3 & 6)"
+# E       AssertionError: Both users succeeded but product stock should prevent this (6 total, requests 3 & 6)
+# E       assert not (True and True)
