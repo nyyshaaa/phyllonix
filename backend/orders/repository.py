@@ -1,4 +1,5 @@
 
+import json
 from uuid6 import uuid7
 from datetime import timedelta
 from typing import Any, Dict, List
@@ -7,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
 from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
-from backend.common.utils import now
+from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
 from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
@@ -300,8 +301,9 @@ def compute_final_total(items,payment_method):
 #** with ikey if yes retrurn otheriwse raise conflict issue to client so that user may safely retry .
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
+    ik_row = await record_order_idempotency(session,i_key,user_id)
+
     # Create Order
-    
     order = Orders(
         user_id=user_id,
         # session_id=session_id,
@@ -341,16 +343,111 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
 
     if payment_method == "UPI" :
         pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"])
-        await commit_idempotent_order_place(session,user_id,i_key,order.id,
+        await update_order_idempotency_record(session,user_id,i_key,order.id,
                                             None,response_body=None,owner_type="pay_now")
         
         response["pay_public_id"]=pay_public_id
         return response
 
-    await commit_idempotent_order_place(session,user_id,i_key,order.id,
+    await update_order_idempotency_record(session,user_id,i_key,order.id,
                                         200,response_body=response,owner_type="order_confirm")
 
     return response
+
+
+async def bulk_insert_order_items(session,order,order_totals):
+    item_rows = []
+    for it in order_totals["items"]:
+        item_rows.append({
+            "order_id": order.id,
+            "product_id": int(it["product_id"]),
+            "quantity": int(it["quantity"]),
+            "unit_price_snapshot": int(it["prod_base_price"]),
+            "tax_snapshot": int(it.get("tax_snapshot", int((it["prod_base_price"] * it["quantity"]) * 0.02))),
+            "discount_snapshot": int(it.get("discount_snapshot", 0)),
+            "created_at": now(),
+            "updated_at": now(),
+        })
+
+    if item_rows:
+        insert_stmt = pg_insert(OrderItem).values(item_rows)
+        insert_stmt = insert_stmt.on_conflict_do_nothing()
+        await session.execute(insert_stmt)
+
+
+async def update_order_idempotency_record(session, user_id, i_key, owner_id,
+                                        response_code, response_body, owner_type):
+    if response_body:
+        response_body = json.dumps(response_body)
+        
+    stmt = (
+        update(IdempotencyKey)
+        .where(
+            and_(
+                IdempotencyKey.key == i_key,
+                IdempotencyKey.created_by == user_id
+            )
+        )
+        .values(
+            owner_id=owner_id,
+            owner_type=owner_type,
+            response_body=response_body,
+            response_code=response_code
+        )
+    )
+    
+    await session.execute(stmt)
+    await session.flush()
+
+
+async def record_order_idempotency(session, idempotency_key, user_identifier):
+  
+    now_ts = now()
+    insert_values = {
+        "key": idempotency_key,
+        "owner_id": None,
+        "response_code": None,
+        "response_body": None,
+        "created_by": user_identifier,
+        "created_at": now_ts,
+        "expires_at": now_ts + timedelta(days=1)
+    }
+
+    insert_stmt = pg_insert(IdempotencyKey).values(insert_values).on_conflict_do_nothing().returning(IdempotencyKey.id)
+    res = await session.execute(insert_stmt)
+    ik_id = res.scalar_one_or_none()
+
+    if not ik_id :
+        # fallback: select existing row
+        stmt = select(IdempotencyKey.id).where(IdempotencyKey.key == idempotency_key,IdempotencyKey.created_by == user_identifier)
+        res3 = await session.execute(stmt)
+        return res3.scalar_one_or_none()
+    
+
+async def record_payment_init_pending(session,order_id,order_total):
+   
+    payment = Payment(
+        order_id=order_id,
+        # provider="razorpay", 
+        provider_payment_id=None,
+        status=PaymentStatus.PENDING.value,
+        amount=order_total
+    )
+    session.add(payment)
+    await session.flush()
+
+    # # record a payment attempt
+    # pa = PaymentAttempt(
+    #     payment_id=payment.id,
+    #     attempt_no=1,
+    #     provider_response=None,
+    #     provider_event_id=None,
+    # )
+    # session.add(pa)
+    # await session.flush()
+
+    return payment.public_id
+
 
 #** check if need to save event and also properly fix on conflict to do nothing or get data
 # idempotent in concurrency via i key 
@@ -380,33 +477,6 @@ async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id
         session.rollback()
         # stmt = select(IdempotencyKey).where(IdempotencyKey.key==idempotency_key)
         # await session.execute(stmt)
-        
-
-    
-
-async def record_payment_init_pending(session,order_id,order_total):
-   
-    payment = Payment(
-        order_id=order_id,
-        # provider="razorpay", 
-        provider_payment_id=None,
-        status=PaymentStatus.PENDING.value,
-        amount=order_total
-    )
-    session.add(payment)
-    await session.flush()
-
-    # # record a payment attempt
-    # pa = PaymentAttempt(
-    #     payment_id=payment.id,
-    #     attempt_no=1,
-    #     provider_response=None,
-    #     provider_event_id=None,
-    # )
-    # session.add(pa)
-    # await session.flush()
-
-    return payment.public_id
 
 #** update staus as well
 async def update_payment_provider_orderid(session,pay_id,provider_order_id):
@@ -568,3 +638,18 @@ async def commit_reservations_and_decrement_stock(session,order_id):
 
     await session.flush()
     return committed_res_ids
+
+
+async def short_circuit_concurrent_req(session,i_key,user_id,checkout_id):
+    res = await spc_by_ikey(session,i_key,user_id)
+    if res and res["response_body"]:
+        payload = build_success(res, trace_id=None)
+        return json_ok(payload)
+    
+    # else, still in-progress -> instruct client to poll (fail-fast)
+    status_url = f"/api/v1/checkout/{checkout_id}/status/{i_key}"
+    headers = {"Retry-After": "3", "Location": status_url}
+    content={"status": "in_progress", "status_url": status_url, "retry_after": 3}
+
+    payload = build_success(content, trace_id=None)
+    return json_ok(payload,status_code=202,headers=headers)

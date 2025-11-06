@@ -397,6 +397,14 @@ class CheckoutStatus(enum.IntEnum):
     PROGRESS = 0
     DONE = 1
 
+class OrderIdempotencyStatus(enum.IntEnum):
+    PENDING = 0
+    SUCCESS = 10
+    FAILURE = 20
+    
+
+
+
 # User --> Orders (1:many) 
 # Product <--> Order(many to many)
 class Orders(SQLModel, table=True):
@@ -491,6 +499,7 @@ class IdempotencyKey(SQLModel, table=True):
     request_hash: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     response_code: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     response_body: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    status: int = Field(default=OrderIdempotencyStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
     
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
