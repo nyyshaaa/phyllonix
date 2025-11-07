@@ -1,6 +1,7 @@
 
 
 
+import asyncio
 from datetime import timedelta
 import hashlib
 
@@ -61,4 +62,6 @@ async def acquire_pglock(session,lock_key):
     got_lock_row = await session.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": lock_key})
     got_lock = bool(got_lock_row.scalar_one())
     return got_lock
+
+
     

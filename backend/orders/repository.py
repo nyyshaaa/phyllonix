@@ -1,4 +1,5 @@
 
+import asyncio
 import json
 from uuid6 import uuid7
 from datetime import timedelta
@@ -211,14 +212,23 @@ async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
     await session.execute(stmt)
 
 async def spc_by_ikey(session,i_key,user_id):
-    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code
+    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
+    if res and res[2] < now( ) + timedelta(seconds=40):
+        raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout already expired")
     if res:
         order_npay_data = {"response_body":res[0],"response_code":res[1]}
         return order_npay_data
     return res
+
+
+async def response_by_ikey(session,idempotency_key,user_identifier):
+    order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+    if order_npay_data and order_npay_data["response_body"] is not None:
+        payload = build_success(order_npay_data, trace_id=None)
+        return json_ok(payload)
 
 async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
@@ -301,8 +311,6 @@ def compute_final_total(items,payment_method):
 #** with ikey if yes retrurn otheriwse raise conflict issue to client so that user may safely retry .
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
-    ik_row = await record_order_idempotency(session,i_key,user_id)
-
     # Create Order
     order = Orders(
         user_id=user_id,
@@ -375,7 +383,7 @@ async def bulk_insert_order_items(session,order,order_totals):
         await session.execute(insert_stmt)
 
 
-async def update_order_idempotency_record(session, user_id, i_key, owner_id,
+async def update_order_idempotency_record(session, user_id, ik_id, owner_id,
                                         response_code, response_body, owner_type):
     if response_body:
         response_body = json.dumps(response_body)
@@ -384,7 +392,7 @@ async def update_order_idempotency_record(session, user_id, i_key, owner_id,
         update(IdempotencyKey)
         .where(
             and_(
-                IdempotencyKey.key == i_key,
+                IdempotencyKey.id == ik_id,
                 IdempotencyKey.created_by == user_id
             )
         )
@@ -417,13 +425,18 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
     res = await session.execute(insert_stmt)
     ik_id = res.scalar_one_or_none()
 
-    if not ik_id :
-        # fallback: select existing row
-        stmt = select(IdempotencyKey.id).where(IdempotencyKey.key == idempotency_key,IdempotencyKey.created_by == user_identifier)
-        res3 = await session.execute(stmt)
-        return res3.scalar_one_or_none()
-    
 
+    if not ik_id :
+
+        await asyncio.sleep(5)
+
+        order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+        if order_npay_data and order_npay_data["response_body"] is not None:
+            payload = build_success(order_npay_data, trace_id=None)
+            return json_ok(payload)
+        # to be completely secure in case if lock got failed for all requests midprocess so here if not ik_id(implying it already inserted) so wait for few seconds 
+        # and then get response data by ikey if fouund return otherwise return 202 accepted to short circuit it here so that concurrent doesn't proceed .
+    
 async def record_payment_init_pending(session,order_id,order_total):
    
     payment = Payment(
