@@ -521,6 +521,16 @@ class PaymentAttemptStatus(enum.IntEnum):
     FAILED = 30
     UNKNOWN = 40
 
+class PaymentEventStatus(enum.IntEnum):
+    RECEIVED = 0
+    PROCESSED = 10
+    IGNORED = 20
+
+class OutboxEventStatus(enum.IntEnum):
+    PENDING = 0
+    SENT = 10 
+    FAILED = 20
+
 
 # Payments & payment attempts / events
 class Payment(SQLModel, table=True):
@@ -549,13 +559,53 @@ class PaymentAttempt(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
 class PaymentWebhookEvent(SQLModel, table=True):
-    
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
-    provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=False, index=True))
+    provider: str = Field(sa_column=Column(String(64), nullable=False, index=True))
+    provider_event_id: str = Field(sa_column=Column(String(128), nullable=False))  # unique per provider recommended
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    status: int = Field(default=PaymentEventStatus, sa_column=Column(Integer, nullable=False))
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    last_error: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    
+    __table_args__ = (UniqueConstraint("provider", "provider_event_id", name="uq_provider_event"),)
+
+
+class OutboxEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    topic: str = Field(sa_column=Column(String(128), nullable=False))  # e.g., "order.paid"
+    payload: dict = Field(sa_column=Column(JSON, nullable=False))
+    # optional aggregate scoping to make dedupe easier
+    aggregate_type: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))
+    aggregate_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    dedupe_key: str = Field(default=None, sa_column=Column(String(256), nullable=False))
+    status: int = Field(default=OutboxEventStatus, sa_column=Column(Integer, nullable=False))
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+    __table_args__ = (UniqueConstraint("dedupe_key", "topic", name="uq_outbox_key_topic"),)
+
+class CommitIntentStatus:
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+# class InvCommitIntent(SQLModel, table=True):
+
+#     id: Optional[int] = Field(default=None, primary_key=True)
+#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False), index=True)
+#     reason: str = Field(default="payment_succeeded", sa_column=Column(String(128), nullable=False))
+#     status: str = Field(default=CommitIntentStatus.PENDING, sa_column=Column(String(32), nullable=False, index=True))
+#     payload: dict = Field(sa_column=Column(JSONB, nullable=True))  # items, quantities
+#     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+#     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+#     updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
 
 # --------------------------------------------------------------------------------------------------------------------------------
 

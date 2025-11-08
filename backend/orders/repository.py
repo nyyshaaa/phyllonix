@@ -2,8 +2,8 @@
 import asyncio
 import json
 from uuid6 import uuid7
-from datetime import timedelta
-from typing import Any, Dict, List
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
@@ -11,7 +11,7 @@ from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -546,7 +546,7 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_status_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
+async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
 
     stmt = (
     update(Payment)
@@ -561,7 +561,7 @@ async def update_pay_status_get_orderid(session,provider_order_id,provider_payme
     print("order ",order_id)
     return order_id
 
-async def update_order_status_get_orderid(session,payment_order_id,order_status):
+async def update_order_status(session,payment_order_id,order_status):
   
     stmt = (
         update(Orders)
@@ -573,10 +573,50 @@ async def update_order_status_get_orderid(session,payment_order_id,order_status)
         )
         .returning(Orders.id)
     )
-    result = await session.execute(stmt)
-    order_id = result.scalar_one_or_none()
-    return order_id
+    await session.execute(stmt)
 
+async def emit_outbox_event(session,topic:str,payload:dict):
+    ev = OutboxEvent(topic=topic, payload=payload, status="PENDING", attempts=0, created_at=now())
+    session.add(ev)
+    await session.flush()  # get ev.id
+    return ev
+
+
+async def emit_outbox_event(session, topic: str, payload: dict,
+                            aggregate_type: Optional[str] = None,
+                            aggregate_id: Optional[int] = None,
+                            dedupe_key: Optional[str] = None,
+                            next_retry_at: Optional[datetime] = None):
+   
+    values = {
+        "topic": topic,
+        "payload": payload,
+        "aggregate_type": aggregate_type,
+        "aggregate_id": aggregate_id,
+        "dedupe_key": dedupe_key,
+        "status": OutboxEventStatus.PENDING,
+        "attempts": 0,
+        "next_retry_at": next_retry_at,
+        "created_at": func.now(),
+    }
+
+    if dedupe_key:
+        stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
+            index_elements=[ "dedupe_key","topic"]
+        ).returning(OutboxEvent.id)
+        res = await session.execute(stmt)
+        ev_id = res.scalar_one_or_none()
+       
+        stmt2 = select(OutboxEvent.id).where(OutboxEvent.dedupe_key == dedupe_key,OutboxEvent.topic == topic)
+        res = await session.execute(stmt2)
+        ev_id =  res.scalar_one_or_none()
+    else:
+        ev = OutboxEvent(topic=topic, payload=payload, status=OutboxEventStatus.PENDING, attempts=0, created_at=func.now())
+        session.add(ev)
+        await session.flush()
+        ev_id = ev.id
+
+    
 
 async def commit_reservations_and_decrement_stock(session,order_id):
     """
