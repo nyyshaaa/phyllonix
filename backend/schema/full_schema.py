@@ -151,8 +151,8 @@ class DeviceSession(SQLModel, table=True):
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=True))
     
-    public_id: Optional[uuid7] = Field(
-    default=None,
+    public_id: uuid7 = Field(
+    default_factory=uuid7, 
     sa_column=Column("public_id", UUID(as_uuid=True), unique=True, index=True, nullable=False),
     )
 
@@ -577,8 +577,8 @@ class OutboxEvent(SQLModel, table=True):
     topic: str = Field(sa_column=Column(String(128), nullable=False))  # e.g., "order.paid"
     payload: dict = Field(sa_column=Column(JSON, nullable=False))
     # optional aggregate scoping to make dedupe easier
-    aggregate_type: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))
-    aggregate_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    aggregate_type: str = Field(sa_column=Column(String(64), nullable=False))
+    aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))
     status: int = Field(default=OutboxEventStatus, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
