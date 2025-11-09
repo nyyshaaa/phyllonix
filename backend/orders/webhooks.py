@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
 from backend.config.settings import config_settings
-from backend.orders.repository import emit_outbox_event, update_order_status, update_order_status_get_orderid, update_pay_completion_get_orderid
+from backend.orders.repository import emit_outbox_event, update_order_status, update_pay_completion_get_orderid
 from backend.orders.services import mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_event_already_processed
 from backend.orders.utils import pay_order_status_util
 from backend.schema.full_schema import OrderStatus, PaymentEventStatus
@@ -67,13 +67,12 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         "provider_order_id": provider_order_id,
         "raw_payload": payload
     }
-    dedupe_key = f"order:{order_id}"
+    
     await emit_outbox_event(session, 
                             topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed", 
                             payload=outbox_payload,
                             aggregate_type="order",
-                            aggregate_id=order_id,
-                            dedupe_key=dedupe_key,)
+                            aggregate_id=order_id,)
 
     
     await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.PROCESSED)

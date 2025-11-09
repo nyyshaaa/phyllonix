@@ -579,33 +579,38 @@ class OutboxEvent(SQLModel, table=True):
     # optional aggregate scoping to make dedupe easier
     aggregate_type: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))
     aggregate_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
-    dedupe_key: str = Field(default=None, sa_column=Column(String(256), nullable=False))
     status: int = Field(default=OutboxEventStatus, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
-    __table_args__ = (UniqueConstraint("dedupe_key", "topic", name="uq_outbox_key_topic"),)
+    __table_args__ = (
+        UniqueConstraint("aggregate_id", "aggregate_type", "topic", name="uq_outboxevent_aggid_type_topic"),
+    )
 
-class CommitIntentStatus:
-    PENDING = "pending"
-    PROCESSING = "processing"
-    DONE = "done"
-    FAILED = "failed"
+class CommitIntentStatus(enum.IntEnum):
+    PENDING = 0
+    PROCESSING = 10
+    DONE = 20
+    FAILED = 30
 
-# class InvCommitIntent(SQLModel, table=True):
+class CommitIntent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    aggregate_type: str = Field(sa_column=Column(String(32), nullable=False))   # e.g. "order", "inventory"
+    aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))        # e.g. order.id
+    reason: str = Field(sa_column=Column(String(128), nullable=False))         # e.g. "payment_succeeded"
+    status: str = Field(default=CommitIntentStatus.PENDING, sa_column=Column(String(32), nullable=False, index=True))
+    payload: dict = Field(sa_column=Column(JSONB, nullable=True))              # items, quantities, ledger entries
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), default=now))
+    updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False), index=True)
-#     reason: str = Field(default="payment_succeeded", sa_column=Column(String(128), nullable=False))
-#     status: str = Field(default=CommitIntentStatus.PENDING, sa_column=Column(String(32), nullable=False, index=True))
-#     payload: dict = Field(sa_column=Column(JSONB, nullable=True))  # items, quantities
-#     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
-#     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-#     updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-
+    __table_args__ = (
+        # uniqueness to avoid duplicate intents for same (aggregate_id + aggregate_type + reason)
+        UniqueConstraint("aggregate_id", "aggregate_type", "reason", name="uq_commitintent_aggid_type_reason"),
+    )
 
 # --------------------------------------------------------------------------------------------------------------------------------
 
@@ -643,12 +648,4 @@ class CommitIntentStatus:
 #     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 #     refunded_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
-# # Order events / audit
-# class OrderEvent(SQLModel, table=True):
-    
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
-#     event_type: str = Field(sa_column=Column(String(64), nullable=False))
-#     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-#     actor: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+
