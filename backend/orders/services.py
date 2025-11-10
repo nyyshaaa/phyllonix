@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
 from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_pay_completion_get_orderid, update_payment_attempt_resp, update_payment_provider_orderid
 from backend.config.settings import config_settings
-from backend.schema.full_schema import Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentEventStatus, PaymentStatus, PaymentWebhookEvent
+from backend.schema.full_schema import OrderItem, Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentEventStatus, PaymentStatus, PaymentWebhookEvent
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 PSP_API_BASE=config_settings.RZPAY_GATEWAY_URL
@@ -280,6 +280,16 @@ async def mark_webhook_processed(session, ev_id,status: str, last_error: Optiona
                 last_error=last_error)
     )
     await session.execute(stmt)
+
+
+async def load_order_items_pid_qty(session, order_id: int):
+  
+    stmt = select(OrderItem.product_id, OrderItem.quantity).where(OrderItem.order_id == order_id)
+    res = await session.execute(stmt)
+    rows = res.all()
+    return [{"product_id": int(r[0]), "quantity": int(r[1])} for r in rows]
+
+
 
 
 

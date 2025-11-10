@@ -11,7 +11,7 @@ from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -575,17 +575,9 @@ async def update_order_status(session,payment_order_id,order_status):
     )
     await session.execute(stmt)
 
-async def emit_outbox_event(session,topic:str,payload:dict):
-    ev = OutboxEvent(topic=topic, payload=payload, status="PENDING", attempts=0, created_at=now())
-    session.add(ev)
-    await session.flush()  # get ev.id
-    return ev
-
-
 async def emit_outbox_event(session, topic: str, payload: dict,
                             aggregate_type: Optional[str] = None,
                             aggregate_id: Optional[int] = None,
-                            dedupe_key: Optional[str] = None,
                             next_retry_at: Optional[datetime] = None):
    
     values = {
@@ -593,29 +585,60 @@ async def emit_outbox_event(session, topic: str, payload: dict,
         "payload": payload,
         "aggregate_type": aggregate_type,
         "aggregate_id": aggregate_id,
-        "dedupe_key": dedupe_key,
         "status": OutboxEventStatus.PENDING,
         "attempts": 0,
         "next_retry_at": next_retry_at,
-        "created_at": func.now(),
+        "created_at": now(),
     }
 
-    if dedupe_key:
-        stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
-            index_elements=[ "dedupe_key","topic"]
-        ).returning(OutboxEvent.id)
-        res = await session.execute(stmt)
-        ev_id = res.scalar_one_or_none()
-       
-        stmt2 = select(OutboxEvent.id).where(OutboxEvent.dedupe_key == dedupe_key,OutboxEvent.topic == topic)
+    
+    stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
+        constraint = "uq_outboxevent_aggid_type_topic"
+    ).returning(OutboxEvent.id)
+    res = await session.execute(stmt)
+    ev_id = res.scalar_one_or_none()
+
+    if not ev_id:
+        stmt2 = select(OutboxEvent.id).where(
+        and_(
+            OutboxEvent.aggregate_id.is_(aggregate_id),
+            OutboxEvent.aggregate_type.is_(aggregate_type),
+            OutboxEvent.topic.is_(topic)
+        )
+    )
         res = await session.execute(stmt2)
         ev_id =  res.scalar_one_or_none()
-    else:
-        ev = OutboxEvent(topic=topic, payload=payload, status=OutboxEventStatus.PENDING, attempts=0, created_at=func.now())
-        session.add(ev)
-        await session.flush()
-        ev_id = ev.id
 
+
+async def load_order_items_for_commit(session, order_id: int):
+    
+    stmt = select(OrderItem.product_id, OrderItem.quantity).where(OrderItem.order_id == order_id)
+    res = await session.execute(stmt)
+    rows = res.all()
+    return [{"product_id": int(r[0]), "quantity": int(r[1])} for r in rows]
+
+
+async def create_commit_intent(session, order_id: int, reason: str, aggr_type : str , payload: dict):
+   
+    stmt = pg_insert(CommitIntent).values(
+        order_id=order_id,
+        reason=reason,
+        status=CommitIntentStatus.PENDING,
+        payload=payload,
+        attempts=0,
+        created_at=now(),
+    ).on_conflict_do_nothing(
+        constraint = "uq_commitintent_aggid_type_reason"  # create a unique index on (order_id, reason) in migration
+    ).returning(CommitIntent.id)
+    res = await session.execute(stmt)
+    commit_intent_id = res.scalar_one_or_none()
+    if not commit_intent_id:
+        # already exists -> return existing
+        stmt = select(CommitIntent).where(CommitIntent.aggregate_id.is_(order_id), 
+                                          CommitIntent.aggregate_type.is_(aggr_type), CommitIntent.reason.is_(reason))
+        res3 = await session.execute(stmt)
+        return res3.scalar_one_or_none()
+   
     
 
 async def commit_reservations_and_decrement_stock(session,order_id):
@@ -706,3 +729,7 @@ async def short_circuit_concurrent_req(session,i_key,user_id,checkout_id):
 
     payload = build_success(content, trace_id=None)
     return json_ok(payload,status_code=202,headers=headers)
+
+
+async def sim_emit_outbox_event(session,topic,payload,agg_type,agg_id):
+    pass

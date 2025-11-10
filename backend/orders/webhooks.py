@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
 from backend.config.settings import config_settings
-from backend.orders.repository import emit_outbox_event, update_order_status, update_pay_completion_get_orderid
-from backend.orders.services import mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_event_already_processed
+from backend.orders.repository import create_commit_intent, emit_outbox_event, update_order_status, update_pay_completion_get_orderid
+from backend.orders.services import  load_order_items_pid_qty, mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_event_already_processed
 from backend.orders.utils import pay_order_status_util
 from backend.schema.full_schema import OrderStatus, PaymentEventStatus
 
@@ -15,7 +15,7 @@ webhooks_router=APIRouter()
 @webhooks_router.post("/razorpayy")
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     body = await request.body()
-    
+    app=request.app
     # verify signature
     await verify_razorpay_signature(request, body)
     print("hereee")
@@ -67,16 +67,33 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         "provider_order_id": provider_order_id,
         "raw_payload": payload
     }
+    topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed", 
     
-    await emit_outbox_event(session, 
-                            topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed", 
+    commit_int_id =None
+    if order_status == OrderStatus.CONFIRMED.value:
+            # build commit payload: items & quantities from order_items
+            items = await load_order_items_pid_qty(session, order_id)  # returns list of {product_id, qty}
+            commit_payload = {"order_id": order_id, "items": items}
+            # create commit intent (idempotent: do not duplicate if exists)
+            commit_int_id = await create_commit_intent(session, order_id, "payment_succeeded", aggr_type = "order",payload = commit_payload)
+    
+    outbox_event_id = await emit_outbox_event(session, 
+                            topic=topic, 
                             payload=outbox_payload,
                             aggregate_type="order",
                             aggregate_id=order_id,)
 
+                
+
     
     await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.PROCESSED)
     await session.commit()
+
+    app.state.pubsub_pub(topic, {"outbox_event_id": outbox_event_id, "topic": topic, "payload": outbox_payload})
+
+    if commit_int_id:
+        # lightweight payload: commit intent id (worker will re-load intent from DB and lock it)
+        app.state.pubsub_pub("order_confirm_intent.created", {"commit_intent_id": commit_int_id, "order_id": order_id})
 
     return {"status": "ok", "note": note}
     

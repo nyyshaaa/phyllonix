@@ -1,7 +1,9 @@
 import asyncio
 from typing import Any, Dict, Optional
 from backend.__init__ import logger
+from backend.background_workers import order_confirm_inv_handler
 from backend.background_workers.image_tansform_handler import ImageTransformHandler
+from backend.background_workers.outbox_worker_handler import OrdersOutboxHandler
 from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
 
 SENTINEL = None  # queue sentinel
@@ -13,7 +15,11 @@ class BasePubSubWorker():
         self.workers_count:int=workers_count
         self._processed = 0
         self.subscribers={}
-        self.handlers={"image_uploaded":ThumbnailTaskHandler(),"product_image_uploaded":ImageTransformHandler()}
+        self.handlers={"image_uploaded":ThumbnailTaskHandler(),
+                       "product_image_uploaded":ImageTransformHandler(),
+                       "order_finalize":OrdersOutboxHandler(),
+                       "order_confirm_intent.created":order_confirm_inv_handler,
+                       }
         
     
     def start(self):
@@ -37,6 +43,13 @@ class BasePubSubWorker():
 
         img_process_handler=self.handlers["product_image_uploaded"]
         self.subscribe("product_image_uploaded", img_process_handler.compute_checksum_and_update_status)
+
+        orders_outbox_handler=self.handlers["order_finalize"]
+        self.subscribe("order.paid",orders_outbox_handler.outbox_handler)
+        self.subscribe("order.payment_failed",orders_outbox_handler.outbox_handler)
+        order_inv_handler= self.handlers["order_confirm_intent.created"]
+        self.subscribe("order_confirm_intent.created",order_inv_handler)
+
 
     def _handler_key(self,fn):
         return (getattr(fn,"__self__",None),getattr(fn,"__func__",fn))
