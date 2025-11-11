@@ -21,7 +21,8 @@ async def order_confirm_inv_handler(task_data: Dict[str, Any], worker_name: str)
         try:
             # acquire and mark PROCESSING (short transaction)
             async with session.begin():
-                stmt = select(CommitIntent.status).where(CommitIntent.id == ci_id).with_for_update(skip_locked=True)
+                stmt = select(CommitIntent.status).where(CommitIntent.id == ci_id,
+                                                         CommitIntent.status==CommitIntentStatus.PENDING.value).with_for_update(skip_locked=True)
                 res = await session.execute(stmt)
                 ci_status = res.scalar_one_or_none()
                 if not ci_status:

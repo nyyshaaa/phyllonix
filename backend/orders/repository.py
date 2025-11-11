@@ -496,9 +496,9 @@ async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id
         # stmt = select(IdempotencyKey).where(IdempotencyKey.key==idempotency_key)
         # await session.execute(stmt)
 
-#** update staus as well
-async def update_payment_provider_orderid(session,pay_id,provider_order_id):
-    stmt = update(Payment).where(Payment.id==pay_id).values(provider_order_id=provider_order_id).returning(Payment.id)
+async def update_payment_status_nprovider(session,pay_id,provider_order_id):
+    stmt = update(Payment).where(Payment.id==pay_id).values(provider_order_id=provider_order_id,
+                                                           status=PaymentStatus.CAPTURED).returning(Payment.id)
     res=await session.execute(stmt)
     res= res.scalar_one_or_none()
 
@@ -566,11 +566,11 @@ async def update_pay_completion_get_orderid(session,provider_order_id,provider_p
     print("order ",order_id)
     return order_id
 
-async def update_order_status(session,payment_order_id,order_status):
+async def update_order_status(session,order_id,order_status):
   
     stmt = (
         update(Orders)
-        .where(Orders.id == payment_order_id)
+        .where(Orders.id == order_id)
         .values(
             status=order_status,
             placed_at=func.now(),
@@ -626,7 +626,7 @@ async def load_order_items_for_commit(session, order_id: int):
 async def create_commit_intent(session, order_id: int, reason: str, aggr_type : str , payload: dict):
    
     stmt = pg_insert(CommitIntent).values(
-        order_id=order_id,
+        aggregate_id=order_id,
         reason=reason,
         status=CommitIntentStatus.PENDING,
         payload=payload,

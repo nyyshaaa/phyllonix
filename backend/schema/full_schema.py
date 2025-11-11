@@ -529,7 +529,8 @@ class PaymentEventStatus(enum.IntEnum):
 class OutboxEventStatus(enum.IntEnum):
     PENDING = 0
     SENT = 10 
-    FAILED = 20
+    DONE = 20
+    FAILED = 30
 
 
 # Payments & payment attempts / events

@@ -11,7 +11,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
-from backend.orders.repository import commit_reservations_and_decrement_stock, items_avblty, record_payment_attempt, update_idempotent_response, update_pay_completion_get_orderid, update_payment_attempt_resp, update_payment_provider_orderid
+from backend.orders.repository import items_avblty, record_payment_attempt, update_idempotent_response, update_pay_completion_get_orderid, update_payment_attempt_resp, update_payment_status_nprovider
 from backend.config.settings import config_settings
 from backend.schema.full_schema import OrderItem, Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentEventStatus, PaymentStatus, PaymentWebhookEvent
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -131,7 +131,7 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
     }
 
     # update order row
-    pay_id=await update_payment_provider_orderid(session,pay_int_id,provider_order_id)
+    pay_id=await update_payment_status_nprovider(session,pay_int_id,provider_order_id)
 
     # update idempotency response
     response_body = {

@@ -1,6 +1,7 @@
 
 import json
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
 from backend.config.settings import config_settings
@@ -23,14 +24,14 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     provider_event_id = request.headers.get("X-Razorpay-Event-Id")
 
     if not provider_event_id:
-        # bad payload; acknowledge to avoid retries or log and 400
-        raise HTTPException(status_code=400, detail="missing event id")
+        # bad payload; acknowledge to avoid retries , reconcile 
+        return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
 
     provider = "razorpay"
 
     # insert/mark webhook receipt (dedupe)
     if await webhook_event_already_processed(session, provider_event_id,provider):
-        return {"status": "ok", "note": "already processed"}
+        return JSONResponse({"status": "ok", "note": note}, status_code=200)
     
     ev_id = await mark_webhook_received(session, provider_event_id, provider, payload)
 
@@ -46,18 +47,16 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         # mark processed to stop retries
         await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no payment entity")
         await session.commit()
-        return {"status": "ok", "note": "no payment entity"}
+        return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
-
     payment_status,order_status,note = pay_order_status_util(psp_pay_status)
-    
     
     order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status)
     if not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
         # mark event processed so provider stops retrying
         await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no pay record found for provider_order_id")
-        return {"status": "ok", "note": "payment not found"}
+        return JSONResponse({"status": "ok", "note": "ignored: payment not found"}, status_code=200)
     
     await update_order_status(session,order_id,order_status)
 
@@ -84,8 +83,6 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
                             aggregate_id=order_id,)
 
                 
-
-    
     await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.PROCESSED)
     await session.commit()
 
@@ -95,7 +92,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         # lightweight payload: commit intent id (worker will re-load intent from DB and lock it)
         app.state.pubsub_pub("order_confirm_intent.created", {"commit_intent_id": commit_int_id, "order_id": order_id})
 
-    return {"status": "ok", "note": note}
+    return JSONResponse({"status": "ok", "note": note}, status_code=200)
     
 
 
