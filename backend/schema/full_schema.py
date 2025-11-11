@@ -564,7 +564,7 @@ class PaymentWebhookEvent(SQLModel, table=True):
     provider: str = Field(sa_column=Column(String(64), nullable=False, index=True))
     provider_event_id: str = Field(sa_column=Column(String(128), nullable=False))  # unique per provider recommended
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    status: int = Field(default=PaymentEventStatus, sa_column=Column(Integer, nullable=False))
+    status: int = Field(default=PaymentEventStatus.RECEIVED.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     last_error: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
@@ -580,7 +580,7 @@ class OutboxEvent(SQLModel, table=True):
     # optional aggregate scoping to make dedupe easier
     aggregate_type: str = Field(sa_column=Column(String(64), nullable=False))
     aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))
-    status: int = Field(default=OutboxEventStatus, sa_column=Column(Integer, nullable=False))
+    status: int = Field(default=OutboxEventStatus.PENDING.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
@@ -601,7 +601,7 @@ class CommitIntent(SQLModel, table=True):
     aggregate_type: str = Field(sa_column=Column(String(32), nullable=False))   # e.g. "order", "inventory"
     aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))        # e.g. order.id
     reason: str = Field(sa_column=Column(String(128), nullable=False))         # e.g. "payment_succeeded"
-    status: str = Field(default=CommitIntentStatus.PENDING, sa_column=Column(String(32), nullable=False, index=True))
+    status: int = Field(default=CommitIntentStatus.PENDING.value, sa_column=Column(Integer, nullable=False))
     payload: dict = Field(sa_column=Column(JSONB, nullable=True))              # items, quantities, ledger entries
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))

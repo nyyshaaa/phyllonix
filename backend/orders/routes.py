@@ -1,4 +1,5 @@
 
+import asyncio
 from datetime import timedelta
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
@@ -113,19 +114,27 @@ async def place_order(request:Request,checkout_id: str,
     #     return await short_circuit_concurrent_req(session,idempotency_key,
     #                  user_identifier,checkout_id)
     
-    order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
-    if order_npay_data and order_npay_data["response_body"] is not None:
-        payload = build_success(order_npay_data, trace_id=None)
+    order_ik_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+    if order_ik_npay_data and order_ik_npay_data["response_body"] is not None:
+        payload = build_success(order_ik_npay_data, trace_id=None)
         return json_ok(payload)
 
     # insert with on conflict do nothing and select existing  
-    await record_order_idempotency(session,idempotency_key,user_identifier)
+    ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
+    if not ik_id :
+        await asyncio.sleep(5)
+
+        order_ik_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+        if order_ik_npay_data and order_ik_npay_data["response_body"] is not None:
+            payload = build_success(order_ik_npay_data, trace_id=None)
+            return json_ok(payload)
+        ik_id = order_ik_npay_data["ik_id"]
     order_totals=compute_final_total(items,payment_method)
     
     order_data = await place_order_with_items(session,user_identifier,
-                                              payment_method,order_totals,idempotency_key)
+                                              payment_method,order_totals,ik_id)
     #**may emit an event to remove cart items in async way in prod
-    await remove_items_from_cart(session,items)
+    # await remove_items_from_cart(session,items)
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
     
     #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .

@@ -11,7 +11,7 @@ from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, up
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, OrderIdempotencyStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -215,18 +215,18 @@ async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
     print("in update checkout part ", cs_id)
     stmt=update(CheckoutSession).where(CheckoutSession.id==cs_id
                                        ).values(selected_payment_method=payment_method,
-                                                cart_snapshot=items)
+                                                cart_snapshot={"items":items})
     await session.execute(stmt)
 
 async def spc_by_ikey(session,i_key,user_id):
-    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at
+    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at,IdempotencyKey.id
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res and res[2] < now( ) + timedelta(seconds=40):
         raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout already expired")
     if res:
-        order_npay_data = {"response_body":res[0],"response_code":res[1]}
+        order_npay_data = {"response_body":res[0],"response_code":res[1],"ik_id":res[3]}
         return order_npay_data
     return res
 
@@ -243,6 +243,8 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
                       CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
+    print(cs)
+    print("cs[3]",cs[3])
     cs_id=cs[0]
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
@@ -430,22 +432,28 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
         "response_body": None,
         "created_by": user_identifier,
         "created_at": now_ts,
-        "expires_at": now_ts + timedelta(days=1)
+        "expires_at": now_ts + timedelta(days=1),
+        "status" : OrderIdempotencyStatus.PENDING.value
     }
 
     insert_stmt = pg_insert(IdempotencyKey).values(insert_values).on_conflict_do_nothing().returning(IdempotencyKey.id)
     res = await session.execute(insert_stmt)
     ik_id = res.scalar_one_or_none()
 
+    if ik_id:
+        return ik_id
+    
+    return None
 
-    if not ik_id :
 
-        await asyncio.sleep(5)
+    # if not ik_id :
 
-        order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
-        if order_npay_data and order_npay_data["response_body"] is not None:
-            payload = build_success(order_npay_data, trace_id=None)
-            return json_ok(payload)
+    #     await asyncio.sleep(5)
+
+    #     order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+    #     if order_npay_data and order_npay_data["response_body"] is not None:
+    #         payload = build_success(order_npay_data, trace_id=None)
+    #         return json_ok(payload)
         # to be completely secure in case if lock got failed for all requests midprocess so here if not ik_id(implying it already inserted) so wait for few seconds 
         # and then get response data by ikey if fouund return otherwise return 202 accepted to short circuit it here so that concurrent doesn't proceed .
     
@@ -634,8 +642,9 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
    
     stmt = pg_insert(CommitIntent).values(
         aggregate_id=order_id,
+        aggregate_type=aggr_type,
         reason=reason,
-        status=CommitIntentStatus.PENDING,
+        status=CommitIntentStatus.PENDING.value,
         payload=payload,
         attempts=0,
         created_at=now(),

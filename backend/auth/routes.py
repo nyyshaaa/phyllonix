@@ -28,7 +28,7 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
                      session: AsyncSession = Depends(get_session)):
     
     if not device_session_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Please retry login")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Please pass all required headers including devicesession token")
 
     access,refresh=await issue_auth_tokens(session,payload,device_session_token)
 
