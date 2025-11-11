@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
-from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
+from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
@@ -44,6 +44,13 @@ async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
         "cart_id":cart_id,
         "items":items
     }
+
+async def remove_items_from_cart(session,items):
+    for item in items:
+        stmt = delete(CartItem).where(CartItem.id.is_(item["cart_item_id"]))
+        await session.execute(stmt)
+        await session.commit()
+    
 
 
 async def items_avblty(session,product_ids,product_data) -> int:
