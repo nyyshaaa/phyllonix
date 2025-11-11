@@ -515,7 +515,7 @@ class PaymentStatus(enum.IntEnum):
     REFUNDED = 50
 
 class PaymentAttemptStatus(enum.IntEnum):
-    FIRSTATTEMPT = 0
+    PENDING = 0
     RETRYING = 10
     SUCCESS = 20
     FAILED = 30
