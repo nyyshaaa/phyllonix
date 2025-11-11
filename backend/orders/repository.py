@@ -359,6 +359,11 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
 
     await update_order_idempotency_record(session,user_id,i_key,order.id,
                                         200,response_body=response,owner_type="order_confirm")
+    
+    #** if order was cod then record intent of order.received_for_fulfillment in db, 
+    # an extrenal worker will poll pending events and publish them to extrenal queue , mark it sent in db and then extrenal workers will process them .
+    # for project just publish them to in memory queue here and then workers will pick tasks from queue and execute them .
+    #** as this is a test project so here just simulate the event of   order.received_for_fulfillment as there won't be any actual fulfillment of order .
 
     return response
 
