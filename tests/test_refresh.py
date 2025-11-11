@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 from asgi_lifespan import LifespanManager
-from test_tokens import refresh_token_user3 , access_token_user3
+from test_tokens import current_user_payload , current_user2_payload
 from tests.save_tokens import token_store
 
 url_prefix="/api/v1"
@@ -15,15 +15,14 @@ async def ac_client():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
 
-current_user = ""
+current_user = current_user2_payload
 
 @pytest.mark.asyncio
 async def test_refresh(ac_client):
     
     user_tokens = token_store.get_user_tokens(current_user["email"])
 
-    res = await ac_client.post(f"{url_prefix}/auth/refresh", headers={"X-Refresh-Token": user_tokens["refresh_token"],
-                                                "Authorization": f"Bearer {user_tokens["access_token"]}"})
+    res = await ac_client.post(f"{url_prefix}/auth/refresh", headers={"X-Refresh-Token": user_tokens["refresh_token"]})
 
     assert res.status_code == 200 
     body = res.json()

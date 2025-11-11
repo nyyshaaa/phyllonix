@@ -151,8 +151,8 @@ class DeviceSession(SQLModel, table=True):
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=True))
     
-    public_id: Optional[uuid7] = Field(
-    default=None,
+    public_id: uuid7 = Field(
+    default_factory=uuid7, 
     sa_column=Column("public_id", UUID(as_uuid=True), unique=True, index=True, nullable=False),
     )
 
@@ -378,7 +378,6 @@ class CartItem(SQLModel, table=True):
 
 # --------------------------------------------------------------------------------------------
 class OrderStatus(enum.IntEnum):
-    DRAFT = 0
     PENDING_PAYMENT = 10
     CONFIRMED = 20
     CANCELLED = 30
@@ -397,6 +396,14 @@ class CheckoutStatus(enum.IntEnum):
     PROGRESS = 0
     DONE = 1
 
+class OrderIdempotencyStatus(enum.IntEnum):
+    PENDING = 0
+    SUCCESS = 10
+    FAILURE = 20
+    
+
+
+
 # User --> Orders (1:many) 
 # Product <--> Order(many to many)
 class Orders(SQLModel, table=True):
@@ -405,7 +412,7 @@ class Orders(SQLModel, table=True):
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL"), index=True))
-    status: int = Field(default=OrderStatus.PENDING_PAYMENT.value, sa_column=Column(Integer, nullable=False, index=True))
+    status: int = Field(default=OrderStatus.CONFIRMED.value, sa_column=Column(Integer, nullable=False, index=True))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     subtotal: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))  # stored in rs
     tax: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
@@ -420,6 +427,7 @@ class Orders(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
 
 
 
@@ -491,6 +499,7 @@ class IdempotencyKey(SQLModel, table=True):
     request_hash: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     response_code: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     response_body: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    status: int = Field(default=OrderIdempotencyStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
     
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
@@ -506,11 +515,22 @@ class PaymentStatus(enum.IntEnum):
     REFUNDED = 50
 
 class PaymentAttemptStatus(enum.IntEnum):
-    FIRSTATTEMPT = 0
+    PENDING = 0
     RETRYING = 10
     SUCCESS = 20
     FAILED = 30
     UNKNOWN = 40
+
+class PaymentEventStatus(enum.IntEnum):
+    RECEIVED = 0
+    PROCESSED = 10
+    IGNORED = 20
+
+class OutboxEventStatus(enum.IntEnum):
+    PENDING = 0
+    SENT = 10 
+    DONE = 20
+    FAILED = 30
 
 
 # Payments & payment attempts / events
@@ -540,13 +560,58 @@ class PaymentAttempt(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
 class PaymentWebhookEvent(SQLModel, table=True):
-    
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
-    provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=False, index=True))
+    provider: str = Field(sa_column=Column(String(64), nullable=False, index=True))
+    provider_event_id: str = Field(sa_column=Column(String(128), nullable=False))  # unique per provider recommended
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    status: int = Field(default=PaymentEventStatus, sa_column=Column(Integer, nullable=False))
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    last_error: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    
+    __table_args__ = (UniqueConstraint("provider", "provider_event_id", name="uq_provider_event"),)
+
+
+class OutboxEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    topic: str = Field(sa_column=Column(String(128), nullable=False))  # e.g., "order.paid"
+    payload: dict = Field(sa_column=Column(JSON, nullable=False))
+    # optional aggregate scoping to make dedupe easier
+    aggregate_type: str = Field(sa_column=Column(String(64), nullable=False))
+    aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))
+    status: int = Field(default=OutboxEventStatus, sa_column=Column(Integer, nullable=False))
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+    __table_args__ = (
+        UniqueConstraint("aggregate_id", "aggregate_type", "topic", name="uq_outboxevent_aggid_type_topic"),
+    )
+
+class CommitIntentStatus(enum.IntEnum):
+    PENDING = 0
+    PROCESSING = 10
+    DONE = 20
+    FAILED = 30
+
+class CommitIntent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    aggregate_type: str = Field(sa_column=Column(String(32), nullable=False))   # e.g. "order", "inventory"
+    aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))        # e.g. order.id
+    reason: str = Field(sa_column=Column(String(128), nullable=False))         # e.g. "payment_succeeded"
+    status: str = Field(default=CommitIntentStatus.PENDING, sa_column=Column(String(32), nullable=False, index=True))
+    payload: dict = Field(sa_column=Column(JSONB, nullable=True))              # items, quantities, ledger entries
+    attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), default=now))
+    updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+    __table_args__ = (
+        # uniqueness to avoid duplicate intents for same (aggregate_id + aggregate_type + reason)
+        UniqueConstraint("aggregate_id", "aggregate_type", "reason", name="uq_commitintent_aggid_type_reason"),
+    )
 
 # --------------------------------------------------------------------------------------------------------------------------------
 
@@ -584,12 +649,4 @@ class PaymentWebhookEvent(SQLModel, table=True):
 #     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 #     refunded_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
-# # Order events / audit
-# class OrderEvent(SQLModel, table=True):
-    
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
-#     event_type: str = Field(sa_column=Column(String(64), nullable=False))
-#     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-#     actor: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+

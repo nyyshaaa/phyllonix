@@ -8,9 +8,9 @@ from backend.config.settings import config_settings
 from backend.common.utils import build_success, json_ok, now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, place_order_with_items, reserve_inventory, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, place_order_with_items, record_order_idempotency, reserve_inventory, short_circuit_concurrent_req, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
-from backend.orders.utils import compute_order_totals
+from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
 from backend.schema.full_schema import Payment
 
 
@@ -50,6 +50,8 @@ async def get_order_summary(request:Request,checkout_id: str,
     Returns server-validated order summary. Does NOT create final Order.
     """
     user_identifier=request.state.user_identifier
+    print("user_identifier",user_identifier)
+
     payment_method = payload.get("payment_method")
     if payment_method not in ("UPI", "COD"):
         raise HTTPException(status_code=400, detail="payment_method must be UPI or COD")
@@ -75,6 +77,7 @@ async def get_order_summary(request:Request,checkout_id: str,
     await reserve_inventory(session,cart_items,cs["cs_id"],cs["cs_expires_at"])
     await update_checkout_cart_n_paymethod(session,cs["cs_id"],payment_method,cart_items)
     await session.commit()  
+    print(f"req {user_identifier} reserved items for checkout {checkout_id} with payment method {payment_method}")
     res=compute_order_totals(cart_items,payment_method,checkout_id,cs["cs_expires_at"])
 
     payload = build_success(res, trace_id=None)
@@ -85,9 +88,9 @@ async def get_order_summary(request:Request,checkout_id: str,
     # or commit seprately as well it is concurrent safe in the way that it won't cause bad states .
 
 
-# when clicked on proceed to pay with upi etc. call this 
+# when clicked on proceed to pay with upi etc or just for creating order with pay later option. call this 
 # order creation will happen here in final stage
-#** also store a request hash of items data for full enhanced security 
+#** also store a request hash of items data for full enhanced security (send it from frontend side to identify requests along with idempotency)
 @orders_router.post("/checkout/{checkout_id}/secure-confirm")
 async def place_order(request:Request,checkout_id: str,
     idempotency_key: str = Header(alias="Idempotency-Key"),
@@ -97,16 +100,30 @@ async def place_order(request:Request,checkout_id: str,
     
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key header is required for order confirm")
+    
     # validate if checkout session is still active 
-    cs_id,items,payment_method = await validate_checkout_get_items_paymethod(session,checkout_id,user_identifier)  
+    cs_id,items,payment_method = await validate_checkout_get_items_paymethod(session,checkout_id,user_identifier)
+  
+    lock_key = idempotency_lock_key(idempotency_key)
+    # Try to acquire advisory lock (non-blocking)
+    got_lock = acquire_pglock(session,lock_key)
+
+    # for now let the concurrent requests wait instead of short circuit and when they acquire lock they can just return existing response data for ikey .
+    # if not got_lock:
+    #     return await short_circuit_concurrent_req(session,idempotency_key,
+    #                  user_identifier,checkout_id)
     
     order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
     if order_npay_data and order_npay_data["response_body"] is not None:
-        return order_npay_data
-    
-    order_totals=compute_final_total(items,payment_method)
+        payload = build_success(order_npay_data, trace_id=None)
+        return json_ok(payload)
 
-    order_data = await place_order_with_items(session,user_identifier,payment_method,order_totals,idempotency_key)
+    # insert with on conflict do nothing and select existing  
+    await record_order_idempotency(session,idempotency_key,user_identifier)
+    order_totals=compute_final_total(items,payment_method)
+    
+    order_data = await place_order_with_items(session,user_identifier,
+                                              payment_method,order_totals,idempotency_key)
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
     
     #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
@@ -120,7 +137,10 @@ async def place_order(request:Request,checkout_id: str,
         await update_checkout_activeness(session,cs_id)
         return order_pay_res
     
-    return order_data
+    payload = build_success(order_data, trace_id=None)
+    return json_ok(payload)
+
+
         
 
     

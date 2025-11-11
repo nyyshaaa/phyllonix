@@ -4,7 +4,7 @@ from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
 from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
-from backend.auth.utils import REFRESH_TOKEN_EXPIRE_HOURS, hash_token, make_refresh_plain, verify_password
+from backend.auth.utils import REFRESH_TOKEN_EXPIRE, hash_token, make_refresh_plain, verify_password
 
 
 async def user_by_email(session,email):
@@ -57,7 +57,7 @@ async def save_refresh_token(session,ds_id,user_id,revoked_by):
         auth_method=AuthMethod.PASSWORD,
         token_hash=refresh_hash,
         issued_at=now,
-        expires_at=now + timedelta(hours=REFRESH_TOKEN_EXPIRE_HOURS),
+        expires_at=now + timedelta(days=REFRESH_TOKEN_EXPIRE),
         revoked_at=None
     )
     session.add(refresh_row)
@@ -91,13 +91,13 @@ async def link_user_device(session,ds_id,user_id):
                                        ).values(user_id=user_id,last_activity_at=datetime.now(timezone.utc))
     res= await session.execute(stmt)
 
-async def get_device_auth(session, token_hash,user_id,take_lock: bool = False):
+async def get_device_auth(session, token_hash,take_lock: bool = False):
     
     if take_lock:
-        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id
+        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash
                                          ).with_for_update()
     else:
-        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash,DeviceAuthToken.user_id==user_id)
+        stmt = select(DeviceAuthToken).where(DeviceAuthToken.token_hash == token_hash)
     res = await session.execute(stmt)
     row = res.scalar_one_or_none()
     if not row:

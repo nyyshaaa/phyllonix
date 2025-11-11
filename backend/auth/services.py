@@ -166,21 +166,21 @@ async def validate_refresh_and_fetch_user(session,plain_token):
         "role_ids": role_ids
     }
 
-async def validate_refresh_and_update_refresh(session,plain_token,user_id):
+async def validate_refresh_and_update_refresh(session,plain_token):
     hashed_token=hash_token(plain_token)
     now=datetime.now(timezone.utc)
 
-    device_auth = await get_device_auth(session, hashed_token,user_id)
+    device_auth = await get_device_auth(session, hashed_token)
 
     if not device_auth:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token or doesn't belong to user")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token ")
 
     if device_auth.expires_at <= now + timedelta(minutes=1):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
     
     ds_id = device_auth.device_session_id
+    user_id = device_auth.user_id
 
-    
     ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id)
     if not ds_row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session unauthorized or invalid")
@@ -190,7 +190,7 @@ async def validate_refresh_and_update_refresh(session,plain_token,user_id):
     if ds_row["session_expires_at"] and now >= ds_row["session_expires_at"]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session absolute expiry reached")
     
-    locked_device_auth = await get_device_auth(session, hashed_token,user_id,take_lock=True)
+    locked_device_auth = await get_device_auth(session, hashed_token,take_lock=True)
 
     # benign_revoked = False
     if locked_device_auth.revoked_at is not None:

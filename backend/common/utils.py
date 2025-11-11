@@ -28,8 +28,8 @@ def build_error(code: str,
         "trace_id": trace_id,
     }
 
-def json_ok(content: Dict[str, Any], status_code: int = 200) -> JSONResponse:
-    return JSONResponse(content, status_code=status_code)
+def json_ok(content: Dict[str, Any], status_code: int = 200,headers = None) -> JSONResponse:
+    return JSONResponse(content, status_code=status_code,headers=headers)
 
 def get_trace_id_from_request(request: Request) -> Optional[str]:
     return getattr(request.state, "trace_id", None)

@@ -1,15 +1,17 @@
 
+import asyncio
+import json
 from uuid6 import uuid7
-from datetime import timedelta
-from typing import Any, Dict, List
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
 from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
-from backend.common.utils import now
+from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -19,7 +21,8 @@ async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
                Product.id.label("product_id"), CartItem.quantity, Product.base_price , Product.stock_qty)
         .join(Cart,Cart.id==CartItem.cart_id)
         .join(Product, Product.id == CartItem.product_id)
-        .where(Cart.user_id == user_id).with_for_update(of=Product, nowait=False) 
+        .where(Cart.user_id == user_id)
+        .with_for_update(of=Product, nowait=False) 
     )
     res = await session.execute(stmt)
     rows = res.all()
@@ -134,6 +137,7 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     to_insert = []
 
     for it in cart_items:
+        print("cs_id",cs_id)
         row = {
             "product_id": int(it["product_id"]),
             "checkout_id": cs_id,  
@@ -201,45 +205,57 @@ async def update_checkout_activeness(session,cs_id,is_active:bool = False):
 
 
 async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
+    print("in update checkout part ", cs_id)
     stmt=update(CheckoutSession).where(CheckoutSession.id==cs_id
                                        ).values(selected_payment_method=payment_method,
                                                 cart_snapshot=items)
     await session.execute(stmt)
 
 async def spc_by_ikey(session,i_key,user_id):
-    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code
+    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
+    if res and res[2] < now( ) + timedelta(seconds=40):
+        raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout already expired")
     if res:
         order_npay_data = {"response_body":res[0],"response_code":res[1]}
         return order_npay_data
     return res
 
+
+async def response_by_ikey(session,idempotency_key,user_identifier):
+    order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+    if order_npay_data and order_npay_data["response_body"] is not None:
+        payload = build_success(order_npay_data, trace_id=None)
+        return json_ok(payload)
+
 async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.selected_payment_method,CheckoutSession.cart_snapshot
-                  ).where(CheckoutSession.public_id == checkout_id,CheckoutSession.user_id==user_id).with_for_update()
+                  ).where(CheckoutSession.user_id==user_id,CheckoutSession.is_active.is_(True),
+                      CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
     cs_id=cs[0]
     if not cs:
-        raise HTTPException(status_code=404, detail="Checkout session not found")
-
-    # expiration check
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
+    
+    #** check concurrency here it may lead one request to fail and one to succeed , 
+    # by default concurrent requests must not be allowed for this endpoint from frontend side
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
         await update_checkout_activeness(session,cs[0])
-        raise HTTPException(status_code=410, detail="Checkout session expired")
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Checkout session expired")
 
     # ensure a payment method has been selected
     if not cs[2]:
-        raise HTTPException(status_code=400, detail="Payment method not selected")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment method not selected")
 
     payment_method = cs[2]  # "UPI" or "COD"
 
     # Load items from checkout snapshot
     items = cs[3].get("items", []) if cs[3] else []
     if not items:
-        raise HTTPException(status_code=400, detail="Checkout has no items")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Checkout has no items")
     
     return cs_id,items,payment_method
 
@@ -296,7 +312,6 @@ def compute_final_total(items,payment_method):
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
     # Create Order
-    
     order = Orders(
         user_id=user_id,
         # session_id=session_id,
@@ -306,7 +321,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
         shipping=order_totals["shipping"],
         discount=order_totals["discount"],
         total=order_totals["total"],
-        placed_at=None if payment_method == "UPI" else now(),
+        placed_at= now(),
         created_at=now(),
         updated_at=now(),
         shipping_address_json={"city":"central city","country":"america"}  #** just a placeholder of address for testing,insert actual addresses here 
@@ -336,16 +351,121 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
 
     if payment_method == "UPI" :
         pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"])
-        await commit_idempotent_order_place(session,user_id,i_key,order.id,
+        await update_order_idempotency_record(session,user_id,i_key,order.id,
                                             None,response_body=None,owner_type="pay_now")
         
         response["pay_public_id"]=pay_public_id
         return response
 
-    await commit_idempotent_order_place(session,user_id,i_key,order.id,
+    await update_order_idempotency_record(session,user_id,i_key,order.id,
                                         200,response_body=response,owner_type="order_confirm")
+    
+    #** if order was cod then record intent of order.received_for_fulfillment in db, 
+    # an extrenal worker will poll pending events and publish them to extrenal queue , mark it sent in db and then extrenal workers will process them .
+    # for project just publish them to in memory queue here and then workers will pick tasks from queue and execute them .
+    #** as this is a test project so here just simulate the event of   order.received_for_fulfillment as there won't be any actual fulfillment of order .
 
     return response
+
+
+async def bulk_insert_order_items(session,order,order_totals):
+    item_rows = []
+    for it in order_totals["items"]:
+        item_rows.append({
+            "order_id": order.id,
+            "product_id": int(it["product_id"]),
+            "quantity": int(it["quantity"]),
+            "unit_price_snapshot": int(it["prod_base_price"]),
+            "tax_snapshot": int(it.get("tax_snapshot", int((it["prod_base_price"] * it["quantity"]) * 0.02))),
+            "discount_snapshot": int(it.get("discount_snapshot", 0)),
+            "created_at": now(),
+            "updated_at": now(),
+        })
+
+    if item_rows:
+        insert_stmt = pg_insert(OrderItem).values(item_rows)
+        insert_stmt = insert_stmt.on_conflict_do_nothing()
+        await session.execute(insert_stmt)
+
+
+async def update_order_idempotency_record(session, user_id, ik_id, owner_id,
+                                        response_code, response_body, owner_type):
+    if response_body:
+        response_body = json.dumps(response_body)
+        
+    stmt = (
+        update(IdempotencyKey)
+        .where(
+            and_(
+                IdempotencyKey.id == ik_id,
+                IdempotencyKey.created_by == user_id
+            )
+        )
+        .values(
+            owner_id=owner_id,
+            owner_type=owner_type,
+            response_body=response_body,
+            response_code=response_code
+        )
+    )
+    
+    await session.execute(stmt)
+    await session.flush()
+
+
+async def record_order_idempotency(session, idempotency_key, user_identifier):
+  
+    now_ts = now()
+    insert_values = {
+        "key": idempotency_key,
+        "owner_id": None,
+        "response_code": None,
+        "response_body": None,
+        "created_by": user_identifier,
+        "created_at": now_ts,
+        "expires_at": now_ts + timedelta(days=1)
+    }
+
+    insert_stmt = pg_insert(IdempotencyKey).values(insert_values).on_conflict_do_nothing().returning(IdempotencyKey.id)
+    res = await session.execute(insert_stmt)
+    ik_id = res.scalar_one_or_none()
+
+
+    if not ik_id :
+
+        await asyncio.sleep(5)
+
+        order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+        if order_npay_data and order_npay_data["response_body"] is not None:
+            payload = build_success(order_npay_data, trace_id=None)
+            return json_ok(payload)
+        # to be completely secure in case if lock got failed for all requests midprocess so here if not ik_id(implying it already inserted) so wait for few seconds 
+        # and then get response data by ikey if fouund return otherwise return 202 accepted to short circuit it here so that concurrent doesn't proceed .
+    
+async def record_payment_init_pending(session,order_id,order_total):
+   
+    payment = Payment(
+        order_id=order_id,
+        # provider="razorpay", 
+        provider_payment_id=None,
+        status=PaymentStatus.PENDING.value,
+        amount=order_total
+    )
+    session.add(payment)
+    await session.flush()
+
+    # # record a payment attempt
+    # pa = PaymentAttempt(
+    #     payment_id=payment.id,
+    #     attempt_no=1,
+    #     provider_response=None,
+    #     provider_event_id=None,
+    # )
+    # session.add(pa)
+    # await session.flush()
+
+    return payment.public_id
+
 
 #** check if need to save event and also properly fix on conflict to do nothing or get data
 # idempotent in concurrency via i key 
@@ -375,37 +495,10 @@ async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id
         session.rollback()
         # stmt = select(IdempotencyKey).where(IdempotencyKey.key==idempotency_key)
         # await session.execute(stmt)
-        
 
-    
-
-async def record_payment_init_pending(session,order_id,order_total):
-   
-    payment = Payment(
-        order_id=order_id,
-        # provider="razorpay", 
-        provider_payment_id=None,
-        status=PaymentStatus.PENDING.value,
-        amount=order_total
-    )
-    session.add(payment)
-    await session.flush()
-
-    # # record a payment attempt
-    # pa = PaymentAttempt(
-    #     payment_id=payment.id,
-    #     attempt_no=1,
-    #     provider_response=None,
-    #     provider_event_id=None,
-    # )
-    # session.add(pa)
-    # await session.flush()
-
-    return payment.public_id
-
-#** update staus as well
-async def update_payment_provider_orderid(session,pay_id,provider_order_id):
-    stmt = update(Payment).where(Payment.id==pay_id).values(provider_order_id=provider_order_id).returning(Payment.id)
+async def update_payment_status_nprovider(session,pay_id,provider_order_id):
+    stmt = update(Payment).where(Payment.id==pay_id).values(provider_order_id=provider_order_id,
+                                                           status=PaymentStatus.CAPTURED).returning(Payment.id)
     res=await session.execute(stmt)
     res= res.scalar_one_or_none()
 
@@ -458,7 +551,7 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_status_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
+async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
 
     stmt = (
     update(Payment)
@@ -473,11 +566,11 @@ async def update_pay_status_get_orderid(session,provider_order_id,provider_payme
     print("order ",order_id)
     return order_id
 
-async def update_order_status_get_orderid(session,payment_order_id,order_status):
+async def update_order_status(session,order_id,order_status):
   
     stmt = (
         update(Orders)
-        .where(Orders.id == payment_order_id)
+        .where(Orders.id == order_id)
         .values(
             status=order_status,
             placed_at=func.now(),
@@ -485,10 +578,73 @@ async def update_order_status_get_orderid(session,payment_order_id,order_status)
         )
         .returning(Orders.id)
     )
-    result = await session.execute(stmt)
-    order_id = result.scalar_one_or_none()
-    return order_id
+    await session.execute(stmt)
 
+async def emit_outbox_event(session, topic: str, payload: dict,
+                            aggregate_type: Optional[str] = None,
+                            aggregate_id: Optional[int] = None,
+                            next_retry_at: Optional[datetime] = None):
+   
+    values = {
+        "topic": topic,
+        "payload": payload,
+        "aggregate_type": aggregate_type,
+        "aggregate_id": aggregate_id,
+        "status": OutboxEventStatus.PENDING,
+        "attempts": 0,
+        "next_retry_at": next_retry_at,
+        "created_at": now(),
+    }
+
+    
+    stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
+        constraint = "uq_outboxevent_aggid_type_topic"
+    ).returning(OutboxEvent.id)
+    res = await session.execute(stmt)
+    ev_id = res.scalar_one_or_none()
+
+    if not ev_id:
+        stmt2 = select(OutboxEvent.id).where(
+        and_(
+            OutboxEvent.aggregate_id.is_(aggregate_id),
+            OutboxEvent.aggregate_type.is_(aggregate_type),
+            OutboxEvent.topic.is_(topic)
+        )
+    )
+        res = await session.execute(stmt2)
+        ev_id =  res.scalar_one_or_none()
+
+
+async def load_order_items_for_commit(session, order_id: int):
+    
+    stmt = select(OrderItem.product_id, OrderItem.quantity).where(OrderItem.order_id == order_id)
+    res = await session.execute(stmt)
+    rows = res.all()
+    return [{"product_id": int(r[0]), "quantity": int(r[1])} for r in rows]
+
+
+async def create_commit_intent(session, order_id: int, reason: str, aggr_type : str , payload: dict):
+   
+    stmt = pg_insert(CommitIntent).values(
+        aggregate_id=order_id,
+        reason=reason,
+        status=CommitIntentStatus.PENDING,
+        payload=payload,
+        attempts=0,
+        created_at=now(),
+    ).on_conflict_do_nothing(
+        constraint = "uq_commitintent_aggid_type_reason"  # create a unique index on (order_id, reason) in migration
+    ).returning(CommitIntent.id)
+    res = await session.execute(stmt)
+    commit_intent_id = res.scalar_one_or_none()
+    if not commit_intent_id:
+        # already exists -> return existing
+        stmt = select(CommitIntent).where(CommitIntent.aggregate_id.is_(order_id), 
+                                          CommitIntent.aggregate_type.is_(aggr_type), CommitIntent.reason.is_(reason))
+        res3 = await session.execute(stmt)
+        return res3.scalar_one_or_none()
+   
+    
 
 async def commit_reservations_and_decrement_stock(session,order_id):
     """
@@ -563,3 +719,22 @@ async def commit_reservations_and_decrement_stock(session,order_id):
 
     await session.flush()
     return committed_res_ids
+
+
+async def short_circuit_concurrent_req(session,i_key,user_id,checkout_id):
+    res = await spc_by_ikey(session,i_key,user_id)
+    if res and res["response_body"]:
+        payload = build_success(res, trace_id=None)
+        return json_ok(payload)
+    
+    # else, still in-progress -> instruct client to poll (fail-fast)
+    status_url = f"/api/v1/checkout/{checkout_id}/status/{i_key}"
+    headers = {"Retry-After": "3", "Location": status_url}
+    content={"status": "in_progress", "status_url": status_url, "retry_after": 3}
+
+    payload = build_success(content, trace_id=None)
+    return json_ok(payload,status_code=202,headers=headers)
+
+
+async def sim_emit_outbox_event(session,topic,payload,agg_type,agg_id):
+    pass
