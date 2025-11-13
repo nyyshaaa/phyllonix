@@ -37,7 +37,7 @@ async def initiate_buy_now(request:Request,
 
 # client should get the checkout id recived from initiate_buy_now ,store it and set it in url 
 # ask to user for payment options in ui , users can select payment methods 
-# most certainly items won't run out of stock until payment second step so do reservation at 2nd level here 
+# most certainly items won't run out of stock until payment second step so do reservation at 2nd level here and to prevent extra work if user leaving mid steps
 
 # when user clicks on proceed with selected payment method 
 @orders_router.post("/checkout/{checkout_id}/order-summary")
@@ -51,7 +51,6 @@ async def get_order_summary(request:Request,checkout_id: str,
     Returns server-validated order summary. Does NOT create final Order.
     """
     user_identifier=request.state.user_identifier
-    print("user_identifier",user_identifier)
 
     payment_method = payload.get("payment_method")
     if payment_method not in ("UPI", "COD"):
@@ -109,29 +108,34 @@ async def place_order(request:Request,checkout_id: str,
     # Try to acquire advisory lock (non-blocking)
     got_lock = acquire_pglock(session,lock_key)
 
-    # for now let the concurrent requests wait instead of short circuit and when they acquire lock they can just return existing response data for ikey .
+    # for now let the concurrent requests wait as we acquired ikey lock initially only ,
+    #  instead of short circuit and when they acquire lock they can just return existing response data for ikey .
     # if not got_lock:
     #     return await short_circuit_concurrent_req(session,idempotency_key,
     #                  user_identifier,checkout_id)
     
-    order_ik_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
-    if order_ik_npay_data and order_ik_npay_data["response_body"] is not None:
-        payload = build_success(order_ik_npay_data, trace_id=None)
+    order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+    if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+        payload = build_success(order_data_by_ik, trace_id=None)
         return json_ok(payload)
 
-    # insert with on conflict do nothing and select existing  
     ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
+
+    # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
+    # better to short circuit here and send status url direction to client 
     if not ik_id :
+        print("concurrent")
         await asyncio.sleep(5)
 
-        order_ik_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
-        if order_ik_npay_data and order_ik_npay_data["response_body"] is not None:
-            payload = build_success(order_ik_npay_data, trace_id=None)
+        order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+        if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+            payload = build_success(order_data_by_ik, trace_id=None)
             return json_ok(payload)
-        ik_id = order_ik_npay_data["ik_id"]
+        ik_id = order_data_by_ik["ik_id"]
+
     order_totals=compute_final_total(items,payment_method)
     
-    order_data = await place_order_with_items(session,user_identifier,
+    order_resp_data = await place_order_with_items(session,user_identifier,
                                               payment_method,order_totals,ik_id)
     #**may emit an event to remove cart items in async way in prod
     # await remove_items_from_cart(session,items)
@@ -139,16 +143,16 @@ async def place_order(request:Request,checkout_id: str,
     
     #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
 
-    pay_public_id=order_data.get("pay_public_id",None)
+    pay_public_id=order_resp_data.get("pay_public_id",None)
 
     print("pay_public_id",pay_public_id)
 
     if pay_public_id:
-        order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_data)
+        order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_resp_data)
         await update_checkout_activeness(session,cs_id)
         return order_pay_res
     
-    payload = build_success(order_data, trace_id=None)
+    payload = build_success(order_resp_data, trace_id=None)
     return json_ok(payload)
 
 

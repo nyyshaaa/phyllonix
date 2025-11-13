@@ -88,7 +88,7 @@ async def items_avblty(session,product_ids,product_data) -> int:
 
 
 async def get_or_create_checkout_session(session,user_id,reserved_until):
-    """Create a new checkout session for the user and if active valid checkout exists return that .
+    """
     On conflcit integrity don't raise get valid checkout if avbl .
     Catch other integrity issues and rollback .
     """
@@ -167,7 +167,6 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
 
 async def get_checkout_session(session,user_id):
   
-    # Reuse active checkout session if exists
     stmt = select(CheckoutSession.id,CheckoutSession.public_id,CheckoutSession.expires_at).where(
         CheckoutSession.user_id == user_id,
         CheckoutSession.is_active.is_(True),
@@ -190,10 +189,11 @@ async def get_checkout_details(session,checkout_id,user_id):
                           )
     res = await session.execute(stmt)
     cs = res.one_or_none()
-    cs_dict = {"cs_id":cs[0],"cs_expires_at":cs[1],"cs_cart_snap":cs[2],"cs_pay_method":cs[3]}
    
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="checkout session not found")
+    
+    cs_dict = {"cs_id":cs[0],"cs_expires_at":cs[1],"cs_cart_snap":cs[2],"cs_pay_method":cs[3]}
 
     if cs_dict["cs_expires_at"] < now():
         await update_checkout_activeness(session,cs[0],is_active=False)
@@ -205,7 +205,7 @@ async def get_checkout_details(session,checkout_id,user_id):
 
 async def update_checkout_activeness(session,cs_id,is_active:bool = False):
     stmt = update(CheckoutSession
-                  ).where(CheckoutSession.id == cs_id).values(is_active=False)
+                  ).where(CheckoutSession.id == cs_id).values(is_active=is_active)
     
     await session.execute(stmt)
     await session.commit()
@@ -224,10 +224,10 @@ async def spc_by_ikey(session,i_key,user_id):
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res and res[2] < now( ) + timedelta(seconds=40):
-        raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout already expired")
+        raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout and order idempotency already expired")
     if res:
-        order_npay_data = {"response_body":res[0],"response_code":res[1],"ik_id":res[3]}
-        return order_npay_data
+        order_data = {"response_body":res[0],"response_code":res[1],"ik_id":res[3]}
+        return order_data
     return res
 
 
@@ -249,7 +249,6 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
     
-    #** check concurrency here it may lead one request to fail and one to succeed , 
     # by default concurrent requests must not be allowed for this endpoint from frontend side
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
         await update_checkout_activeness(session,cs[0])
@@ -312,12 +311,6 @@ def compute_final_total(items,payment_method):
         "total": total,
     }
 
-#** modify it to be concurrent safe
-#** 1 idemotency key in table at first 
-#** 2 if creation of idempotency record happens flush and proceed to create order , orderitems and record payment initiation(paymnet pending) in same single commit 
-#** 3 update the idempotency table with response body and code under same single commit .
-#** 4 if integrity conflict occured in first idempotency creation check if response code and body exists 
-#** with ikey if yes retrurn otheriwse raise conflict issue to client so that user may safely retry .
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
     # Create Order
@@ -339,6 +332,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
     await session.flush()  # to get order.id
 
     # Create OrderItem rows
+    # better to use bulk order items function here from below, just kept it for now 
     for it in order_totals["items"]:
         oi = OrderItem(
             order_id=order.id,
@@ -445,11 +439,8 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
     
     return None
 
-
     # if not ik_id :
-
     #     await asyncio.sleep(5)
-
     #     order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
     #     if order_npay_data and order_npay_data["response_body"] is not None:
     #         payload = build_success(order_npay_data, trace_id=None)
@@ -457,6 +448,7 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
         # to be completely secure in case if lock got failed for all requests midprocess so here if not ik_id(implying it already inserted) so wait for few seconds 
         # and then get response data by ikey if fouund return otherwise return 202 accepted to short circuit it here so that concurrent doesn't proceed .
     
+
 async def record_payment_init_pending(session,order_id,order_total):
    
     payment = Payment(
@@ -468,17 +460,6 @@ async def record_payment_init_pending(session,order_id,order_total):
     )
     session.add(payment)
     await session.flush()
-
-    # # record a payment attempt
-    # pa = PaymentAttempt(
-    #     payment_id=payment.id,
-    #     attempt_no=1,
-    #     provider_response=None,
-    #     provider_event_id=None,
-    # )
-    # session.add(pa)
-    # await session.flush()
-
     return payment.public_id
 
 
@@ -531,12 +512,6 @@ async def update_payment_attempt_resp(session,attempt_id,status,psp_response):
                 )
     await session.execute(stmt)
 
-# async def get_pay_attempt_id(session,payment_id):
-#     stmt = select(PaymentAttempt.id
-#                   ).where(PaymentAttempt.payment_id == payment_id,PaymentAttempt.attempt_no == 1)
-#     res = await session.execute(stmt)
-#     attempt_row = res.scalar_one_or_none()
-#     attempt_id = attempt_row.id if attempt_row else None
 
 async def record_payment_attempt(session,payment_id,attempt_no,pay_status,resp):
     pa = PaymentAttempt(

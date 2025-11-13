@@ -454,13 +454,13 @@ class CheckoutSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     user_id: int = Field(default=None, sa_column=Column(Integer, nullable=False))
-    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
     selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
     # status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
     is_active: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default=text('true')))
-    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
 
@@ -480,8 +480,8 @@ class InventoryReservation(SQLModel, table=True):
     checkout_id: int = Field(sa_column=Column(Integer, nullable=False))
     order_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
     quantity: int = Field(default=0, sa_column=Column(Integer, nullable=False))
-    reserved_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
-    status: int = Field(default=InventoryReserveStatus.ACTIVE.value, sa_column=Column(Integer, nullable=False, index=True))
+    reserved_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    status: int = Field(default=InventoryReserveStatus.ACTIVE.value, sa_column=Column(Integer, nullable=False))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     
     __table_args__ = (
