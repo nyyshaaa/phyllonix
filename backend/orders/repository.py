@@ -156,7 +156,7 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
         to_insert.append(row)
 
     insert_stmt = pg_insert(InventoryReservation).values(to_insert)
-    insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["checkout_id", "product_id"])
+    insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["product_id","checkout_id"])
 
     try:
         await session.execute(insert_stmt)

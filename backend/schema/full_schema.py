@@ -485,7 +485,7 @@ class InventoryReservation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     
     __table_args__ = (
-        UniqueConstraint("checkout_id", "product_id", name="uq_checkout_product"),
+        UniqueConstraint("product_id", "checkout_id" ,name="uq_product_checkout"),
     )
 # -----------------------------------------------------------------------------------------------------------------------
 

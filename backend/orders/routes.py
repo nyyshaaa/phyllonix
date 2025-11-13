@@ -122,7 +122,7 @@ async def place_order(request:Request,checkout_id: str,
     ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
 
     # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
-    # better to short circuit here and send status url direction to client 
+    #** better to short circuit here and send status url direction to client 
     if not ik_id :
         print("concurrent")
         await asyncio.sleep(5)
@@ -139,12 +139,12 @@ async def place_order(request:Request,checkout_id: str,
                                               payment_method,order_totals,ik_id)
     #**may emit an event to remove cart items in async way in prod
     # await remove_items_from_cart(session,items)
+
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
     
     #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
 
     pay_public_id=order_resp_data.get("pay_public_id",None)
-
     print("pay_public_id",pay_public_id)
 
     if pay_public_id:
