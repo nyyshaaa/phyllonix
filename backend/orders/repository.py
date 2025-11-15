@@ -588,7 +588,7 @@ async def emit_outbox_event(session, topic: str, payload: dict,
 
     
     stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
-        constraint = "uq_outboxevent_aggid_type_topic"
+        constraint = "uq_outboxevent_topic_agtype_agid"
     ).returning(OutboxEvent.id)
     res = await session.execute(stmt)
     ev_id = res.scalar_one_or_none()
@@ -624,7 +624,7 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
         attempts=0,
         created_at=now(),
     ).on_conflict_do_nothing(
-        constraint = "uq_commitintent_aggid_type_reason"  # create a unique index on (order_id, reason) in migration
+        constraint = "uq_commitintent_reason_agtype_agid"  
     ).returning(CommitIntent.id)
     res = await session.execute(stmt)
     commit_intent_id = res.scalar_one_or_none()
