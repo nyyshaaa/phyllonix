@@ -347,14 +347,21 @@ class Cart(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True,unique= True),
+        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
     )
     session_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), nullable=True, unique=True),
+        sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), nullable=True),
     )
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+
+    __table_args__ = (
+        Index("uq_cart_user_id","user_id",unique=True,
+            postgresql_where=text("user_id IS NOT NULL")),
+        Index("uq_cart_session_id","session_id",unique=True,
+            postgresql_where=text("session_id IS NOT NULL")),
+    )
 
 
     user: Optional["Users"] = Relationship(back_populates="cart")   # (guest cart)a cart may have no user 

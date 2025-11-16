@@ -9,7 +9,7 @@ from backend.config.settings import config_settings
 from backend.common.utils import build_success, json_ok, now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, place_order_with_items, record_order_idempotency, remove_items_from_cart, reserve_inventory, short_circuit_concurrent_req, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, if_cart_exists, place_order_with_items, record_order_idempotency, remove_items_from_cart, reserve_inventory, short_circuit_concurrent_req, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
 from backend.schema.full_schema import Payment
@@ -25,6 +25,8 @@ async def initiate_buy_now(request:Request,
 
     user_identifier=request.state.user_identifier
     reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
+
+    await if_cart_exists(session,user_identifier)
 
     checkout_public_id = await get_or_create_checkout_session(session, user_identifier, reserved_until)
     data = {

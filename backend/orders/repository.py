@@ -5,6 +5,7 @@ from uuid6 import uuid7
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
 from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, update
@@ -141,6 +142,7 @@ async def get_or_create_checkout_session(session,user_id,reserved_until):
 
 async def reserve_inventory(session,cart_items,cs_id,reserved_until):
 
+
     to_insert = []
 
     for it in cart_items:
@@ -160,8 +162,8 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
 
     try:
         await session.execute(insert_stmt)
-        
     except IntegrityError as bulk_exc:
+        await session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"{bulk_exc} exception occured while reserving inventory")
 
 
@@ -181,6 +183,19 @@ async def get_checkout_session(session,user_id):
         await update_checkout_activeness(session,cs[0])
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
     return cs[1]
+
+async def if_cart_exists(session,user_id):
+    stmt = (
+        select(Cart.id)
+        .join(CartItem, CartItem.cart_id == Cart.id)
+        .where(Cart.user_id == user_id)
+        .limit(1)
+    )
+    res = await session.execute(stmt)
+    row = res.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found or Cart is empty")
+
     
 async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.cart_snapshot,CheckoutSession.selected_payment_method
@@ -541,11 +556,11 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
+async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status):
 
     stmt = (
     update(Payment)
-    .where(Payment.provider_order_id == provider_order_id) 
+    .where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
     .values(
         status=payment_status,
         paid_at=now(),
