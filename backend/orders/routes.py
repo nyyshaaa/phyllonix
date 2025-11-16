@@ -1,4 +1,5 @@
 
+import asyncio
 from datetime import timedelta
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
@@ -8,7 +9,7 @@ from backend.config.settings import config_settings
 from backend.common.utils import build_success, json_ok, now
 from backend.db.dependencies import get_session
 from backend.orders.constants import RESERVATION_TTL_MINUTES
-from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, place_order_with_items, record_order_idempotency, reserve_inventory, short_circuit_concurrent_req, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
+from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, if_cart_exists, place_order_with_items, record_order_idempotency, remove_items_from_cart, reserve_inventory, short_circuit_concurrent_req, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
 from backend.schema.full_schema import Payment
@@ -25,6 +26,8 @@ async def initiate_buy_now(request:Request,
     user_identifier=request.state.user_identifier
     reserved_until = now() + timedelta(minutes=RESERVATION_TTL_MINUTES)
 
+    await if_cart_exists(session,user_identifier)
+
     checkout_public_id = await get_or_create_checkout_session(session, user_identifier, reserved_until)
     data = {
         "checkout_id": str(checkout_public_id),
@@ -36,7 +39,7 @@ async def initiate_buy_now(request:Request,
 
 # client should get the checkout id recived from initiate_buy_now ,store it and set it in url 
 # ask to user for payment options in ui , users can select payment methods 
-# most certainly items won't run out of stock until payment second step so do reservation at 2nd level here 
+# most certainly items won't run out of stock until payment second step so do reservation at 2nd level here and to prevent extra work if user leaving mid steps
 
 # when user clicks on proceed with selected payment method 
 @orders_router.post("/checkout/{checkout_id}/order-summary")
@@ -50,7 +53,6 @@ async def get_order_summary(request:Request,checkout_id: str,
     Returns server-validated order summary. Does NOT create final Order.
     """
     user_identifier=request.state.user_identifier
-    print("user_identifier",user_identifier)
 
     payment_method = payload.get("payment_method")
     if payment_method not in ("UPI", "COD"):
@@ -108,36 +110,51 @@ async def place_order(request:Request,checkout_id: str,
     # Try to acquire advisory lock (non-blocking)
     got_lock = acquire_pglock(session,lock_key)
 
-    # for now let the concurrent requests wait instead of short circuit and when they acquire lock they can just return existing response data for ikey .
+    # for now let the concurrent requests wait as we acquired ikey lock initially only ,
+    #  instead of short circuit and when they acquire lock they can just return existing response data for ikey .
     # if not got_lock:
     #     return await short_circuit_concurrent_req(session,idempotency_key,
     #                  user_identifier,checkout_id)
     
-    order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
-    if order_npay_data and order_npay_data["response_body"] is not None:
-        payload = build_success(order_npay_data, trace_id=None)
+    order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+    if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+        payload = build_success(order_data_by_ik, trace_id=None)
         return json_ok(payload)
 
-    # insert with on conflict do nothing and select existing  
-    await record_order_idempotency(session,idempotency_key,user_identifier)
+    ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
+
+    # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
+    #** better to short circuit here and send status url direction to client 
+    if not ik_id :
+        print("concurrent")
+        await asyncio.sleep(5)
+
+        order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+        if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+            payload = build_success(order_data_by_ik, trace_id=None)
+            return json_ok(payload)
+        ik_id = order_data_by_ik["ik_id"]
+
     order_totals=compute_final_total(items,payment_method)
     
-    order_data = await place_order_with_items(session,user_identifier,
-                                              payment_method,order_totals,idempotency_key)
+    order_resp_data = await place_order_with_items(session,user_identifier,
+                                              payment_method,order_totals,ik_id)
+    #**may emit an event to remove cart items in async way in prod
+    # await remove_items_from_cart(session,items)
+
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
     
     #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
 
-    pay_public_id=order_data.get("pay_public_id",None)
-
+    pay_public_id=order_resp_data.get("pay_public_id",None)
     print("pay_public_id",pay_public_id)
 
     if pay_public_id:
-        order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_data)
+        order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_resp_data)
         await update_checkout_activeness(session,cs_id)
         return order_pay_res
     
-    payload = build_success(order_data, trace_id=None)
+    payload = build_success(order_resp_data, trace_id=None)
     return json_ok(payload)
 
 

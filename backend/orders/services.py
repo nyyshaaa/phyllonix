@@ -11,7 +11,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
-from backend.orders.repository import items_avblty, record_payment_attempt, update_idempotent_response, update_pay_completion_get_orderid, update_payment_attempt_resp, update_payment_status_nprovider
+from backend.orders.repository import items_avblty, record_payment_attempt, update_idempotent_response, update_payment_attempt_resp, update_payment_status_nprovider
 from backend.config.settings import config_settings
 from backend.schema.full_schema import OrderItem, Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentEventStatus, PaymentStatus, PaymentWebhookEvent
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -91,7 +91,7 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
     
     pay_int_id= await pay_id_by_public_payid(session,pay_public_id)
     create_psp_order = retry_payments(create_psp_order,pay_int_id,session) 
-    psp_resp,psp_non_retryable_exc,psp_retryable_exc,next_attempt_no= await create_psp_order(amount_paise=amount_in_paise, currency=currency, 
+    psp_resp,psp_non_retryable_exc,psp_retryable_exc,current_attempt_no= await create_psp_order(amount_paise=amount_in_paise, currency=currency, 
                                         receipt=receipt, notes=notes,idempotency_key=idempotency_key)
     
     if psp_non_retryable_exc:
@@ -99,8 +99,7 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Payment attempts failed due to {psp_non_retryable_exc}")  
    
     if psp_retryable_exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Payment failed dur to {psp_retryable_exc}")  
-
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Payment failed due to {psp_retryable_exc}")  
 
     print(psp_resp)
     provider_order_id = psp_resp.get("id") 
@@ -110,7 +109,7 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
         # never got definitive provider response
         # mark attempt as UNKNOWN and schedule background reconciliation
         attempt_id = await record_payment_attempt(
-                session,pay_int_id,next_attempt_no,pay_status,resp="No provider order id in response")
+                session,pay_int_id,current_attempt_no+1,pay_status,resp="No provider order id in response")
 
         # await schedule_reconciliation_job(order_public_id=order_data["order_public_id"], payment_attempt_id=attempt_id)
         raise HTTPException(status_code=502, detail="Payment provider unreachable;order and payment in pending state")  
@@ -171,7 +170,7 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
                 
                 return resp,None,None,attempt_idx
             except TRANSIENT_EXCEPTIONS as ex:
-                # transient network error — mark attempt as retrying, record last_exc, retry
+                # transient network error — mark attempt as retrying, retry
                 retryable_exc = ex
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.RETRYING.value,str(ex))
@@ -201,7 +200,6 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
                     session,attempt_id,PaymentAttemptStatus.FAILED.value,
                     str(ex))
                 return None , non_retryable_exc,retryable_exc,attempt_idx
-                # last_exc = ex
 
             # backoff before next try
             await asyncio.sleep(min(backoff_base * (2 ** (attempt_idx - 1)), 8.0))

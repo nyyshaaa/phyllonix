@@ -5,13 +5,14 @@ from uuid6 import uuid7
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from fastapi import HTTPException,status
-from sqlalchemy import Tuple, and_, case, func, insert, select, text, update
+from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, OrderIdempotencyStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -44,6 +45,13 @@ async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
         "cart_id":cart_id,
         "items":items
     }
+
+async def remove_items_from_cart(session,items):
+    for item in items:
+        stmt = delete(CartItem).where(CartItem.id.is_(item["cart_item_id"]))
+        await session.execute(stmt)
+        await session.commit()
+    
 
 
 async def items_avblty(session,product_ids,product_data) -> int:
@@ -81,7 +89,7 @@ async def items_avblty(session,product_ids,product_data) -> int:
 
 
 async def get_or_create_checkout_session(session,user_id,reserved_until):
-    """Create a new checkout session for the user and if active valid checkout exists return that .
+    """
     On conflcit integrity don't raise get valid checkout if avbl .
     Catch other integrity issues and rollback .
     """
@@ -134,6 +142,7 @@ async def get_or_create_checkout_session(session,user_id,reserved_until):
 
 async def reserve_inventory(session,cart_items,cs_id,reserved_until):
 
+
     to_insert = []
 
     for it in cart_items:
@@ -149,18 +158,17 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
         to_insert.append(row)
 
     insert_stmt = pg_insert(InventoryReservation).values(to_insert)
-    insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["checkout_id", "product_id"])
+    insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["product_id","checkout_id"])
 
     try:
         await session.execute(insert_stmt)
-        
     except IntegrityError as bulk_exc:
+        await session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"{bulk_exc} exception occured while reserving inventory")
 
 
 async def get_checkout_session(session,user_id):
   
-    # Reuse active checkout session if exists
     stmt = select(CheckoutSession.id,CheckoutSession.public_id,CheckoutSession.expires_at).where(
         CheckoutSession.user_id == user_id,
         CheckoutSession.is_active.is_(True),
@@ -175,6 +183,19 @@ async def get_checkout_session(session,user_id):
         await update_checkout_activeness(session,cs[0])
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="checkout session expired")
     return cs[1]
+
+async def if_cart_exists(session,user_id):
+    stmt = (
+        select(Cart.id)
+        .join(CartItem, CartItem.cart_id == Cart.id)
+        .where(Cart.user_id == user_id)
+        .limit(1)
+    )
+    res = await session.execute(stmt)
+    row = res.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found or Cart is empty")
+
     
 async def get_checkout_details(session,checkout_id,user_id):
     stmt = select(CheckoutSession.id,CheckoutSession.expires_at,CheckoutSession.cart_snapshot,CheckoutSession.selected_payment_method
@@ -183,10 +204,11 @@ async def get_checkout_details(session,checkout_id,user_id):
                           )
     res = await session.execute(stmt)
     cs = res.one_or_none()
-    cs_dict = {"cs_id":cs[0],"cs_expires_at":cs[1],"cs_cart_snap":cs[2],"cs_pay_method":cs[3]}
    
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="checkout session not found")
+    
+    cs_dict = {"cs_id":cs[0],"cs_expires_at":cs[1],"cs_cart_snap":cs[2],"cs_pay_method":cs[3]}
 
     if cs_dict["cs_expires_at"] < now():
         await update_checkout_activeness(session,cs[0],is_active=False)
@@ -198,7 +220,7 @@ async def get_checkout_details(session,checkout_id,user_id):
 
 async def update_checkout_activeness(session,cs_id,is_active:bool = False):
     stmt = update(CheckoutSession
-                  ).where(CheckoutSession.id == cs_id).values(is_active=False)
+                  ).where(CheckoutSession.id == cs_id).values(is_active=is_active)
     
     await session.execute(stmt)
     await session.commit()
@@ -208,19 +230,19 @@ async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
     print("in update checkout part ", cs_id)
     stmt=update(CheckoutSession).where(CheckoutSession.id==cs_id
                                        ).values(selected_payment_method=payment_method,
-                                                cart_snapshot=items)
+                                                cart_snapshot={"items":items})
     await session.execute(stmt)
 
 async def spc_by_ikey(session,i_key,user_id):
-    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at
+    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at,IdempotencyKey.id
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res and res[2] < now( ) + timedelta(seconds=40):
-        raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout already expired")
+        raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout and order idempotency already expired")
     if res:
-        order_npay_data = {"response_body":res[0],"response_code":res[1]}
-        return order_npay_data
+        order_data = {"response_body":res[0],"response_code":res[1],"ik_id":res[3]}
+        return order_data
     return res
 
 
@@ -236,11 +258,12 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
                       CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
+    print(cs)
+    print("cs[3]",cs[3])
     cs_id=cs[0]
     if not cs:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
     
-    #** check concurrency here it may lead one request to fail and one to succeed , 
     # by default concurrent requests must not be allowed for this endpoint from frontend side
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
         await update_checkout_activeness(session,cs[0])
@@ -303,12 +326,6 @@ def compute_final_total(items,payment_method):
         "total": total,
     }
 
-#** modify it to be concurrent safe
-#** 1 idemotency key in table at first 
-#** 2 if creation of idempotency record happens flush and proceed to create order , orderitems and record payment initiation(paymnet pending) in same single commit 
-#** 3 update the idempotency table with response body and code under same single commit .
-#** 4 if integrity conflict occured in first idempotency creation check if response code and body exists 
-#** with ikey if yes retrurn otheriwse raise conflict issue to client so that user may safely retry .
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
     # Create Order
@@ -330,6 +347,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
     await session.flush()  # to get order.id
 
     # Create OrderItem rows
+    # better to use bulk order items function here from below, just kept it for now 
     for it in order_totals["items"]:
         oi = OrderItem(
             order_id=order.id,
@@ -423,25 +441,29 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
         "response_body": None,
         "created_by": user_identifier,
         "created_at": now_ts,
-        "expires_at": now_ts + timedelta(days=1)
+        "expires_at": now_ts + timedelta(days=1),
+        "status" : OrderIdempotencyStatus.PENDING.value
     }
 
     insert_stmt = pg_insert(IdempotencyKey).values(insert_values).on_conflict_do_nothing().returning(IdempotencyKey.id)
     res = await session.execute(insert_stmt)
     ik_id = res.scalar_one_or_none()
 
+    if ik_id:
+        return ik_id
+    
+    return None
 
-    if not ik_id :
-
-        await asyncio.sleep(5)
-
-        order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
-        if order_npay_data and order_npay_data["response_body"] is not None:
-            payload = build_success(order_npay_data, trace_id=None)
-            return json_ok(payload)
+    # if not ik_id :
+    #     await asyncio.sleep(5)
+    #     order_npay_data = await spc_by_ikey(session,idempotency_key,user_identifier)
+    #     if order_npay_data and order_npay_data["response_body"] is not None:
+    #         payload = build_success(order_npay_data, trace_id=None)
+    #         return json_ok(payload)
         # to be completely secure in case if lock got failed for all requests midprocess so here if not ik_id(implying it already inserted) so wait for few seconds 
         # and then get response data by ikey if fouund return otherwise return 202 accepted to short circuit it here so that concurrent doesn't proceed .
     
+
 async def record_payment_init_pending(session,order_id,order_total):
    
     payment = Payment(
@@ -453,17 +475,6 @@ async def record_payment_init_pending(session,order_id,order_total):
     )
     session.add(payment)
     await session.flush()
-
-    # # record a payment attempt
-    # pa = PaymentAttempt(
-    #     payment_id=payment.id,
-    #     attempt_no=1,
-    #     provider_response=None,
-    #     provider_event_id=None,
-    # )
-    # session.add(pa)
-    # await session.flush()
-
     return payment.public_id
 
 
@@ -516,12 +527,6 @@ async def update_payment_attempt_resp(session,attempt_id,status,psp_response):
                 )
     await session.execute(stmt)
 
-# async def get_pay_attempt_id(session,payment_id):
-#     stmt = select(PaymentAttempt.id
-#                   ).where(PaymentAttempt.payment_id == payment_id,PaymentAttempt.attempt_no == 1)
-#     res = await session.execute(stmt)
-#     attempt_row = res.scalar_one_or_none()
-#     attempt_id = attempt_row.id if attempt_row else None
 
 async def record_payment_attempt(session,payment_id,attempt_no,pay_status,resp):
     pa = PaymentAttempt(
@@ -551,11 +556,11 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status):
+async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status):
 
     stmt = (
     update(Payment)
-    .where(Payment.provider_order_id == provider_order_id) 
+    .where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
     .values(
         status=payment_status,
         paid_at=now(),
@@ -598,7 +603,7 @@ async def emit_outbox_event(session, topic: str, payload: dict,
 
     
     stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
-        constraint = "uq_outboxevent_aggid_type_topic"
+        constraint = "uq_outboxevent_topic_agtype_agid"
     ).returning(OutboxEvent.id)
     res = await session.execute(stmt)
     ev_id = res.scalar_one_or_none()
@@ -627,13 +632,14 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
    
     stmt = pg_insert(CommitIntent).values(
         aggregate_id=order_id,
+        aggregate_type=aggr_type,
         reason=reason,
-        status=CommitIntentStatus.PENDING,
+        status=CommitIntentStatus.PENDING.value,
         payload=payload,
         attempts=0,
         created_at=now(),
     ).on_conflict_do_nothing(
-        constraint = "uq_commitintent_aggid_type_reason"  # create a unique index on (order_id, reason) in migration
+        constraint = "uq_commitintent_reason_agtype_agid"  
     ).returning(CommitIntent.id)
     res = await session.execute(stmt)
     commit_intent_id = res.scalar_one_or_none()

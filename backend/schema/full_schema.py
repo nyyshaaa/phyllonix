@@ -347,14 +347,21 @@ class Cart(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True,unique= True),
+        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
     )
     session_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), nullable=True, index=True,unique=True),
+        sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), nullable=True),
     )
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
+
+    __table_args__ = (
+        Index("uq_cart_user_id","user_id",unique=True,
+            postgresql_where=text("user_id IS NOT NULL")),
+        Index("uq_cart_session_id","session_id",unique=True,
+            postgresql_where=text("session_id IS NOT NULL")),
+    )
 
 
     user: Optional["Users"] = Relationship(back_populates="cart")   # (guest cart)a cart may have no user 
@@ -402,8 +409,6 @@ class OrderIdempotencyStatus(enum.IntEnum):
     FAILURE = 20
     
 
-
-
 # User --> Orders (1:many) 
 # Product <--> Order(many to many)
 class Orders(SQLModel, table=True):
@@ -411,7 +416,7 @@ class Orders(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
-    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL"), index=True))
+    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL")))
     status: int = Field(default=OrderStatus.CONFIRMED.value, sa_column=Column(Integer, nullable=False, index=True))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     subtotal: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))  # stored in rs
@@ -422,14 +427,12 @@ class Orders(SQLModel, table=True):
     shipping_address_json: dict = Field(sa_column=Column(JSON, nullable=False))
     billing_address_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # e.g., "CARD", "UPI", "COD"
-    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))  #snapshot from payment schema 
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-
-
-
+    
 
 # Order --> OrderItems (1:many)
 # OrderItem is like join table as well for product and order (product <--> order many to many)
@@ -454,13 +457,13 @@ class CheckoutSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     user_id: int = Field(default=None, sa_column=Column(Integer, nullable=False))
-    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
     selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
     # status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
     is_active: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default=text('true')))
-    expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
 
@@ -478,14 +481,14 @@ class InventoryReservation(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     product_id: int = Field(sa_column=Column(Integer, nullable=False))
     checkout_id: int = Field(sa_column=Column(Integer, nullable=False))
-    order_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    order_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     quantity: int = Field(default=0, sa_column=Column(Integer, nullable=False))
-    reserved_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
-    status: int = Field(default=InventoryReserveStatus.ACTIVE.value, sa_column=Column(Integer, nullable=False, index=True))
+    reserved_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    status: int = Field(default=InventoryReserveStatus.ACTIVE.value, sa_column=Column(Integer, nullable=False))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     
     __table_args__ = (
-        UniqueConstraint("checkout_id", "product_id", name="uq_checkout_product"),
+        UniqueConstraint("product_id", "checkout_id" ,name="uq_product_checkout"),
     )
 # -----------------------------------------------------------------------------------------------------------------------
 
@@ -540,14 +543,19 @@ class Payment(SQLModel, table=True):
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
-    provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
-    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, unique=True))
+    provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     status: int = Field(default=PaymentStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
     amount: int = Field(sa_column=Column(BigInteger, nullable=False))
     currency: str = Field(default="INR", sa_column=Column(String(8), nullable=False))
     pay_metadata: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     paid_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_order_id", name="uq_provider_providerorder"),
+        UniqueConstraint("provider", "provider_payment_id", name="uq_provider_providerpayment"),
+    )
 
 class PaymentAttempt(SQLModel, table=True):
     
@@ -556,18 +564,17 @@ class PaymentAttempt(SQLModel, table=True):
     attempt_no: int = Field(sa_column=Column(Integer, nullable=False))
     status: int = Field(sa_column=Column(Integer, nullable=False))
     provider_response: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    provider_event_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
 class PaymentWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider: str = Field(sa_column=Column(String(64), nullable=False, index=True))
+    provider: str = Field(sa_column=Column(String(64), nullable=False))
     provider_event_id: str = Field(sa_column=Column(String(128), nullable=False))  # unique per provider recommended
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    status: int = Field(default=PaymentEventStatus, sa_column=Column(Integer, nullable=False))
+    status: int = Field(default=PaymentEventStatus.RECEIVED.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     last_error: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
-    processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, index=True))
+    processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     
     __table_args__ = (UniqueConstraint("provider", "provider_event_id", name="uq_provider_event"),)
@@ -580,14 +587,14 @@ class OutboxEvent(SQLModel, table=True):
     # optional aggregate scoping to make dedupe easier
     aggregate_type: str = Field(sa_column=Column(String(64), nullable=False))
     aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))
-    status: int = Field(default=OutboxEventStatus, sa_column=Column(Integer, nullable=False))
+    status: int = Field(default=OutboxEventStatus.PENDING.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
     __table_args__ = (
-        UniqueConstraint("aggregate_id", "aggregate_type", "topic", name="uq_outboxevent_aggid_type_topic"),
+        UniqueConstraint("topic", "aggregate_type", "aggregate_id", name="uq_outboxevent_topic_agtype_agid"),
     )
 
 class CommitIntentStatus(enum.IntEnum):
@@ -601,7 +608,7 @@ class CommitIntent(SQLModel, table=True):
     aggregate_type: str = Field(sa_column=Column(String(32), nullable=False))   # e.g. "order", "inventory"
     aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))        # e.g. order.id
     reason: str = Field(sa_column=Column(String(128), nullable=False))         # e.g. "payment_succeeded"
-    status: str = Field(default=CommitIntentStatus.PENDING, sa_column=Column(String(32), nullable=False, index=True))
+    status: int = Field(default=CommitIntentStatus.PENDING.value, sa_column=Column(Integer, nullable=False))
     payload: dict = Field(sa_column=Column(JSONB, nullable=True))              # items, quantities, ledger entries
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
@@ -609,8 +616,7 @@ class CommitIntent(SQLModel, table=True):
     updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
     __table_args__ = (
-        # uniqueness to avoid duplicate intents for same (aggregate_id + aggregate_type + reason)
-        UniqueConstraint("aggregate_id", "aggregate_type", "reason", name="uq_commitintent_aggid_type_reason"),
+        UniqueConstraint("reason", "aggregate_type", "aggregate_id", name="uq_commitintent_reason_agtype_agid"),
     )
 
 # --------------------------------------------------------------------------------------------------------------------------------

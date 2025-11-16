@@ -19,6 +19,8 @@ async def ac_client():
 user1 = current_user_payload
 user2 = current_user2_payload
 
+# .with_for_update(of=Product, nowait=False)  add and remove this in capture cart snapshot to take direct xclusive lock or don't 
+
 @pytest.mark.asyncio
 async def test_two_users_concurrent_order_summary_reservation(ac_client):
     """

@@ -66,7 +66,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         "provider_order_id": provider_order_id,
         "raw_payload": payload
     }
-    topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed", 
+    topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed" 
     
     commit_int_id =None
     if order_status == OrderStatus.CONFIRMED.value:

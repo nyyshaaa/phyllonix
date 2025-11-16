@@ -27,19 +27,19 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             #     return await call_next(request)
             
             #** for testing otherwise only user retrun jsornresponse block of error 
-            # token=request.query_params.get("auth_token")
-            # print("token",token)
-            # auth_token=await Authentication()(request,token=token)
+            token=request.query_params.get("auth_token")
+            print("token",token)
+            auth_token=await Authentication()(request,token=token)
 
-            # if not auth_token:
-            #     return JSONResponse(
-            #         {"detail": e.detail or "Missing or Invalid Auth Headers"},
-            #         status_code=status.HTTP_401_UNAUTHORIZED,
-            #     )
-            return JSONResponse(
+            if not auth_token:
+                return JSONResponse(
                     {"detail": e.detail or "Missing or Invalid Auth Headers"},
                     status_code=status.HTTP_401_UNAUTHORIZED,
                 )
+            # return JSONResponse(
+            #         {"detail": e.detail or "Missing or Invalid Auth Headers"},
+            #         status_code=status.HTTP_401_UNAUTHORIZED,
+            #     )
         
         user_pid = auth_token.get("sub")
         user_roles=auth_token.get("roles")
