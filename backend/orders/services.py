@@ -47,6 +47,8 @@ async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes
     receipt: your internal receipt id (e.g., "order_pubid")
     notes: optional metadata
     """
+
+    print("psp call")
     url = f"{PSP_API_BASE}/orders"
     headers = {
         "Content-Type": "application/json",
@@ -162,14 +164,15 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
                 
                 resp = await func(*args, **kwargs)
                 print("here")
-                if attempt_idx == 1 :    #** just for testing
-                    raise httpx.ConnectError(message="connect err ")
-                print("resp",resp)
+                # if attempt_idx == 1 :    #** just for testing
+                #     raise httpx.ConnectError(message="connect err ")
+                # print("resp",resp)
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.SUCCESS.value,resp)
                 
                 return resp,None,None,attempt_idx
             except TRANSIENT_EXCEPTIONS as ex:
+                print("transient ex",ex)
                 # transient network error — mark attempt as retrying, retry
                 retryable_exc = ex
                 await update_payment_attempt_resp(

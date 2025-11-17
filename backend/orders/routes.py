@@ -108,7 +108,7 @@ async def place_order(request:Request,checkout_id: str,
   
     lock_key = idempotency_lock_key(idempotency_key)
     # Try to acquire advisory lock (non-blocking)
-    got_lock = acquire_pglock(session,lock_key)
+    got_lock = await acquire_pglock(session,lock_key)
 
     # for now let the concurrent requests wait as we acquired ikey lock initially only ,
     #  instead of short circuit and when they acquire lock they can just return existing response data for ikey .
@@ -117,23 +117,28 @@ async def place_order(request:Request,checkout_id: str,
     #                  user_identifier,checkout_id)
     
     order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+
+    ik_id = None
+    
     if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+        ik_id = order_data_by_ik["ik_id"]
         payload = build_success(order_data_by_ik, trace_id=None)
         return json_ok(payload)
+    
+    if not ik_id: 
+        ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
 
-    ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
+        # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
+        #** better to short circuit here and send status url direction to client 
+        if not ik_id :
+            print("concurrent")
+            await asyncio.sleep(5)
 
-    # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
-    #** better to short circuit here and send status url direction to client 
-    if not ik_id :
-        print("concurrent")
-        await asyncio.sleep(5)
-
-        order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
-        if order_data_by_ik and order_data_by_ik["response_body"] is not None:
-            payload = build_success(order_data_by_ik, trace_id=None)
-            return json_ok(payload)
-        ik_id = order_data_by_ik["ik_id"]
+            order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+            if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+                payload = build_success(order_data_by_ik, trace_id=None)
+                return json_ok(payload)
+            ik_id = order_data_by_ik["ik_id"]
 
     order_totals=compute_final_total(items,payment_method)
     
@@ -143,8 +148,6 @@ async def place_order(request:Request,checkout_id: str,
     # await remove_items_from_cart(session,items)
 
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
-    
-    #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
 
     pay_public_id=order_resp_data.get("pay_public_id",None)
     print("pay_public_id",pay_public_id)
