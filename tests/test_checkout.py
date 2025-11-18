@@ -71,13 +71,8 @@ async def test_place_order_upi_with_transient_psp_failure_then_success(monkeypat
             return await func(*args, **kwargs)
         return wrapped
 
-    # Now create a fake retry_payments which wraps the provided func with our fail-first wrapper,
-    # then delegates to the original retry_payments so all DB bookkeeping remains intact.
     def fake_retry_payments(func, payment_id, session):
-        # wrap the incoming func so it fails first then delegates to func
         wrapped_func = fail_first_wrapper_factory(func)
-        # call the original retry_payments with the wrapped func
-        # keep the same defaults — pass through max_retries/backoff_base if provided
         return orig_retry(wrapped_func, payment_id, session)
 
     # Patch retry_payments *before* the endpoint runs
@@ -85,9 +80,8 @@ async def test_place_order_upi_with_transient_psp_failure_then_success(monkeypat
         
 
     resp = await ac_client.post(f"{url_prefix}/checkout/{checkout_id}/secure-confirm", headers=headers)
-    # You expect a success if PSP sandbox responds
     assert resp.status_code == 200, f"expected 200 after retry; got {resp.status_code}: {resp.text}"
-    # assert call_state["calls"] >= 2, "PSP post should have been called at least twice"
+    assert call_state["calls"] >= 2, "PSP post should have been called at least twice"
     # optionally inspect response body
     print("response:", resp.json())
     
@@ -96,12 +90,12 @@ async def test_place_order_upi_with_transient_psp_failure_then_success(monkeypat
     assert ik_row[2] is not None, "idempotency record should be present"
     
 
-    # await db_session.execute(text("DELETE FROM checkoutsession"))
-    # await db_session.execute(text("DELETE FROM idempotencykey WHERE key = :k"), {"k": ikey})
-    # await db_session.execute(text("DELETE FROM paymentattempt"))
-    # await db_session.execute(text("DELETE FROM orders"))
-    # await db_session.execute(text("DELETE FROM inventoryreservation"))
-    # await db_session.execute(text("DELETE FROM payment"))
-    # await db_session.commit()
+    await db_session.execute(text("DELETE FROM checkoutsession"))
+    await db_session.execute(text("DELETE FROM idempotencykey WHERE key = :k"), {"k": ikey})
+    await db_session.execute(text("DELETE FROM paymentattempt"))
+    await db_session.execute(text("DELETE FROM orders"))
+    await db_session.execute(text("DELETE FROM inventoryreservation"))
+    await db_session.execute(text("DELETE FROM payment"))
+    await db_session.commit()
 
    

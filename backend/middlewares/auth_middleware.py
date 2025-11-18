@@ -16,8 +16,10 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # self.maybe_auth_paths=maybe_auth_paths
 
     async def dispatch(self, request: Request, call_next):
+        print("Auth Middleware called for path:", request.url.path)
         if any(request.url.path.startswith(p) for p in self.paths):
             # Skip authentication for paths that don't require it
+            print(request.url.path)
             return await call_next(request)
         
         try:

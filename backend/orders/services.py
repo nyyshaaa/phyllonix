@@ -7,6 +7,7 @@ import json
 import uuid
 from typing import Optional
 from fastapi import HTTPException, Request, Response , status
+from fastapi.responses import JSONResponse
 import httpx
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -163,10 +164,6 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
             try:
                 
                 resp = await func(*args, **kwargs)
-                print("here")
-                # if attempt_idx == 1 :    #** just for testing
-                #     raise httpx.ConnectError(message="connect err ")
-                # print("resp",resp)
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.SUCCESS.value,resp)
                 

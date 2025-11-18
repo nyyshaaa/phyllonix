@@ -368,7 +368,7 @@ async def place_order_with_items(session,user_id,payment_method,order_totals,i_k
     
 
     if payment_method == "UPI" :
-        pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"])
+        pay_public_id=await record_payment_init_pending(session,order.id,order_totals["total"],provider="razorpay")
         await update_order_idempotency_record(session,user_id,i_key,order.id,
                                             None,response_body=None,owner_type="pay_now")
         
@@ -464,11 +464,11 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
         # and then get response data by ikey if fouund return otherwise return 202 accepted to short circuit it here so that concurrent doesn't proceed .
     
 
-async def record_payment_init_pending(session,order_id,order_total):
+async def record_payment_init_pending(session,order_id,order_total,provider):
    
     payment = Payment(
         order_id=order_id,
-        # provider="razorpay", 
+        provider=provider, 
         provider_payment_id=None,
         status=PaymentStatus.PENDING.value,
         amount=order_total
@@ -611,9 +611,9 @@ async def emit_outbox_event(session, topic: str, payload: dict,
     if not ev_id:
         stmt2 = select(OutboxEvent.id).where(
         and_(
-            OutboxEvent.aggregate_id.is_(aggregate_id),
-            OutboxEvent.aggregate_type.is_(aggregate_type),
-            OutboxEvent.topic.is_(topic)
+            OutboxEvent.aggregate_id==aggregate_id,
+            OutboxEvent.aggregate_type==aggregate_type,
+            OutboxEvent.topic==topic
         )
     )
         res = await session.execute(stmt2)
@@ -645,8 +645,8 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
     commit_intent_id = res.scalar_one_or_none()
     if not commit_intent_id:
         # already exists -> return existing
-        stmt = select(CommitIntent).where(CommitIntent.aggregate_id.is_(order_id), 
-                                          CommitIntent.aggregate_type.is_(aggr_type), CommitIntent.reason.is_(reason))
+        stmt = select(CommitIntent).where(CommitIntent.aggregate_id==order_id, 
+                                          CommitIntent.aggregate_type==aggr_type, CommitIntent.reason==reason)
         res3 = await session.execute(stmt)
         return res3.scalar_one_or_none()
 

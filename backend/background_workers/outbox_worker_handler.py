@@ -31,8 +31,8 @@ class OrdersOutboxHandler:
                     await sim_emit_outbox_event(session,
                                             topic="order.received_for_fulfillment",
                                             payload={"order_id": order_id},
-                                            aggregate_type="order",
-                                            aggregate_id=order_id,)
+                                            agg_type="order",
+                                            agg_id=order_id,)
                     
                     await session.execute(
                         update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value, updated_at=now())

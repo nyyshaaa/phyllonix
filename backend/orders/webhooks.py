@@ -13,7 +13,7 @@ from backend.schema.full_schema import OrderStatus, PaymentEventStatus
 
 webhooks_router=APIRouter()
 
-@webhooks_router.post("/razorpayy")
+@webhooks_router.post("/pay-confirm")
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     body = await request.body()
     app=request.app
@@ -31,7 +31,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     # insert/mark webhook receipt (dedupe)
     if await webhook_event_already_processed(session, provider_event_id,provider):
-        return JSONResponse({"status": "ok", "note": note}, status_code=200)
+        return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
     
     ev_id = await mark_webhook_received(session, provider_event_id, provider, payload)
 
@@ -40,6 +40,8 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     provider_payment_id = payment_entity.get("id") or payment_entity.get("payment_id")
     provider_order_id = payment_entity.get("order_id")
     psp_pay_status = payment_entity.get("status")  # e.g., 'captured', 'failed', 'authorized'
+
+    print("provider_payment_id",provider_payment_id)
 
 
     # If it's not a payment event, can ignore or handle other events (order.paid etc)
@@ -51,7 +53,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     
     payment_status,order_status,note = pay_order_status_util(psp_pay_status)
     
-    order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status)
+    order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status)
     if not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
         # mark event processed so provider stops retrying
