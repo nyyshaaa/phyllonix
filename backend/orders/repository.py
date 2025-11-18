@@ -649,6 +649,8 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
                                           CommitIntent.aggregate_type.is_(aggr_type), CommitIntent.reason.is_(reason))
         res3 = await session.execute(stmt)
         return res3.scalar_one_or_none()
+
+        
    
     
 

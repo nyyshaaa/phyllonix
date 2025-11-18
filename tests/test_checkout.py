@@ -54,23 +54,35 @@ async def test_place_order_upi_with_transient_psp_failure_then_success(monkeypat
     print("order summary response", order_summary_resp.status_code, order_summary_resp.text)
 
 
-    call_state = {"calls": 0}
-
+    orig_retry = orders_mod.retry_payments
     orig_create = orders_mod.create_psp_order
 
-    print("call_state:", call_state)
+    # call_state to track how many times the underlying func was called
+    call_state = {"calls": 0}
 
-    async def first_fail_then_real(amount_paise, currency, receipt, notes, idempotency_key=None, timeout: float = 10.0):
-        call_state["calls"] += 1
-        print("fake create_psp_order called, call no:", call_state["calls"])
-        if call_state["calls"] == 1:
-            # simulate transient network error for the retry wrapper
-            raise httpx.ConnectError("simulated connect error (test-first-call)")
-        # second call -> delegate to real implementation (real network)
-        return await orig_create(amount_paise, currency, receipt, notes, idempotency_key=idempotency_key, timeout=timeout)
+    # decorator that wraps the real PSP function so first invocation fails, subsequent calls delegate to original
+    def fail_first_wrapper_factory(func):
+        async def wrapped(*args, **kwargs):
+            call_state["calls"] += 1
+            if call_state["calls"] == 1:
+                # Simulate a transient network error on first attempt
+                raise httpx.ConnectError("simulated connect error (test-first-call)")
+            # Delegate to the real implementation afterwards (real network call)
+            return await func(*args, **kwargs)
+        return wrapped
 
-    monkeypatch.setattr(orders_mod, "create_psp_order", first_fail_then_real)
+    # Now create a fake retry_payments which wraps the provided func with our fail-first wrapper,
+    # then delegates to the original retry_payments so all DB bookkeeping remains intact.
+    def fake_retry_payments(func, payment_id, session):
+        # wrap the incoming func so it fails first then delegates to func
+        wrapped_func = fail_first_wrapper_factory(func)
+        # call the original retry_payments with the wrapped func
+        # keep the same defaults — pass through max_retries/backoff_base if provided
+        return orig_retry(wrapped_func, payment_id, session)
 
+    # Patch retry_payments *before* the endpoint runs
+    monkeypatch.setattr(orders_mod, "retry_payments", fake_retry_payments, raising=True)
+        
 
     resp = await ac_client.post(f"{url_prefix}/checkout/{checkout_id}/secure-confirm", headers=headers)
     # You expect a success if PSP sandbox responds
@@ -84,12 +96,12 @@ async def test_place_order_upi_with_transient_psp_failure_then_success(monkeypat
     assert ik_row[2] is not None, "idempotency record should be present"
     
 
-    await db_session.execute(text("DELETE FROM checkoutsession"))
-    await db_session.execute(text("DELETE FROM idempotencykey WHERE key = :k"), {"k": ikey})
-    await db_session.execute(text("DELETE FROM paymentattempt"))
-    await db_session.execute(text("DELETE FROM orders"))
-    await db_session.execute(text("DELETE FROM inventoryreservation"))
-    await db_session.execute(text("DELETE FROM payment"))
-    await db_session.commit()
+    # await db_session.execute(text("DELETE FROM checkoutsession"))
+    # await db_session.execute(text("DELETE FROM idempotencykey WHERE key = :k"), {"k": ikey})
+    # await db_session.execute(text("DELETE FROM paymentattempt"))
+    # await db_session.execute(text("DELETE FROM orders"))
+    # await db_session.execute(text("DELETE FROM inventoryreservation"))
+    # await db_session.execute(text("DELETE FROM payment"))
+    # await db_session.commit()
 
    
