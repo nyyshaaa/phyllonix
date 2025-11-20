@@ -76,7 +76,7 @@ class OutboxPublisher:
                 reclaimable_cond = and_(
                     OutboxEvent.locked_until != None,
                     OutboxEvent.locked_until <= now_expr,
-                    OutboxEvent.status != OutboxEventStatus.FAILED.value,
+                    OutboxEvent.status == OutboxEventStatus.PENDING.value,
                 )
 
                 stmt = (

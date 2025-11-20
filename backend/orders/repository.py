@@ -645,7 +645,7 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
     commit_intent_id = res.scalar_one_or_none()
     if not commit_intent_id:
         # already exists -> return existing
-        stmt = select(CommitIntent).where(CommitIntent.aggregate_id==order_id, 
+        stmt = select(CommitIntent.id).where(CommitIntent.aggregate_id==order_id, 
                                           CommitIntent.aggregate_type==aggr_type, CommitIntent.reason==reason)
         res3 = await session.execute(stmt)
         return res3.scalar_one_or_none()

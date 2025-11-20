@@ -90,12 +90,12 @@ async def test_place_order_upi_with_transient_psp_failure_then_success(monkeypat
     assert ik_row[2] is not None, "idempotency record should be present"
     
 
-    await db_session.execute(text("DELETE FROM checkoutsession"))
-    await db_session.execute(text("DELETE FROM idempotencykey WHERE key = :k"), {"k": ikey})
-    await db_session.execute(text("DELETE FROM paymentattempt"))
-    await db_session.execute(text("DELETE FROM orders"))
-    await db_session.execute(text("DELETE FROM inventoryreservation"))
-    await db_session.execute(text("DELETE FROM payment"))
-    await db_session.commit()
+    # await db_session.execute(text("DELETE FROM checkoutsession"))
+    # await db_session.execute(text("DELETE FROM idempotencykey WHERE key = :k"), {"k": ikey})
+    # await db_session.execute(text("DELETE FROM paymentattempt"))
+    # await db_session.execute(text("DELETE FROM orders"))
+    # await db_session.execute(text("DELETE FROM inventoryreservation"))
+    # await db_session.execute(text("DELETE FROM payment"))
+    # await db_session.commit()
 
    

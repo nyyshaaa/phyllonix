@@ -590,7 +590,7 @@ class OutboxEvent(SQLModel, table=True):
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-    locked_until : Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, default=now))
+    # locked_until : Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, default=now))
     sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
     __table_args__ = (

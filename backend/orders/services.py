@@ -228,7 +228,7 @@ async def webhook_event_already_processed(session, provider_event_id: str , prov
     return False
 
 
-async def mark_webhook_received(session, provider_event_id: str, provider: str, payload: dict):
+async def mark_webhook_received(session, provider_event_id: Optional[str], provider: str, payload: dict , last_error: Optional[str] = None) -> Optional[int]:
     
     try:
         stmt = pg_insert(PaymentWebhookEvent).values(
@@ -274,6 +274,17 @@ async def mark_webhook_processed(session, ev_id,status: str, last_error: Optiona
                 last_error=last_error)
     )
     await session.execute(stmt)
+
+async def webhook_error_recorded(session, ev_id,status: str, last_error: Optional[str] = None):
+   
+    stmt = (
+        update(PaymentWebhookEvent)
+        .where(PaymentWebhookEvent.id == ev_id)
+        .values(status=status,
+                last_error=last_error)
+    )
+    await session.execute(stmt)
+
 
 
 async def load_order_items_pid_qty(session, order_id: int):
