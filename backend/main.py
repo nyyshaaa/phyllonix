@@ -10,7 +10,7 @@ from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
 from backend.__init__ import setup_logger
 from backend.api.__init__ import version_prefix,cur_version
-from backend.background_workers.base_worker import BasePubSubWorker
+from backend.background_workers.base_pubsub_interface import BasePubSubWorker
 from backend.config.admin_config import admin_config
 from metrics.custom_instrumentator import instrumentator
 

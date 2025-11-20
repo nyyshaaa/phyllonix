@@ -31,7 +31,7 @@ async def create_product(request:Request,payload: ProductCreateIn, session: Asyn
     product_res=await create_product_with_catgs(session,payload,user_identifier)
     return {"message":"product created","product":product_res}
 
-#** not tested yet
+
 @prods_admin_router.patch("/{product_public_id}", dependencies=[require_permissions("product:update")])
 async def update_product(request:Request,payload: ProductUpdateIn, product_public_id: str,
                           session: AsyncSession = Depends(get_session)):
