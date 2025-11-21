@@ -3,7 +3,7 @@ The project is inspired by two goals:
 1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,arts stuff...  
 2. **Engineering practice:** building a full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design.
 
-   Total Work hours on project september 1 -- september 30 (~130 hours)  October 1 - October 14 (~70 hours)
+   Total Work hours on project september 1 -- september 30 (~130 hours)  October 1 - November 21 (~245 hours)
 
 > DB Design Plan --
 https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
@@ -29,6 +29,7 @@ test_two_users_concurrent_order_summary_reservation
 
 with xclusive locks only 1 checkout request succeeds other informs about not available qty for the product .
 <img width="1440" height="307" alt="image" src="https://github.com/user-attachments/assets/d035bd90-0b29-490a-8400-1bb2a8d5be75" />
+
 
 
 
