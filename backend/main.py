@@ -22,13 +22,13 @@ async def app_lifespan(app: FastAPI):
 
     # app.state.pubsub_pub=base_pubsub.publish
 
-    # try:
-    #     yield
-    # finally:
-    #     # at this point new requests accept has been stopped already before calling shutdown
-    #     await base_pubsub.shutdown()
-    #     # safe to dispose DB engine after workers exit
-    #     await async_engine.dispose()
+    try:
+        yield
+    finally:
+        # at this point new requests accept has been stopped already before calling shutdown
+        # await base_pubsub.shutdown()
+        # safe to dispose DB engine after workers exit
+        await async_engine.dispose()
 
         
 def create_app():
@@ -52,7 +52,8 @@ def create_app():
     
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
                                                                              f"{version_prefix}/session/init",
-                                                                             f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks"],
+                                                                             f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
+                                                                             f"{version_prefix}/products"],                         # for non admin public product routes 
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     
     register_all_exceptions(app)

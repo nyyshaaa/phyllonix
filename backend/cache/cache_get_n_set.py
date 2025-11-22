@@ -48,8 +48,6 @@ async def cache_get_or_set_product_listings(
             await redis_client.delete(key)
             raw = None
 
-    print("cache miss")
-
     # cache miss => try lock
     lock_key = key + ":lock"
     token = uuid.uuid4().hex

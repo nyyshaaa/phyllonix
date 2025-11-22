@@ -104,7 +104,7 @@ async def get_products(
             next_cursor = encode_cursor(last.created_at, last.id, ttl_seconds=3600)
 
         response = {"items": items_out, "next_cursor": next_cursor, "has_more": has_more}
-        return success_response(response, status_code=status.HTTP_200_OK)
+        return response
     
     results = await cache_get_or_set_product_listings("products_listing", key_suffix, PRODUCT_LIST_TTL, loader)
     return success_response(results, status_code=status.HTTP_200_OK)
@@ -116,7 +116,6 @@ async def get_product_details(
     product_public_id: str,
     session: AsyncSession = Depends(get_session)):
    
-    user_identifier=request.state.user_identifier
 
     product_details = await cache_get_n_set_product_details(session, product_public_id,fetch_prod_details)
     return success_response(product_details, status_code=status.HTTP_200_OK)
