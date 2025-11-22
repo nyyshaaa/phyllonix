@@ -17,18 +17,18 @@ from metrics.custom_instrumentator import instrumentator
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     setup_logger()
-    base_pubsub=BasePubSubWorker()
-    base_pubsub.start()
+    # base_pubsub=BasePubSubWorker()
+    # base_pubsub.start()
 
-    app.state.pubsub_pub=base_pubsub.publish
+    # app.state.pubsub_pub=base_pubsub.publish
 
-    try:
-        yield
-    finally:
-        # at this point new requests accept has been stopped already before calling shutdown
-        await base_pubsub.shutdown()
-        # safe to dispose DB engine after workers exit
-        await async_engine.dispose()
+    # try:
+    #     yield
+    # finally:
+    #     # at this point new requests accept has been stopped already before calling shutdown
+    #     await base_pubsub.shutdown()
+    #     # safe to dispose DB engine after workers exit
+    #     await async_engine.dispose()
 
         
 def create_app():
