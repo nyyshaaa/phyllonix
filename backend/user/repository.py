@@ -15,7 +15,7 @@ async def userid_by_public_id(session,user_pid):
 
 
 async def check_user_roles_version(session,identifier,role_version):
-    stmt=select(Users.id).where(Users.public_id==identifier,Users.role_version==role_version)
+    stmt=select(Users.role_version).where(Users.id==identifier,Users.role_version==role_version)
     res=await session.execute(stmt)
     user=res.first()
     return user[0] if user else None
@@ -80,13 +80,12 @@ async def user_n_ds_by_public_id(session,user_pid,ds_token):
     return user
 
 
-async def userauth_by_public_id(session,user_pid):
+async def identify_user_by_pid(session,user_pid):
    
     stmt=select(Users.id).where(Users.public_id==user_pid,Users.deleted_at==None)
     res=await session.execute(stmt)
-    user=res.first()
-    user= {"user_id":user[0],"sid":None,"revoked":None}
-    return user
+    user_id=res.scalar_one_or_none()
+    return user_id
 
 
 

@@ -100,22 +100,6 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
 
     return {"message": "uploaded", "image_path": rel_path}
 
-# @user_admin_router.post("/promote/{user_pid}",dependencies=[require_permissions("user:manage")])
-# async def promote_user(
-#     request:Request,
-#     payload: PromoteIn,
-#     session: AsyncSession = Depends(get_session),
-# ):
-    
-#     user_identifier=request.state.user_identifier
-    
-#     target_user_id=await userid_by_public_id(session,payload.user_pid)
 
-#     if not target_user_id:
-#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found")
-    
-#     # Prevent self-promotion (optional safety)
-#     if target_user_id == user_identifier:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot change your own roles")
-    
-    # .................
+
+

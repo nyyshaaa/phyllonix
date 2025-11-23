@@ -53,7 +53,8 @@ def create_app():
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
-                                                                             f"{version_prefix}/products"],                         # for non admin public product routes 
+                                                                             f"{version_prefix}/products",                         # for non admin public product routes 
+                                                                             f"{version_prefix}/orders/test/checkout"],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     
     register_all_exceptions(app)

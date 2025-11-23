@@ -30,13 +30,6 @@ async def cache_get_or_set_product_listings(
     lock_timeout: int = 8,
 ) -> Any:
    
-    # include catalog version in namespace/key to enable global invalidation
-    # version = await redis_client.get(CATALOG_VERSION_KEY)
-    # if version is None:
-    #     # initialize version to 1 if missing
-    #     await redis_client.set(CATALOG_VERSION_KEY, "1")
-    #     version = "1"
-    # version_str = version.decode() if isinstance(version, (bytes, bytearray)) else str(version)
     key = build_key("phyl", namespace, key_suffix)
     raw = await get_bytes(key)
     if raw is not None:
