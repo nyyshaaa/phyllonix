@@ -35,7 +35,7 @@ async def create_product_with_catgs(session,payload,user_id):
         )
         product = res.scalar_one_or_none()
         if product is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Product with this name already exists")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Product with this name already exists belonging to different owner")
         await add_product_categories(session,product.id, cat_ids)
         await session.commit()
 

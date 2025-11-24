@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request , status
 from backend.db.dependencies import get_session
 from backend.image_uploads.models import InitBatchImagesIn
 from backend.image_uploads.services import ImageUpload
-from backend.products.repository import get_product_ids_by_pid
+from backend.products.repository import find_product_by_pid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 prod_images_router = APIRouter(tags=["product-images"])
@@ -14,7 +14,7 @@ async def init_images_upload_batch(request:Request,product_public_id: str, imgs_
     user_identifier=request.state.user_identifier
     print("init uploads")
 
-    product = await get_product_ids_by_pid(session, product_public_id, user_identifier)
+    product = await find_product_by_pid(session, product_public_id, user_identifier)
 
     if product.owner_id!=user_identifier:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authorized to update product.")

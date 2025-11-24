@@ -584,13 +584,13 @@ class OutboxEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     topic: str = Field(sa_column=Column(String(128), nullable=False))  # e.g., "order.paid"
     payload: dict = Field(sa_column=Column(JSON, nullable=False))
-    # optional aggregate scoping to make dedupe easier
     aggregate_type: str = Field(sa_column=Column(String(64), nullable=False))
     aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))
     status: int = Field(default=OutboxEventStatus.PENDING.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
+    # locked_until : Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True, default=now))
     sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
     __table_args__ = (

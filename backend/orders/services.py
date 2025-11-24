@@ -7,6 +7,7 @@ import json
 import uuid
 from typing import Optional
 from fastapi import HTTPException, Request, Response , status
+from fastapi.responses import JSONResponse
 import httpx
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -47,6 +48,8 @@ async def create_psp_order(amount_paise: int, currency: str, receipt: str, notes
     receipt: your internal receipt id (e.g., "order_pubid")
     notes: optional metadata
     """
+
+    print("psp call")
     url = f"{PSP_API_BASE}/orders"
     headers = {
         "Content-Type": "application/json",
@@ -161,15 +164,12 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
             try:
                 
                 resp = await func(*args, **kwargs)
-                print("here")
-                if attempt_idx == 1 :    #** just for testing
-                    raise httpx.ConnectError(message="connect err ")
-                print("resp",resp)
                 await update_payment_attempt_resp(
                     session,attempt_id,PaymentAttemptStatus.SUCCESS.value,resp)
                 
                 return resp,None,None,attempt_idx
             except TRANSIENT_EXCEPTIONS as ex:
+                print("transient ex",ex)
                 # transient network error — mark attempt as retrying, retry
                 retryable_exc = ex
                 await update_payment_attempt_resp(
@@ -228,7 +228,7 @@ async def webhook_event_already_processed(session, provider_event_id: str , prov
     return False
 
 
-async def mark_webhook_received(session, provider_event_id: str, provider: str, payload: dict):
+async def mark_webhook_received(session, provider_event_id: Optional[str], provider: str, payload: dict , last_error: Optional[str] = None) -> Optional[int]:
     
     try:
         stmt = pg_insert(PaymentWebhookEvent).values(
@@ -274,6 +274,17 @@ async def mark_webhook_processed(session, ev_id,status: str, last_error: Optiona
                 last_error=last_error)
     )
     await session.execute(stmt)
+
+async def webhook_error_recorded(session, ev_id,status: str, last_error: Optional[str] = None):
+   
+    stmt = (
+        update(PaymentWebhookEvent)
+        .where(PaymentWebhookEvent.id == ev_id)
+        .values(status=status,
+                last_error=last_error)
+    )
+    await session.execute(stmt)
+
 
 
 async def load_order_items_pid_qty(session, order_id: int):

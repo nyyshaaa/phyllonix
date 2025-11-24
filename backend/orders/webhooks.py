@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
 from backend.config.settings import config_settings
 from backend.orders.repository import create_commit_intent, emit_outbox_event, update_order_status, update_pay_completion_get_orderid
-from backend.orders.services import  load_order_items_pid_qty, mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_event_already_processed
+from backend.orders.services import  load_order_items_pid_qty, mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_error_recorded, webhook_event_already_processed
 from backend.orders.utils import pay_order_status_util
 from backend.schema.full_schema import OrderStatus, PaymentEventStatus
 
 
 webhooks_router=APIRouter()
 
-@webhooks_router.post("/razorpayy")
+@webhooks_router.post("/pay-confirm")
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     body = await request.body()
     app=request.app
@@ -23,15 +23,17 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     payload = json.loads(body)
     provider_event_id = request.headers.get("X-Razorpay-Event-Id")
 
+
     if not provider_event_id:
         # bad payload; acknowledge to avoid retries , reconcile 
+        await mark_webhook_received(session, None, "razorpay", payload, last_error="missing event id")
         return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
 
     provider = "razorpay"
 
     # insert/mark webhook receipt (dedupe)
     if await webhook_event_already_processed(session, provider_event_id,provider):
-        return JSONResponse({"status": "ok", "note": note}, status_code=200)
+        return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
     
     ev_id = await mark_webhook_received(session, provider_event_id, provider, payload)
 
@@ -41,21 +43,22 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     provider_order_id = payment_entity.get("order_id")
     psp_pay_status = payment_entity.get("status")  # e.g., 'captured', 'failed', 'authorized'
 
+    print("provider_payment_id",provider_payment_id)
 
     # If it's not a payment event, can ignore or handle other events (order.paid etc)
     if not provider_payment_id:
-        # mark processed to stop retries
-        await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no payment entity")
+        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no payment entity")
         await session.commit()
+        # send ok to stop retries and reconcile later
         return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
     payment_status,order_status,note = pay_order_status_util(psp_pay_status)
     
-    order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,payment_status)
+    order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status)
     if not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
-        # mark event processed so provider stops retrying
-        await mark_webhook_processed(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no pay record found for provider_order_id")
+        # mark event error for reconcile and return 200 to provider
+        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no pay record found for provider_order_id")
         return JSONResponse({"status": "ok", "note": "ignored: payment not found"}, status_code=200)
     
     await update_order_status(session,order_id,order_status)
@@ -63,8 +66,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     outbox_payload = {
         "order_id": order_id,
         "payment_provider_id": provider_payment_id,
-        "provider_order_id": provider_order_id,
-        "raw_payload": payload
+        "provider_order_id": provider_order_id
     }
     topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed" 
     

@@ -9,7 +9,7 @@ from backend.__init__ import logger
 from backend.orders.repository import  sim_emit_outbox_event
 from backend.schema.full_schema import OutboxEvent, OutboxEventStatus
 
-class OrdersOutboxHandler:
+class OutboxHandler:
     def __init__(self):
         self.async_session = async_session
     
@@ -31,11 +31,11 @@ class OrdersOutboxHandler:
                     await sim_emit_outbox_event(session,
                                             topic="order.received_for_fulfillment",
                                             payload={"order_id": order_id},
-                                            aggregate_type="order",
-                                            aggregate_id=order_id,)
+                                            agg_type="order",
+                                            agg_id=order_id,)
                     
                     await session.execute(
-                        update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value, updated_at=now())
+                        update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value)
                     )
                
 
@@ -49,7 +49,7 @@ class OrdersOutboxHandler:
                                             aggregate_id=order_id,)
                     
                     await session.execute(
-                        update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value, updated_at=now())
+                        update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value)
                     )
 
 

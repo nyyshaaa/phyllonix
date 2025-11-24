@@ -10,23 +10,23 @@ from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
 from backend.__init__ import setup_logger
 from backend.api.__init__ import version_prefix,cur_version
-from backend.background_workers.base_worker import BasePubSubWorker
+from backend.background_workers.base_pubsub_interface import BasePubSubWorker
 from backend.config.admin_config import admin_config
 from metrics.custom_instrumentator import instrumentator
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     setup_logger()
-    base_pubsub=BasePubSubWorker()
-    base_pubsub.start()
+    # base_pubsub=BasePubSubWorker()
+    # base_pubsub.start()
 
-    app.state.pubsub_pub=base_pubsub.publish
+    # app.state.pubsub_pub=base_pubsub.publish
 
     try:
         yield
     finally:
         # at this point new requests accept has been stopped already before calling shutdown
-        await base_pubsub.shutdown()
+        # await base_pubsub.shutdown()
         # safe to dispose DB engine after workers exit
         await async_engine.dispose()
 
@@ -52,7 +52,9 @@ def create_app():
     
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
                                                                              f"{version_prefix}/session/init",
-                                                                             f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks/razorpayy"],
+                                                                             f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
+                                                                             f"{version_prefix}/products",                         # for non admin public product routes 
+                                                                             f"{version_prefix}/orders/test/checkout"],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     
     register_all_exceptions(app)

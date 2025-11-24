@@ -1,9 +1,9 @@
 import asyncio
 from typing import Any, Dict, Optional
 from backend.__init__ import logger
-from backend.background_workers import order_confirm_inv_handler
+from backend.background_workers.order_confirm_inv_handler import order_confirm_commitintent_handler
 from backend.background_workers.image_tansform_handler import ImageTransformHandler
-from backend.background_workers.outbox_worker_handler import OrdersOutboxHandler
+from backend.background_workers.outbox_worker_handler import OutboxHandler
 from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
 
 SENTINEL = None  # queue sentinel
@@ -17,8 +17,8 @@ class BasePubSubWorker():
         self.subscribers={}
         self.handlers={"image_uploaded":ThumbnailTaskHandler(),
                        "product_image_uploaded":ImageTransformHandler(),
-                       "order_finalize":OrdersOutboxHandler(),
-                       "order_confirm_intent.created":order_confirm_inv_handler,
+                       "order_finalize":OutboxHandler(),
+                       "order_confirm_intent.created":order_confirm_commitintent_handler,
                        }
         
     

@@ -12,7 +12,7 @@ def require_permissions(perm:str):
         session: AsyncSession = Depends(get_session),):
         user_roles=set(request.state.user_roles)
         
-        # check if the required permisssion belongs to any user roles .
+        # check if the required permisssion belongs to any roles of current user.
         stmt=(
             select(RolePermission.id)
             .join(Permission, Permission.id == RolePermission.permission_id)

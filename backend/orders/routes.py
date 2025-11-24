@@ -108,7 +108,7 @@ async def place_order(request:Request,checkout_id: str,
   
     lock_key = idempotency_lock_key(idempotency_key)
     # Try to acquire advisory lock (non-blocking)
-    got_lock = acquire_pglock(session,lock_key)
+    got_lock = await acquire_pglock(session,lock_key)
 
     # for now let the concurrent requests wait as we acquired ikey lock initially only ,
     #  instead of short circuit and when they acquire lock they can just return existing response data for ikey .
@@ -117,23 +117,28 @@ async def place_order(request:Request,checkout_id: str,
     #                  user_identifier,checkout_id)
     
     order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+
+    ik_id = None
+    
     if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+        ik_id = order_data_by_ik["ik_id"]
         payload = build_success(order_data_by_ik, trace_id=None)
         return json_ok(payload)
+    
+    if not ik_id: 
+        ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
 
-    ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
+        # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
+        #** better to short circuit here and send status url direction to client 
+        if not ik_id :
+            print("concurrent")
+            await asyncio.sleep(5)
 
-    # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
-    #** better to short circuit here and send status url direction to client 
-    if not ik_id :
-        print("concurrent")
-        await asyncio.sleep(5)
-
-        order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
-        if order_data_by_ik and order_data_by_ik["response_body"] is not None:
-            payload = build_success(order_data_by_ik, trace_id=None)
-            return json_ok(payload)
-        ik_id = order_data_by_ik["ik_id"]
+            order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
+            if order_data_by_ik and order_data_by_ik["response_body"] is not None:
+                payload = build_success(order_data_by_ik, trace_id=None)
+                return json_ok(payload)
+            ik_id = order_data_by_ik["ik_id"]
 
     order_totals=compute_final_total(items,payment_method)
     
@@ -143,8 +148,6 @@ async def place_order(request:Request,checkout_id: str,
     # await remove_items_from_cart(session,items)
 
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
-    
-    #** update product stock and stuff via bg workers , emit order place event . Also remove items from cart .
 
     pay_public_id=order_resp_data.get("pay_public_id",None)
     print("pay_public_id",pay_public_id)
@@ -233,85 +236,3 @@ async def serve_test_checkout(request: Request, order_public_id: str, auth_token
     return HTMLResponse(html)
 
     
-
-
-        
-    
-
-
-# ----------------------------------------------------------------------------------------------------
-# after payment success payment provider api will send a webhook to our server 
-# -- next in webhooks file
-# ----------------------------------------------------------------------------------------------------
-
-# @orders_router.get()
-# async def get_all_orders():
-#     pass
-
-
-
-# ----------------------------------------------------------------------------------------------------
-# {
-#     "checkout_id": "0199e109-3bf2-71bb-9b81-7cb08d2ab17e",
-#     "selected_payment_method": "UPI",
-#     "items": [
-#         {
-#             "cart_item_id": 12,
-#             "product_id": 22,
-#             "quantity": 3,
-#             "prod_base_price": 500,
-#             "product_stock": 25
-#         },
-#         {
-#             "cart_item_id": 6,
-#             "product_id": 25,
-#             "quantity": 14,
-#             "prod_base_price": 1000,
-#             "product_stock": 1000
-#         }
-#     ],
-#     "summary": {
-#         "subtotal": 15500,
-#         "tax": 310,
-#         "shipping": 50,
-#         "cod_fee": 0,
-#         "discount": 0,
-#         "total": 15860
-#     }
-# }
-
-
-# {
-#     "order_public_id": "0199e115-c099-7e6c-8a52-fbb9785e319f",
-#     "order_id": 30,
-#     "payment_public_id": "0199e115-c0b6-7843-8a2e-15d5724313b9",
-#     "payment_provider_id": "order_RTEI04YXKKfWgX",
-#     "payment_client_payload": {
-#         "provider": "razorpay",
-#         "provider_order_id": "order_RTEI04YXKKfWgX",
-#         "provider_raw": {
-#             "amount": 1581000,
-#             "amount_due": 1581000,
-#             "amount_paid": 0,
-#             "attempts": 0,
-#             "created_at": 1760417924,
-#             "currency": "INR",
-#             "entity": "order",
-#             "id": "order_RTEI04YXKKfWgX",
-#             "notes": {
-#                 "order_public_id": "0199e115-c099-7e6c-8a52-fbb9785e319f",
-#                 "payment_public_id": "0199e115-c0b6-7843-8a2e-15d5724313b9"
-#             },
-#             "offer_id": null,
-#             "receipt": "order_0199e115-c099-7e6c-8",
-#             "status": "created"
-#         },
-#         "checkout_hint": {
-#             "type": "provider_order",
-#             "order_id": "order_RTEI04YXKKfWgX",
-#             "note": "Use Razorpay Checkout or construct UPI deeplink / checkout flow using provider SDK"
-#         }
-#     },
-#     "status": "PENDING",
-#     "message": "Provider order created; client should open provider checkout/deeplink."
-# }

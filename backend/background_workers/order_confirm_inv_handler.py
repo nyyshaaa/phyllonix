@@ -11,10 +11,11 @@ from backend.__init__ import logger
 
 DEFAULT_MAX_ATTEMPTS = 5
 
-async def order_confirm_inv_handler(task_data: Dict[str, Any], worker_name: str):
+async def order_confirm_commitintent_handler(task_data: Dict[str, Any], worker_name: str):
     
     ci_id = task_data.get("commit_intent_id")
     if not ci_id:
+        logger.info("no commit intent id found returning")
         return
 
     async with async_session() as session:

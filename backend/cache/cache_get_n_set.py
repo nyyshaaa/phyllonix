@@ -28,26 +28,11 @@ async def cache_get_or_set_product_listings(
     mode: str = "wait",
     stale_window: int = 15,  # seconds before expiry to refresh in background
     lock_timeout: int = 8,
-    # serializer: Callable[[Any], bytes] = lambda x: msgpack.packb(x, use_bin_type=True),
-    # deserializer: Callable[[bytes], Any] = lambda b: msgpack.unpackb(b, raw=False),
-    # lock_timeout: int = 10,
 ) -> Any:
-    """
-    mode="stale": if cached value exists we return it immediately; if TTL <= stale_window, try to refresh in BG.
-    mode="wait": if cache missing, wait for the builder to complete (poll) and return result (blocking).
-    loader: zero-arg async callable closure that returns the fresh value to cache.
-    """
-    # include catalog version in namespace/key to enable global invalidation
-    # version = await redis_client.get(CATALOG_VERSION_KEY)
-    # if version is None:
-    #     # initialize version to 1 if missing
-    #     await redis_client.set(CATALOG_VERSION_KEY, "1")
-    #     version = "1"
-    # version_str = version.decode() if isinstance(version, (bytes, bytearray)) else str(version)
+   
     key = build_key("phyl", namespace, key_suffix)
     raw = await get_bytes(key)
     if raw is not None:
-        # we have a cached value
         #** may add background refresh when ttl is nearing expiry for stale modes
         try:
             print("deserializing cache hit")
@@ -55,8 +40,6 @@ async def cache_get_or_set_product_listings(
         except Exception:
             await redis_client.delete(key)
             raw = None
-
-    print("cache miss")
 
     # cache miss => try lock
     lock_key = key + ":lock"
