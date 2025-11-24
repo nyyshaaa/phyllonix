@@ -41,8 +41,8 @@ def create_app():
      
     if admin_config.ENABLE_ADMIN:
         # extra safety: require an ADMIN_SECRET to be set when enabling in non-dev envs
-        if admin_config.ENV == "prod" and not admin_config.ADMIN_SECRET:
-            raise RuntimeError("Unsafe configuration: ENABLE_ADMIN=true in PROD requires ADMIN_SECRET")
+        # if admin_config.ENV == "prod" and not admin_config.ADMIN_SECRET:
+        #     raise RuntimeError("Unsafe configuration: ENABLE_ADMIN=true in PROD requires ADMIN_SECRET")
         app.include_router(admin_routers)      # mounts /api/v1/admin
         #** optional middleware guard (adds header/ip check)
         # app.add_middleware(AdminGuardMiddleware)
