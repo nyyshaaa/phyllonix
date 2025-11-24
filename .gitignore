@@ -6,7 +6,6 @@ myvenv/
 
 # Ignore Python cache
 __pycache__/
-alembic.ini
 
 .pytest_cache/
 
