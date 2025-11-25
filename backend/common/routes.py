@@ -1,9 +1,11 @@
+from select import select
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.params import Header
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.services import save_device_state
 from backend.common.constants import SESSION_TOKEN_COOKIE_MAX_AGE
+from backend.common.retries import retry_async
 from backend.common.utils import build_success, json_ok
 from backend.db.dependencies import get_session
 from fastapi.responses import JSONResponse
@@ -55,3 +57,15 @@ async def session_init(
     )
 
     return response
+
+@home_router.get("/health")
+async def health_check(session:AsyncSession=Depends(get_session)):
+    stmt=select(1)
+    
+    try:
+        res=await session.execute(stmt)
+        print(res.scalar_one_or_none())
+    except Exception as e:
+        raise e
+
+    return {"status": "healthy"}

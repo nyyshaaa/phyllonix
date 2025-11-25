@@ -106,22 +106,7 @@ async def logout(device_public_id: str = Depends(device_session_pid), session = 
 
 
 
-# --------------------------------------------------------------------------------------------------------------
-@auth_router.get("/health")
-@guard_with_circuit(db_circuit)
-@retry_async(attempts=1, base_delay=0.2, factor=2.0, max_delay=5.0, if_retryable=is_recoverable_exception)
-async def health_check(session:AsyncSession=Depends(get_session)):
-    stmt=select(1)
-    
-    try:
-        res=await session.execute(stmt)
-        print(res.scalar_one_or_none())
-    except Exception as e:
-        raise e
-
-    return {"status": "healthy"}
-
-
+# -------------------------------------------------------------------------------------------------------------
 
 @auth_router.get("/retries_cb_test")
 @guard_with_circuit(db_circuit)
