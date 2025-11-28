@@ -4,6 +4,7 @@ import dns
 from email_validator import validate_email, EmailNotValidError
 from fastapi import Body, HTTPException, Header, Request,status
 from fastapi.params import Cookie
+from backend.auth.constants import COOKIE_NAME
 from backend.auth.utils import  hash_token, make_session_token_plain, validate_password
 
 
@@ -66,6 +67,6 @@ def device_session_pid(device_header: Optional[str] = Header(None, alias="X-Devi
     return device_header or device_cookie
 
 def refresh_token(refresh_header: Optional[str] = Header(None, alias="X-Refresh-Token"),
-                refresh_cookie:Optional[str]=Cookie(None,alias="refresh_token")):
+                refresh_cookie:Optional[str]=Cookie(None,alias=COOKIE_NAME)):
     return refresh_header or refresh_cookie
 
