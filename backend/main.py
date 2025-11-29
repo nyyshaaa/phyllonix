@@ -51,7 +51,7 @@ def create_app():
     #                                                                         f"{version_prefix}/checkout"])
     
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
-                                                                             f"{version_prefix}/docs",
+                                                                             f"/docs",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
                                                                              f"{version_prefix}/products",                         # for non admin public product routes 
