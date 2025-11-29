@@ -8,8 +8,11 @@ from sqlmodel import SQLModel
 
 from backend.config.settings import config_settings
 
-# from backend.schema.full_schema import Users,Address,Credential,DeviceSession,DeviceAuthToken,Role,Permission,UserRole,RolePermission,UserPhone,ImageContent
-# from backend.schema.full_schema import Cart,CartItem
+from backend.schema.full_schema import (UserRole,RolePermission,Users,Role,Permission,UserPhone,Credential,Address,DeviceSession,DeviceAuthToken,UserMedia,
+    CredentialType,AuthMethod,ImageUploadStatus,ProductCategoryLink,Product,ProductImage,ImageContent,ProductCategory,UploadsWebhookEvent,
+    RoleAudit,Cart,CartItem,OrderStatus,InventoryReserveStatus,CheckoutStatus,OrderIdempotencyStatus,Orders,OrderItem,CheckoutSession,InventoryReservation,
+    IdempotencyKey,PaymentStatus,PaymentAttemptStatus,PaymentEventStatus,OutboxEventStatus,Payment,PaymentAttempt,PaymentWebhookEvent,OutboxEvent,CommitIntentStatus,CommitIntent,
+)
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

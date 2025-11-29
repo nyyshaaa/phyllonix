@@ -24,7 +24,7 @@ class Users(SQLModel, table=True):
         default_factory=uuid7, 
         sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     )
-    email: Optional[str] = Field(default=None,sa_column=Column(String(320), nullable=True,unique=True))  #* nullable allowed in case a user has only phone based account ,but usually email is necessary so make it non nullable later
+    email: Optional[str] = Field(default=None,sa_column=Column(String(320), unique=True))  
     name: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     role_version:int=Field(default=0,nullable=False)
     created_at: datetime = Field(default_factory=now,
@@ -44,7 +44,9 @@ class Users(SQLModel, table=True):
     roles: List["Role"] = Relationship(back_populates="user",link_model=UserRole)
     media:"UserMedia" = Relationship(back_populates="user")
     cart: "Cart" = Relationship(back_populates="user") # user -> cart (1:1)
-    # orders: List["Order"] = Relationship(back_populates="user")
+    orders: List["Orders"] = Relationship(back_populates="user")   
+    device_sessions: List["DeviceSession"] = Relationship(back_populates="user")
+
 
 class UserMedia(SQLModel,table=True):
     id:Optional[int] = Field(default=None, primary_key=True)
@@ -148,7 +150,7 @@ class DeviceSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     # hashed session token (e.g., sha256 hex = 64 chars) - unique so no duplicate tokens
     session_token_hash: str = Field(sa_column=Column(String(128), nullable=False, unique=True, index=True))
-    user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
+    user_id: Optional[int] = Field( default=None,sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=True))
     
     public_id: uuid7 = Field(
@@ -165,16 +167,19 @@ class DeviceSession(SQLModel, table=True):
     ip_first_seen: Optional[str] = Field(default=None, sa_column=Column(INET, nullable=True))
     last_seen_ip: Optional[str] = Field(default=None, sa_column=Column(INET, nullable=True))
 
-    last_activity_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    last_activity_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))  #* make it non nullable later 
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
     revoked_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-    session_expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    session_expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True),nullable=False))
 
     # relationship to tokens (one-to-many)
     tokens: List["DeviceAuthToken"] = Relationship(back_populates="device_session",
                                                   sa_relationship_kwargs={"cascade": "all, delete-orphan"},
                                                   passive_deletes=True)
+    user: Optional["Users"] = Relationship(back_populates="device_sessions")
+    # device session can exist on it's own without user (e.g., guest session) hence optional, 
+    # but for a user it must have a device session ( so not optional on user side ) .
 
 
 class DeviceAuthToken(SQLModel, table=True):
@@ -182,7 +187,6 @@ class DeviceAuthToken(SQLModel, table=True):
 
     device_session_id: int = Field(sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), index=True, nullable=False))
 
-    # canonical link to user 
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False))
 
     # hashed refresh token
@@ -217,7 +221,6 @@ class ProductCategoryLink(SQLModel, table=True):
     product_id: int = Field(sa_column=Column(ForeignKey("product.id", ondelete="CASCADE"), index=True, nullable=False))
     prod_category_id: int = Field(sa_column=Column(ForeignKey("productcategory.id", ondelete="CASCADE"), index=True, nullable=False))
 
-    # unique constraint to avoid duplicate links
     __table_args__ = (
         UniqueConstraint("product_id", "prod_category_id", name="uq_product_category"),
     )
@@ -260,7 +263,7 @@ class Product(SQLModel, table=True):
 
     # price_options: List["PriceOption"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
-# 1 image content id can belong to many product images
+# 1 image content id can belong to many product images 
 class ProductImage(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -288,13 +291,14 @@ class ProductImage(SQLModel, table=True):
     product: "Product" = Relationship(back_populates="images")
     img_content : "ImageContent" = Relationship(back_populates="product_imgs")
 
+    #* add unique constraint on product_id + content_id later if needed
+
 class ImageContent(SQLModel, table=True):
-    """
-    Canonical content rows keyed by checksum. Workers insert with ON CONFLICT DO NOTHING.
-    """
+   
     id: Optional[int] = Field(default=None, primary_key=True)
     checksum: str = Field(sa_column=Column(String(128), nullable=False, unique=True), description="sha256 hex")
     # owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True))
+    provider: str = Field(sa_column=Column(String(100), nullable=True)) 
     public_id:uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     provider_public_id: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
@@ -315,7 +319,7 @@ class ProductCategory(SQLModel, table=True):
     products: List["Product"] = Relationship(back_populates="prod_categories", link_model=ProductCategoryLink)
 
 
-class ProviderWebhookEvent(SQLModel, table=True):
+class UploadsWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     provider_event_id: str = Field(sa_column=Column(String(1000), nullable=False,unique=True))  # provider unique id (asset_id or public_id:version)
     provider: str = Field(sa_column=Column(String(100), nullable=True))           # e.g. 'cloudinary'

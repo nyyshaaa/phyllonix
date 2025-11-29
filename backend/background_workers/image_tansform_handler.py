@@ -125,7 +125,6 @@ class ImageTransformHandler():
             product_image.status = ImageUploadStatus.READY
             session.add(product_image)
 
-            # ORM style update for providerwebhookevent
             webhook_event = await session.get(ProviderWebhookEvent, evt_id)
             if webhook_event:
                 webhook_event.processed_at = now()

@@ -173,7 +173,7 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     device_auth = await get_device_auth(session, hashed_token)
 
     if not device_auth:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token ")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid refresh token ")
 
     if device_auth.expires_at <= now + timedelta(minutes=1):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
