@@ -6,7 +6,7 @@ from typing import Tuple
 import httpx
 from sqlalchemy import select
 from backend.__init__ import logger
-from backend.schema.full_schema import ImageContent, ImageUploadStatus, ProviderWebhookEvent
+from backend.schema.full_schema import ImageContent, ImageUploadStatus, UploadsWebhookEvent
 from sqlalchemy import text, select
 from backend.db.connection import async_session
 from backend.common.utils import now
@@ -29,7 +29,7 @@ class ImageTransformHandler():
             event_row=None
 
             try:
-                stmt = text("SELECT id, processed_at, attempts FROM providerwebhookevent WHERE id = :eid FOR UPDATE")
+                stmt = text("SELECT id, processed_at, attempts FROM uploadswebhookevent WHERE id = :eid FOR UPDATE")
                 res = await session.execute(stmt, {"eid": event_id})  
                 event_row=res.first()
             except Exception:
@@ -125,7 +125,7 @@ class ImageTransformHandler():
             product_image.status = ImageUploadStatus.READY
             session.add(product_image)
 
-            webhook_event = await session.get(ProviderWebhookEvent, evt_id)
+            webhook_event = await session.get(UploadsWebhookEvent, evt_id)
             if webhook_event:
                 webhook_event.processed_at = now()
                 session.add(webhook_event)
