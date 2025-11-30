@@ -6,6 +6,7 @@ from fastapi import Body, HTTPException, Header, Request,status
 from fastapi.params import Cookie
 from backend.auth.constants import COOKIE_NAME
 from backend.auth.utils import  hash_token, make_session_token_plain, validate_password
+from backend.auth.constants import logger
 
 
 def normalize_email_address(email: str) -> str:
@@ -40,6 +41,7 @@ async def signup_validation(payload=Body(...)):
     try:
         email = normalize_email_address(payload["email"])
     except ValueError as e:
+        logger.warning("signup.validation.email_invalid", extra={"email": payload.get("email"), "error": str(e)})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid email: {e}")
 
     # optional MX check (non-blocking decision)
@@ -51,6 +53,7 @@ async def signup_validation(payload=Body(...)):
 
     is_valid, detail = validate_password(payload["password"])
     if not is_valid:
+        logger.warning("signup.validation.password_invalid", extra={"email": email, "reason": detail})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     
     return payload

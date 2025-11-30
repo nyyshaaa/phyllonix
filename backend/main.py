@@ -4,11 +4,12 @@ from fastapi import FastAPI
 from backend.api.routers import public_routers,admin_routers
 from backend.auth.routes import auth_router
 from backend.common.custom_exceptions import register_all_exceptions
+from backend.common.logging_setup import setup_logging
 from backend.middlewares.auth_middleware import AuthenticationMiddleware
 from backend.middlewares.device_authentication_middleware import DeviceSessionMiddleware
+from backend.middlewares.request_id_middleware import RequestIdMiddleware
 from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
-from backend.__init__ import setup_logger
 from backend.api.__init__ import version_prefix,cur_version
 from backend.background_workers.base_pubsub_interface import BasePubSubWorker
 from backend.config.admin_config import admin_config
@@ -16,7 +17,7 @@ from metrics.custom_instrumentator import instrumentator
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    setup_logger()
+    setup_logging()
     # base_pubsub=BasePubSubWorker()
     # base_pubsub.start()
 
@@ -51,13 +52,13 @@ def create_app():
     #                                                                         f"{version_prefix}/checkout"])
     
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
-                                                                             f"/docs",
+                                                                             f"/health",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
                                                                              f"{version_prefix}/products",                         # for non admin public product routes 
                                                                              f"{version_prefix}/orders/test/checkout"],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
-    
+    app.add_middleware(RequestIdMiddleware)
     register_all_exceptions(app)
     # instrumentator.instrument(app).expose(app, endpoint="/metrics")
     
