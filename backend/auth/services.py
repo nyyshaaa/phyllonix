@@ -7,6 +7,7 @@ from backend.auth.utils import create_access_token, hash_password, hash_token, m
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
+from backend.auth.constants import logger
 
 async def link_user_role(session,user_id):
     # ensure user role exists (idempotent)
@@ -27,6 +28,7 @@ async def create_user(session,payload):
 
     user_id = await user_id_by_email(session,payload["email"])
     if user_id:
+        logger.warning("user.duplicate", extra={"email": payload["email"]})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with email already exists")
 
     # create user + credential + default role (atomic)
@@ -50,9 +52,11 @@ async def create_user(session,payload):
         
         await session.commit()
         await session.refresh(user)
+        logger.info("user.created", extra={"user_public_id": str(user.public_id), "email": payload["email"]})
         return user.id
     except IntegrityError:
         await session.rollback()
+        logger.warning("user.create.integrity_error", extra={"email": payload["email"]})
         raise HTTPException(status_code=400, detail="User with that email already exists")
 
 
@@ -71,7 +75,6 @@ async def save_device_state(session,request,user_id):
      
 
     session_token_plain = make_session_token_plain()
-    print("plain session",session_token_plain)
     session_token_hash = hash_token(session_token_plain)
     
    
@@ -91,7 +94,7 @@ async def save_device_state(session,request,user_id):
     session.add(ds)
     await session.flush()  # get ds.id
 
-    print("ds_id",ds.id)
+    logger.info("auth.device.session_created", extra={"device_public_id": str(ds.public_id), "ip": ip})
 
     return ds.id,ds.public_id,session_token_plain
         
@@ -99,19 +102,19 @@ async def save_device_state(session,request,user_id):
 async def issue_auth_tokens(session,payload,device_session):
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
-    print(user.public_id)
+    user_public_id = user.public_id
     
     ds=await identify_device_session(session,device_session)
-    print("ds",ds)
 
     if ds["revoked_at"] is not None:
+        logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
 
     session_id = ds["id"]
 
     if not ds["user_id"]:
         await link_user_device(session, session_id, user_id)
-        print("linked user to device session")
+        logger.info("auth.device.linked", extra={"user_public_id": str(user_public_id)})
         
         # await merge_guest_cart_into_user(session, user_id, session_id)
 
@@ -124,7 +127,8 @@ async def issue_auth_tokens(session,payload,device_session):
     # create access token with public_id
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
-     
+    
+    logger.info("auth.tokens.issued", extra={"user_public_id": str(user_public_id)})
     return access_token,refresh_token
 
 
@@ -150,11 +154,10 @@ async def validate_refresh_and_fetch_user(session,plain_token):
         )
     
     res=await session.execute(stmt)
-    print("res",res)
     rows=res.all()
-    print("rows",rows)
 
     if not rows:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "invalid_or_expired_token"})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired refresh token")
     
     first=rows[0]
@@ -173,9 +176,11 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     device_auth = await get_device_auth(session, hashed_token)
 
     if not device_auth:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "invalid_refresh_token"})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid refresh token ")
 
     if device_auth.expires_at <= now + timedelta(minutes=1):
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "token_expired", "expires_at": str(device_auth.expires_at)})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
     
     ds_id = device_auth.device_session_id
@@ -183,11 +188,14 @@ async def validate_refresh_and_update_refresh(session,plain_token):
 
     ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id)
     if not ds_row:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "device_session_invalid"})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session unauthorized or invalid")
     
     if ds_row["revoked_at"] is not None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session revoked")
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "device_session_revoked", "device_public_id": str(ds_row["public_id"])})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session revoked")
     if ds_row["session_expires_at"] and now >= ds_row["session_expires_at"]:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "session_absolute_expiry", "device_public_id": str(ds_row["public_id"])})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session absolute expiry reached")
     
     locked_device_auth = await get_device_auth(session, hashed_token,take_lock=True)
@@ -200,19 +208,25 @@ async def validate_refresh_and_update_refresh(session,plain_token):
         if locked_device_auth.revoked_by in (None, "rotation", "rotated", "rotated_by_device"):
             # assume rotation-style revocation; allow to continue but mark
             benign_revoked = True
+            logger.debug("auth.refresh.benign_rotation", extra={"device_public_id": str(ds_row["public_id"])})
         else:
             # revoked by admin/system or marked as 'reuse_detected' => handle as misuse
             # Revoke entire device session and all its tokens (for security) and return 403
+            logger.error("auth.refresh.token_reuse_detected", extra={
+                "device_public_id": str(ds_row["public_id"]),
+                "revoked_by": locked_device_auth.revoked_by,
+                "security_event": "token_reuse"
+            })
             await revoke_device_and_tokens(session, ds_id, revoked_by="reuse_detetction")
             # optionally alert / record security event here
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="Refresh token reuse detected; session revoked")
 
     if now + timedelta(seconds=40)>= locked_device_auth.expires_at:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "token_near_expiry", "device_public_id": str(ds_row["public_id"])})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
     
-    # rotate: revoke current token and create a new one
-    # await rotate_refresh_token_value(session,locked_device_auth,now)  # not required as we already revoke all existing tokens in save refresh_token
+   
 
     refresh_plain=await save_refresh_token(session,ds_row["id"],user_id,revoked_by="rotation")
 
@@ -226,6 +240,7 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     # fetch user to get public_id, role_version if needed (can cache user metadata to avoid DB hit)
     user_claims=await fetch_user_claims(session,user_id)
 
+    logger.info("auth.refresh.rotated", extra={"user_public_id": user_claims["user_public_id"]})
     return user_claims,refresh_plain
      
     
@@ -258,6 +273,8 @@ async def logout_device_session(session,device_public_id):
     await revoke_device_ref_tokens(session,ds_id)
 
     await session.commit()
+
+    logger.info("auth.logout.device_revoked", extra={"device_public_id": device_public_id})
 
     # invalidate caches (add when integrating Redis)
     # await redis.delete(f"device:{device_public_id}")

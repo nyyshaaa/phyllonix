@@ -5,6 +5,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from backend.auth.repository import get_device_session
 from backend.auth.services import save_device_state
+from backend.common.logging_setup import get_logger
+
+logger = get_logger("chlorophyll.device.middleware")
 
 # this middleware will run only for endpoints that don't require auth otherwise device checks will happen at user authetication stage and ttached to request state
 class DeviceSessionMiddleware(BaseHTTPMiddleware):
@@ -21,9 +24,11 @@ class DeviceSessionMiddleware(BaseHTTPMiddleware):
         device_session_plain = request.cookies.get("session_token") or request.headers.get("X-Device-Token")
         user_id = getattr(request.state, "user_identifier", None)
         
-        # session_id = getattr(request.state, "sid", None)
-        # if session_id:
-        #     return await call_next(request)
+        logger.info("device.middleware.check", extra={
+            "path": request.url.path,
+            "has_device_token": bool(device_session_plain),
+            "has_user_id": bool(user_id)
+        })
 
         async with self.session() as session:
             
@@ -31,12 +36,20 @@ class DeviceSessionMiddleware(BaseHTTPMiddleware):
                 session_data=await get_device_session(session,device_session_plain,user_id)
 
                 if not session_data:
+                    logger.warning("device.middleware.session_not_found", extra={
+                        "path": request.url.path,
+                        "user_id": user_id
+                    })
                     return JSONResponse(
                         {"detail": "User not authorized or session not found"},
                         status_code=status.HTTP_403_FORBIDDEN,
                     )
                 
                 if session_data["revoked_at"] is not None or session_data["expires_at"] is not None:
+                    logger.warning("device.expired_or_revoked",extra={
+                        "path": request.url.path,
+                        "user_id": user_id
+                    })
                     return JSONResponse(
                         {"detail": "Session expired or revoked"},
                         status_code=status.HTTP_403_FORBIDDEN,

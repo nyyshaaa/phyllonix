@@ -1,6 +1,8 @@
 
-
 from backend.config.settings import config_settings
+from backend.common.logging_setup import get_logger
+
+logger = get_logger("chlorophyll.auth")
 
 REFRESH_TOKEN_EXPIRE_DAYS = int(config_settings.REFRESH_TOKEN_EXPIRE)
 

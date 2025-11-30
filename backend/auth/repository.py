@@ -5,13 +5,14 @@ from fastapi import HTTPException,status
 from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE, hash_token, make_refresh_plain, verify_password
-
+from backend.auth.constants import logger
 
 async def user_by_email(session,email):
     stmt=select(Users.id,Users.public_id,Users.role_version).where(Users.email==email,Users.deleted_at.is_(None))
     result=await session.execute(stmt)
     user=result.first()
     if not user:
+        logger.warning("auth.user.not_found", extra={"email": email})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email provided is not valid")
     return user
 
@@ -28,9 +29,9 @@ async def identify_user(session,email,password):
 
     stmt= select(Credential.password_hash).where(Credential.user_id == user.id, Credential.type == CredentialType.PASSWORD)
     pwd_hash = (await session.execute(stmt)).first()[0]
-    print("pwd_hash",pwd_hash)
     
     if not pwd_hash or not verify_password(password, pwd_hash):
+        logger.warning("auth.user.invalid_credentials", extra={"email": email, "user_public_id": str(user.public_id)})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     
     return user
@@ -62,7 +63,6 @@ async def save_refresh_token(session,ds_id,user_id,revoked_by):
     )
     session.add(refresh_row)
     
-    print("refresh plain",refresh_plain)
     return refresh_plain
 
 async def get_user_role_ids(session,user_id):
@@ -154,14 +154,15 @@ async def fetch_user_claims(session,user_id):
         ))
     
     res=await session.execute(stmt)
-    print("res",res)
     rows=res.all()
-    print("rows",rows)
+
+    first=rows[0]
 
     if not rows:
+        logger.warning("auth.user.claims_not_found")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail="User not found")
     
-    first=rows[0]
+    
     role_ids=[r[2] for r in rows]
     
     return {
