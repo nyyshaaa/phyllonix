@@ -436,6 +436,8 @@ class Orders(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     delievered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+    user: "Users" = Relationship(back_populates="orders")   
     
 
 # Order --> OrderItems (1:many)
