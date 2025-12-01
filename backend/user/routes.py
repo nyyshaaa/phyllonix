@@ -5,11 +5,14 @@ import uuid
 from PIL import UnidentifiedImageError
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile , status
 from sqlalchemy.ext.asyncio import  AsyncSession
+from backend.auth.repository import revoke_all_tokens_per_user
+from backend.auth.utils import hash_password, validate_password, verify_password
 from backend.background_workers.thumbnail_task_handler import ThumbnailTaskHandler
+from backend.common.utils import success_response
 from backend.db.dependencies import get_session
 from backend.products.dependency import require_permissions
-from backend.user.models import PromoteIn
-from backend.user.repository import save_user_avatar, userid_by_public_id
+from backend.user.models import ChangePasswordIn, PromoteIn
+from backend.user.repository import get_password_credential, save_user_avatar, update_password, userid_by_public_id
 from backend.user.utils import FileUpload, file_hash
 from backend.config.media_config import media_settings
 
@@ -28,6 +31,33 @@ file_upload=FileUpload()
 @user_router.get("/me")
 async def get_user_profile(request:Request, session: AsyncSession = Depends(get_session)):
     return {"message":request.state.user_identifier}
+
+
+@user_router.post(path="/me/password")
+async def change_password(request:Request, payload: ChangePasswordIn, session: AsyncSession = Depends(get_session)):
+
+    user_identifier = request.state.user_identifier
+
+    is_valid, detail = validate_password(payload.new_password)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    curr_pwd_hash = await get_password_credential(session, user_identifier)
+    if not verify_password(payload.current_password, curr_pwd_hash):
+        raise HTTPException(403, "Current password is incorrect")
+    
+    new_hash = hash_password(payload.new_password)
+    updated_cred_id = await update_password(session, user_identifier, new_hash)
+    if not updated_cred_id:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update password retry")
+    
+    # may also add device check as well by passing device public id for more security
+    await revoke_all_tokens_per_user(session,user_identifier,revoked_by="password_change")
+
+    await session.commit()
+
+    return success_response({"message": "Password changed successfully"}, 200)
+
 
 #*WARN DB Save plus (enqueued)extra image processing are not atomic safe .
 @user_router.post("/me/upload-profile-img")
