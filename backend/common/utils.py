@@ -10,16 +10,18 @@ def now() -> datetime:
 
 
 def build_success(data: Dict[str, Any],
-                  trace_id: Optional[str] = None) -> Dict[str, Any]:
+                  trace_id: Optional[str] = None,request_id: Optional[str] = None,) -> Dict[str, Any]:
     return {
         "status": "ok",
         "data": data,
         "error": None,
         "trace_id": trace_id,
+        "request_id": request_id,
     }
 
 def build_error(code: Union[str, int] = "UNKNOWN_ERROR",
                 details: Optional[Any] = None,
+                request_id: Optional[str] = None,
                 trace_id: Optional[str] = None) -> Dict[str, Any]:
    
     return {
@@ -27,6 +29,7 @@ def build_error(code: Union[str, int] = "UNKNOWN_ERROR",
         "data": None,
         "error": {"code": code, "details": details},
         "trace_id": trace_id,
+        "request_id": request_id,
     }
 
 def json_ok(content: Dict[str, Any], status_code: int = 200,headers = None) -> JSONResponse:
