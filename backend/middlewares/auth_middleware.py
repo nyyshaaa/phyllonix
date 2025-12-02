@@ -5,9 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from backend.user.dependencies import Authentication
 from backend.user.repository import  identify_user_by_pid
-from backend.common.logging_setup import get_logger
-
-logger = get_logger("chlorophyll.auth.middleware")
+from backend.middlewares.constants import logger
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):

@@ -5,9 +5,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from backend.auth.repository import get_device_session
 from backend.auth.services import save_device_state
-from backend.common.logging_setup import get_logger
+from backend.middlewares.constants import logger
 
-logger = get_logger("chlorophyll.device.middleware")
 
 # this middleware will run only for endpoints that don't require auth otherwise device checks will happen at user authetication stage and ttached to request state
 class DeviceSessionMiddleware(BaseHTTPMiddleware):
