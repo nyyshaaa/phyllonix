@@ -10,14 +10,14 @@ from backend.middlewares.constants import logger
 
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimitFixedWindowMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, limit: int = DEFAULT_LIMIT, window: int = DEFAULT_WINDOW):
         super().__init__(app)
         self.limit = limit
         self.window = window
 
     async def dispatch(self, request: Request, call_next):
-        # If a per-route dependency already set request.state.rate_limit, do not double-count.
+        # If a per-route dependency already set request.state.rate_limit, proceed through the request.
         if getattr(request.state, "rate_limit", None):
             response = await call_next(request)
             rl = request.state.rate_limit

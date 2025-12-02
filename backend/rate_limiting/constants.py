@@ -11,7 +11,7 @@ FAIL_OPEN = True                  # if redis is unavailable, allow requests (Tru
 USE_IN_MEMORY_FALLBACK = True     # allow simple local fallback when redis fails (not distributed)
 
 _script_sha: Optional[str] = None
-_redis_lock = asyncio.Lock()
+_asyncio_lock = asyncio.Lock()
 
 
 _in_memory_counters = {}
