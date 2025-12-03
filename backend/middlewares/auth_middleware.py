@@ -17,6 +17,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Skip authentication for excluded paths
         if any(request.url.path.startswith(p) for p in self.paths):
+            print("skipping auth for path:",request.url.path)
             return await call_next(request)
         
         logger.info("auth.middleware.attempt", extra={

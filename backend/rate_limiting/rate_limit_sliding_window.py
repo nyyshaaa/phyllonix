@@ -18,7 +18,7 @@ async def redis_allow_sliding(key: str, limit: int, window_seconds: int):
     # unique member for zadd: use timestamp + random UUID fragment
     member = f"{now_ms}-{uuid.uuid4().hex[:8]}"
 
-    sha = await _ensure_lua_loaded()
+    sha = await _ensure_lua_loaded("sliding_window")
     try:
         if sha:
             res = await rc.evalsha(sha, 1, key, window_ms, limit, now_ms, member)

@@ -1,10 +1,18 @@
 
+from backend.auth.constants import COOKIE_NAME
 from backend.main import app
 import pytest
+import os
+from dotenv import load_dotenv
 from httpx import ASGITransport, AsyncClient
 from asgi_lifespan import LifespanManager
 from test_tokens import current_user_payload,current_user2_payload
 from tests.save_tokens import token_store
+
+load_dotenv()
+
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 url_prefix="/api/v1"
 
@@ -22,6 +30,7 @@ async def ac_client():
 #     return ac_client
 
 current_user_payload = current_user2_payload
+current_user_payload = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
 
 @pytest.mark.asyncio
 async def test_login(ac_client):
@@ -43,12 +52,12 @@ async def test_login(ac_client):
     print("Client cookies:", dict(ac_client.cookies))
 
     # server should set refresh cookie on login
-    refresh_cookie = ac_client.cookies.get("refresh_token")
+    refresh_cookie = ac_client.cookies.get(COOKIE_NAME)
     print("Refresh Token Cookie:", refresh_cookie)
     assert refresh_cookie is not None
 
     # access protected API using access token from response body (or cookie)
-    body = resp.json()
+    body = resp.json()["data"]
     access_token = body.get("message", {}).get("access_token")
     refresh_token = body.get("message", {}).get("refresh_token")
 

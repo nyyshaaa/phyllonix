@@ -7,6 +7,7 @@ from backend.common.custom_exceptions import register_all_exceptions
 from backend.common.logging_setup import setup_logging
 from backend.middlewares.auth_middleware import AuthenticationMiddleware
 from backend.middlewares.device_authentication_middleware import DeviceSessionMiddleware
+from backend.middlewares.rate_limit_middleware import RateLimitMiddleware
 from backend.middlewares.request_id_middleware import RequestIdMiddleware
 from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
@@ -18,6 +19,7 @@ from metrics.custom_instrumentator import instrumentator
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     setup_logging()
+    app.state.rate_limit_strategy = "fixed_window"
     # base_pubsub=BasePubSubWorker()
     # base_pubsub.start()
 
@@ -50,10 +52,9 @@ def create_app():
     
     # app.add_middleware(DeviceSessionMiddleware,session=async_session,paths=[f"{version_prefix}/cart/items",
     #                                                                         f"{version_prefix}/checkout"])
-    
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
                                                                              f"{version_prefix}/health",
-                                                                             f"{version_prefix}/",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
                                                                              f"{version_prefix}/products",                         # for non admin public product routes 

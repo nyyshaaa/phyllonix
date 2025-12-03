@@ -8,15 +8,17 @@ from backend.rate_limiting.rate_limit_sliding_window import redis_allow_sliding
 from backend.rate_limiting.utils import _identifier_from_request
 
 
-def rate_limit_dependency(limit=10, window=60, route_key: Optional[str] = None, rate_lim_style="fixed"):
+def rate_limit_dependency(limit=10, window=60, route_key: Optional[str] = None):
     async def _dep(request: Request):
         if route_key is None:
             route_key = request.url.path
+        rate_lim_style = getattr(request.app.state, "rate_limit_strategy", "fixed_window")
+
         identifier, scope = _identifier_from_request(request)
         key = f"{RATE_LIMIT_PREFIX}:{scope}:{identifier}:{route_key}"
-        if rate_lim_style == "sliding":
+        if rate_lim_style == "sliding_window":
             allowed, remaining, reset = await redis_allow_sliding(key, limit, window)
-        elif rate_lim_style == "fixed":
+        elif rate_lim_style == "fixed_window":
             allowed, remaining, reset = await redis_allow(key, limit, window)
         request.state.rate_limit = {"limit": limit, "remaining": remaining, "reset": reset}
         if not allowed:

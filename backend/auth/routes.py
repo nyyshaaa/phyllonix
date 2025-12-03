@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.constants import COOKIE_NAME, REFRESH_TOKEN_TTL_SECONDS
 from backend.auth.dependencies import device_session_pid, device_session_plain, refresh_token, signup_validation
-from backend.auth.models import ChangePasswordIn, SignIn, SignupIn
+from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
 from backend.common.utils import success_response
 from backend.db.dependencies import get_session

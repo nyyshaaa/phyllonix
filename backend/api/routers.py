@@ -8,6 +8,7 @@ from backend.cart.routes import carts_router
 from backend.orders.routes import orders_router
 from backend.orders.webhooks import webhooks_router
 from backend.common.routes import home_router
+from backend.test_routes.routes import tests_router
 
 
 
@@ -31,3 +32,4 @@ admin_routers = APIRouter(prefix=f"{version_prefix}/admin")
 admin_routers.include_router(prods_admin_router, prefix="/products",tags=["products-admin"])
 admin_routers.include_router(user_admin_router, prefix="/users",tags=["users-admin"])
 admin_routers.include_router(uploads_router, prefix="/uploads",tags=["uploads-admin"])
+admin_routers.include_router(tests_router,prefix="/tests",tags=["tests-admin"])

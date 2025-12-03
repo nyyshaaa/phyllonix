@@ -1,19 +1,25 @@
 
 from time import time
 from fastapi import Request
-from backend.rate_limiting.constants import _asyncio_lock,_in_memory_counters,_in_memory_lock
+from backend.rate_limiting.constants import _asyncio_lock,_in_memory_counters,_in_memory_lock,_script_sha
 from backend.cache._cache import redis_client
 
 from backend.rate_limiting.lua_scripts import LUA_FIXED_WINDOW_INCR_AND_PEXPIRE, LUA_SLIDING_WINDOW
 
-WHICH_RATE_LIMITING_STRATEGY = LUA_SLIDING_WINDOW
 
-
-async def _ensure_lua_loaded():
+async def _ensure_lua_loaded(rate_lim_style: str):
     """
     Load the Lua script into Redis script cache and store SHA.
     Called once lazily.
     """
+    global _script_sha
+
+    WHICH_RATE_LIMITING_STRATEGY = None
+
+    if rate_lim_style == "sliding_window":
+        WHICH_RATE_LIMITING_STRATEGY = LUA_SLIDING_WINDOW
+    elif rate_lim_style == "fixed_window":
+        WHICH_RATE_LIMITING_STRATEGY = LUA_FIXED_WINDOW_INCR_AND_PEXPIRE
    
     if _script_sha:
         return _script_sha
