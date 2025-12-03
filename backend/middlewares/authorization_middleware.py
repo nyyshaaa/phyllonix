@@ -6,9 +6,8 @@ from starlette.responses import JSONResponse
 from backend.schema.full_schema import Users
 from backend.user.dependencies import Authentication
 from backend.user.repository import check_user_roles_version, userid_by_public_id
-from backend.common.logging_setup import get_logger
+from backend.middlewares.constants import logger
 
-logger = get_logger("chlorophyll.auth.middleware")
 
 # for endpoints which require roles verification for optimal security , roles are re-checked in refresh endpoint anyway while providing access tokens.
 class AuthorizationMiddleware(BaseHTTPMiddleware):

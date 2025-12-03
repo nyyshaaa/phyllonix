@@ -36,6 +36,18 @@ async def identify_user(session,email,password):
     
     return user
 
+async def revoke_all_tokens_per_user(session,user_id,revoked_by):
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        update(DeviceAuthToken)
+        .where(
+            DeviceAuthToken.user_id == user_id,
+            DeviceAuthToken.revoked_at.is_(None)
+        )
+        .values(revoked_at = now, revoked_by = revoked_by)
+    )
+
+
 async def save_refresh_token(session,ds_id,user_id,revoked_by):
     now = datetime.now(timezone.utc)
     await session.execute(

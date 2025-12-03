@@ -3,7 +3,7 @@ from fastapi import HTTPException,status
 from sqlalchemy import select, update
 from backend.auth.utils import hash_token
 from backend.common.utils import now
-from backend.schema.full_schema import DeviceSession, UserMedia,Users
+from backend.schema.full_schema import Credential, CredentialType, DeviceSession, UserMedia,Users
 from sqlalchemy.exc import IntegrityError
 
 
@@ -86,6 +86,39 @@ async def identify_user_by_pid(session,user_pid):
     res=await session.execute(stmt)
     user_id=res.scalar_one_or_none()
     return user_id
+
+async def get_password_credential(session,user_id):
+    stmt=select(Credential.password_hash,Credential.revoked_at).where(
+        Credential.user_id==user_id,Credential.credential_type==CredentialType.PASSWORD)
+    res=await session.execute(stmt)
+    res=res.one_or_none()
+    if not res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unexpected,No credential found for user")  # emit events to deal with this
+    if res[1] is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User password credential revoked")
+    
+    return res[0]
+
+async def update_password(session, user_id, new_hash):
+    stmt=(
+        update(Credential)
+        .where(
+            Credential.user_id==user_id,
+            Credential.credential_type==CredentialType.PASSWORD,
+            Credential.revoked_at==None
+        )
+        .values(
+            password_hash=new_hash,
+            updated_at=now()
+        ).returning(Credential.id)
+    )
+    res = await session.execute(stmt)
+    cred_id = res.scalar_one_or_none()
+    return cred_id
+
+
+
+    
 
 
 

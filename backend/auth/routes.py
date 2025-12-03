@@ -111,11 +111,6 @@ async def logout(device_public_id: str = Depends(device_session_pid), session = 
     return res
   
 
-
-
-
-
-
 # -------------------------------------------------------------------------------------------------------------
 
 @auth_router.get("/retries_cb_test")

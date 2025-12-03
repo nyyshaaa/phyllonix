@@ -2,17 +2,13 @@ import logging
 import sys
 import json
 import re
-import contextvars
 from typing import Any, Dict, Optional
 from logging.handlers import QueueHandler, QueueListener
 from queue import Queue
 from backend.config.admin_config import admin_config
+from backend.common.constants import request_id_ctx
 
 ENV = getattr(admin_config, "ENV", "dev").lower()
-
-# Context variables for request and trace id
-request_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_id", default=None)
-# trace_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("trace_id", default=None)
 
 
 def sanitize_message_text(msg: str) -> str:
