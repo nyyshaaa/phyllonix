@@ -20,12 +20,6 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
 url_prefix="/api/v1"
 
-@pytest.fixture
-async def ac_client():
-    async with LifespanManager(app=app):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            yield ac
-
 @pytest_asyncio.fixture(autouse=True)
 async def clear_and_close_redis():
     # ensure clean slate
@@ -43,13 +37,16 @@ user_tokens = token_store.get_user_tokens(current_user_payload["email"])
 headers = {"Authorization" : f"Bearer {user_tokens["access_token"]}"}
 
 @pytest.mark.asyncio
-async def test_sliding_window_sequential_and_reset():
+async def test_sliding_window_sequential_and_reset(monkeypatch):
 
     limit = 4
     window = 3
-    app.state.rate_limit = {"limit": limit, "window": window}
-    app.state.rate_limit_strategy = "sliding_window"
+    # app.state.rate_limit = {"limit": limit, "window": window}
+    # app.state.rate_limit_strategy = "sliding_window"
+    monkeypatch.setattr(app.state, "rate_limit", {"limit": limit, "window": window}, raising=False)
+    monkeypatch.setattr(app.state, "rate_limit_strategy", "sliding_window", raising=False)
     
+   
     async with LifespanManager(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # make `limit` quick requests -> allowed
@@ -72,16 +69,21 @@ async def test_sliding_window_sequential_and_reset():
             # now should allow
             r2 = await client.get(f"{url_prefix}/admin/tests/rate-limit-test",headers=headers)
             assert r2.status_code == 200
+    
+    # delattr(app.state, "rate_limit")
 
 
 @pytest.mark.asyncio
-async def test_sliding_window_concurrent():
+async def test_sliding_window_concurrent(monkeypatch):
    
     limit = 4
     window = 3
-    app.state.rate_limit = {"limit": limit, "window": window}
-    app.state.rate_limit_strategy = "sliding_window"
+    # app.state.rate_limit = {"limit": limit, "window": window}
+    # app.state.rate_limit_strategy = "sliding_window"
+    monkeypatch.setattr(app.state, "rate_limit", {"limit": limit, "window": window}, raising=False)
+    monkeypatch.setattr(app.state, "rate_limit_strategy", "sliding_window", raising=False)
   
+    
     async with LifespanManager(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             async def do_get():
@@ -94,3 +96,5 @@ async def test_sliding_window_concurrent():
             fail = [r for r in resps if r.status_code == 429]
             assert len(success) <= limit
             assert len(success) + len(fail) == 10
+  
+    # delattr(app.state, "rate_limit")

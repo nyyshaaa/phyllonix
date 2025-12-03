@@ -20,12 +20,6 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
 url_prefix="/api/v1"
 
-@pytest.fixture
-async def ac_client():
-    async with LifespanManager(app=app):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            yield ac
-
 # @pytest_asyncio.fixture()
 # async def redis_client():
 #     r = redis_client
