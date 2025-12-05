@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.services import save_device_state
 from backend.common.constants import SESSION_TOKEN_COOKIE_MAX_AGE
 from backend.common.retries import retry_async
-from backend.common.utils import build_success, json_ok
+from backend.common.utils import build_success, json_ok, success_response
 from backend.db.dependencies import get_session
 from fastapi.responses import JSONResponse
 from backend.config.admin_config import admin_config
@@ -35,6 +35,8 @@ async def session_init(
         content=resp,
         status_code=200
     )
+    response = success_response(resp, 200)
+    
     response.set_cookie(
         key="session_token",
         value=ds_token_plain,

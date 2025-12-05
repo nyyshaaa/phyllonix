@@ -5,7 +5,7 @@ from fastapi.params import Cookie
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
-from backend.auth.constants import COOKIE_NAME, REFRESH_TOKEN_TTL_SECONDS
+from backend.auth.constants import ACCESS_COOKIE_NAME, ACCESS_TOKEN_TTL_SECONDS, COOKIE_NAME, REFRESH_TOKEN_TTL_SECONDS
 from backend.auth.dependencies import device_session_pid, device_session_plain, refresh_token, signup_validation
 from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
@@ -18,6 +18,7 @@ from backend.config.admin_config import admin_config
 from backend.auth.constants import logger
 
 current_env = admin_config.ENV
+secure_flag = True if current_env == "prod" else False
 
 auth_router = APIRouter()
 
@@ -43,8 +44,14 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
 
     response = success_response(resp, 200)
 
-    response.set_cookie(COOKIE_NAME, refresh, httponly=True, secure=True, path="/auth/refresh",
+    response.set_cookie(COOKIE_NAME, refresh, httponly=True, secure=secure_flag, path="/auth/refresh",
                         max_age=int(REFRESH_TOKEN_TTL_SECONDS), samesite="Lax")
+    
+    #** to use tokens in browser for now until frontend integration is done .
+    response.set_cookie(
+        key=ACCESS_COOKIE_NAME,value=access,httponly=True,secure=secure_flag,path="/",                             
+        max_age=int(ACCESS_TOKEN_TTL_SECONDS),samesite="Lax",
+    )
 
     logger.info("login.success", extra={"email": payload.email})
     return response
@@ -88,6 +95,11 @@ async def refresh_auth(refresh_token : str = Depends(refresh_token),
     
     response.set_cookie(COOKIE_NAME, refresh_plain, httponly=True, secure=True, path="/auth/refresh",
                         max_age=REFRESH_TOKEN_TTL_SECONDS, samesite="Lax")
+    
+    response.set_cookie(
+        key=ACCESS_COOKIE_NAME,value=access,httponly=True,secure=secure_flag,path="/",                             
+        max_age=int(ACCESS_TOKEN_TTL_SECONDS),samesite="Lax",
+    )
 
     logger.info("refresh.success", extra={"user_public_id": claims_dict.get("user_public_id")})
     return response
@@ -104,8 +116,9 @@ async def logout(device_public_id: str = Depends(device_session_pid), session = 
     res = success_response({"message": "Logged out successfully."}, 200)
     
     res.delete_cookie(key=COOKIE_NAME, path="/auth/refresh")
-    res.delete_cookie(key="session_token", path="/")
     res.delete_cookie(key="device_public_id", path="/")
+
+    res.delete_cookie(ACCESS_COOKIE_NAME, path="/")
 
     logger.info("logout.success", extra={"device_public_id": device_public_id})
     return res

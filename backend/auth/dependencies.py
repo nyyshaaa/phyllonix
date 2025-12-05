@@ -57,9 +57,6 @@ async def signup_validation(payload=Body(...)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     
     return payload
-    
-#** dev mode compatible until frontend is added
-#** change it to cookies for mobile and web browsers . 
 
 def device_session_plain(device_header: Optional[str] = Header(None, alias="X-Device-Token"),
                          device_cookie:Optional[str]=Cookie(None,alias="session_token")):

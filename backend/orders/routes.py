@@ -139,6 +139,9 @@ async def place_order(request:Request,checkout_id: str,
                 payload = build_success(order_data_by_ik, trace_id=None)
                 return json_ok(payload)
             ik_id = order_data_by_ik["ik_id"]
+    
+    #** should short circuit here for concurrent requests(or retries) instead of allowing to proceed through . 
+    # and if client receives that shortcircuited response due to timing of requests it can poll status .
 
     order_totals=compute_final_total(items,payment_method)
     
