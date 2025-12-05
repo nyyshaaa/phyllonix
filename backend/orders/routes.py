@@ -12,7 +12,7 @@ from backend.orders.constants import RESERVATION_TTL_MINUTES
 from backend.orders.repository import capture_cart_snapshot, compute_final_total, get_checkout_details, get_or_create_checkout_session, if_cart_exists, place_order_with_items, record_order_idempotency, remove_items_from_cart, reserve_inventory, short_circuit_concurrent_req, spc_by_ikey, update_checkout_activeness, update_checkout_cart_n_paymethod, validate_checkout_get_items_paymethod
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
-from backend.schema.full_schema import Payment
+from backend.schema.full_schema import Orders, Payment
 
 
 orders_router=APIRouter()
@@ -210,17 +210,44 @@ TEST_HTML_TEMPLATE = """<!doctype html>
 </html>
 """
 
-@orders_router.get("/test/checkout/{order_public_id}", response_class=HTMLResponse)
-async def serve_test_checkout(request: Request, order_public_id: str, auth_token : str ,session = Depends(get_session)):
+@orders_router.get("checkout/{provider_order_public_id}/secure-process", response_class=HTMLResponse)
+async def serve_test_checkout(request: Request, provider_order_public_id: str, session = Depends(get_session)):
+    user_identifier=request.state.user_identifier
+    
+    async with session as s:
+        stmt = (
+                    select(Payment.provider_order_id, Payment.amount, Payment.currency, Orders.user_id)
+                    .join(Orders, Payment.order_id == Orders.id)
+                    .where(Payment.provider_order_id == provider_order_public_id)
+                )
+        res = await s.execute(stmt)
+        row = res.one_or_none()
+        if row is None:
+            #** add for reconcilation 
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="payment record not found for provided provider public order id ")
+        provider_order_id, amount, currency ,order_user_id= row
+
+    if order_user_id is None or user_identifier != order_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+    RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY
+
+    html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_order_id).replace("{{AMOUNT}}", str(int(amount)))
+    return HTMLResponse(html)
+
+    
+
+@orders_router.get("/test/checkout/{provider_order_public_id}", response_class=HTMLResponse)
+async def serve_test_checkout(request: Request, provider_order_public_id: str, auth_token : str ,session = Depends(get_session)):
     # 1) Ensure user is authenticated (or adjust logic if admin/testing)
     # user_id = getattr(request.state, "user_identifier", None)
     # if not user_id:
     #     # if you want to allow local dev without auth, you can skip this check
     #     raise HTTPException(status_code=401, detail="login required to open test checkout")
 
-    # 2) load provider order id and amount from DB by order_public_id
+    # 2) load provider order id and amount from DB by provider_order_public_id
     async with session as s:
-        stmt = select(Payment.provider_order_id, Payment.amount, Payment.currency).where(Payment.provider_order_id == order_public_id).limit(1)
+        stmt = select(Payment.provider_order_id, Payment.amount, Payment.currency).where(Payment.provider_order_id == provider_order_public_id).limit(1)
         res = await s.execute(stmt)
         row = res.one_or_none()
         if row is None:

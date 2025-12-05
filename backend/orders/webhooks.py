@@ -13,7 +13,6 @@ from backend.schema.full_schema import OrderStatus, PaymentEventStatus
 
 webhooks_router=APIRouter()
 
-@webhooks_router.post("/pay-confirm")
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     body = await request.body()
     app=request.app

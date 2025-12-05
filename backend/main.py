@@ -1,20 +1,25 @@
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from backend.api.routers import public_routers,admin_routers
 from backend.auth.routes import auth_router
 from backend.common.custom_exceptions import register_all_exceptions
 from backend.common.logging_setup import setup_logging
+from backend.db.dependencies import get_session
 from backend.middlewares.auth_middleware import AuthenticationMiddleware
 from backend.middlewares.device_authentication_middleware import DeviceSessionMiddleware
 from backend.middlewares.rate_limit_middleware import RateLimitMiddleware
 from backend.middlewares.request_id_middleware import RequestIdMiddleware
+from backend.orders.webhooks import razorpay_webhook
 from backend.user.routes import user_router
 from backend.db.connection import async_engine,async_session
 from backend.api.__init__ import version_prefix,cur_version
 from backend.background_workers.base_pubsub_interface import BasePubSubWorker
 from backend.config.admin_config import admin_config
 from metrics.custom_instrumentator import instrumentator
+from backend.config.settings import config_settings
+
+rzpay_webhook_path = config_settings.RZPAY_WEBHOOK_PATH
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
@@ -41,6 +46,9 @@ def create_app():
         lifespan=app_lifespan)
     
     app.include_router(public_routers)
+
+    app.add_api_route(rzpay_webhook_path,razorpay_webhook,methods=["POST"],name="razorpay_webhook",dependencies=[Depends(get_session)] 
+    )
      
     if admin_config.ENABLE_ADMIN:
         # extra safety: require an ADMIN_SECRET to be set when enabling in non-dev envs
