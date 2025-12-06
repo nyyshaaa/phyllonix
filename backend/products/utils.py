@@ -9,11 +9,10 @@ import os
 import time
 from typing import Optional, Tuple
 from uuid import UUID
-
 from fastapi import HTTPException,status
+from backend.config.settings import config_settings
 
-#** change this secret
-CURSOR_SECRET = os.getenv("PHYL_CURSOR_SECRET").encode()
+CURSOR_SECRET = config_settings.PHYL_CURSOR_SECRET
 
 def _sign(payload_bytes: bytes) -> str:
     sig = hmac.new(CURSOR_SECRET, payload_bytes, hashlib.sha256).digest()

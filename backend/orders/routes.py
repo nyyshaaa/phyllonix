@@ -13,7 +13,6 @@ from backend.orders.repository import capture_cart_snapshot, compute_final_total
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
 from backend.schema.full_schema import Orders, Payment
-from backend.test_routes import tests_router
 from backend.config.admin_config import admin_config
 
 current_env = admin_config.ENV
