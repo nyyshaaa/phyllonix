@@ -8,15 +8,12 @@ from backend.config.settings import config_settings
 
 
 class Authentication(HTTPBearer):
-    def __init__(self,auto_error=False): 
+    def __init__(self,auto_error=True): 
         super().__init__(auto_error=auto_error)
 
     async def __call__(self, request:Request) -> http.HTTPAuthorizationCredentials|None:
         auth_creds=await super().__call__(request)
         token=auth_creds.credentials
-
-        if not token:
-            token = request.cookies.get(ACCESS_COOKIE_NAME)
 
         decoded_token=self.decode_token(token)
 

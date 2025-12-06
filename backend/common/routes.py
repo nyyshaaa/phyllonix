@@ -1,6 +1,6 @@
 from select import select
 from typing import Optional
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.params import Header
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.services import save_device_state
@@ -68,8 +68,7 @@ async def health_check(session:AsyncSession=Depends(get_session)):
     
     try:
         res=await session.execute(stmt)
-        print(res.scalar_one_or_none())
     except Exception as e:
-        raise e
-
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database connection error")
+    
     return {"status": "healthy"}

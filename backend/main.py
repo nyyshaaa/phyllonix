@@ -25,10 +25,10 @@ rzpay_webhook_path = config_settings.RZPAY_WEBHOOK_PATH
 async def app_lifespan(app: FastAPI):
     setup_logging()
     app.state.rate_limit_strategy = "fixed_window"
-    # base_pubsub=BasePubSubWorker()
-    # base_pubsub.start()
+    base_pubsub=BasePubSubWorker()
+    base_pubsub.start()
 
-    # app.state.pubsub_pub=base_pubsub.publish
+    app.state.pubsub_pub=base_pubsub.publish
 
     try:
         yield
