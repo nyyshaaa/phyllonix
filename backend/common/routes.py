@@ -1,7 +1,8 @@
-from select import select
+
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.params import Header
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.services import save_device_state
 from backend.common.constants import SESSION_TOKEN_COOKIE_MAX_AGE
