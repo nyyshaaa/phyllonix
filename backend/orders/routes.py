@@ -13,6 +13,10 @@ from backend.orders.repository import capture_cart_snapshot, compute_final_total
 from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
 from backend.schema.full_schema import Orders, Payment
+from backend.test_routes import tests_router
+from backend.config.admin_config import admin_config
+
+current_env = admin_config.ENV
 
 
 orders_router=APIRouter()
@@ -235,17 +239,12 @@ async def serve_test_checkout(request: Request, provider_order_public_id: str, s
     html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_order_id).replace("{{AMOUNT}}", str(int(amount)))
     return HTMLResponse(html)
 
+
     
-
+# only in dev test mode 
 @orders_router.get("/test/checkout/{provider_order_public_id}", response_class=HTMLResponse)
-async def serve_test_checkout(request: Request, provider_order_public_id: str, auth_token : str ,session = Depends(get_session)):
-    # 1) Ensure user is authenticated (or adjust logic if admin/testing)
-    # user_id = getattr(request.state, "user_identifier", None)
-    # if not user_id:
-    #     # if you want to allow local dev without auth, you can skip this check
-    #     raise HTTPException(status_code=401, detail="login required to open test checkout")
-
-    # 2) load provider order id and amount from DB by provider_order_public_id
+async def test_checkout_upi_app_sim(request: Request, provider_order_public_id: str, auth_token : str ,session = Depends(get_session)):
+   
     async with session as s:
         stmt = select(Payment.provider_order_id, Payment.amount, Payment.currency).where(Payment.provider_order_id == provider_order_public_id).limit(1)
         res = await s.execute(stmt)
@@ -258,11 +257,13 @@ async def serve_test_checkout(request: Request, provider_order_public_id: str, a
         print("provider id no ")
         raise HTTPException(status_code=400, detail="provider_payment_id missing; create payment intent first")
 
-    # 3) get Razorpay public key from config/env
-    RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY # or read from env/config
+    RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY
 
-    # 4) render HTML with values injected
     html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_order_id).replace("{{AMOUNT}}", str(int(amount)))
     return HTMLResponse(html)
 
+if current_env == "dev":
+    orders_router.add_api_route("/test/checkout/{provider_order_public_id}",
+                                test_checkout_upi_app_sim,methods=["GET"],name="UPI_APP_TEST_CHECKOUT",dependencies=[Depends(get_session)],
+                                response_class=HTMLResponse)
     
