@@ -18,7 +18,7 @@ from backend.config.admin_config import admin_config
 from backend.auth.constants import logger
 
 current_env = admin_config.ENV
-secure_flag = True if current_env == "prod" else False
+secure_flag = False if current_env == "dev" else True
 
 auth_router = APIRouter()
 

@@ -223,12 +223,12 @@ async def serve_test_checkout(request: Request, provider_order_public_id: str, s
         res = await s.execute(stmt)
         row = res.one_or_none()
         if row is None:
-            #** add for reconcilation 
+            #** add for reconcilation (delete earlier pending payment rows ) as it cannot be attempted without valid record
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="payment record not found for provided provider public order id ")
         provider_order_id, amount, currency ,order_user_id= row
 
     if order_user_id is None or user_identifier != order_user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorizes user")
 
     RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY
 

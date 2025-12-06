@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import HTTPException,status
 
 #** change this secret
-CURSOR_SECRET = os.getenv("PHYL_CURSOR_SECRET", "dev-secret-change-me").encode()
+CURSOR_SECRET = os.getenv("PHYL_CURSOR_SECRET").encode()
 
 def _sign(payload_bytes: bytes) -> str:
     sig = hmac.new(CURSOR_SECRET, payload_bytes, hashlib.sha256).digest()

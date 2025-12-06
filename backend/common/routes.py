@@ -12,8 +12,10 @@ from fastapi.responses import JSONResponse
 from backend.config.admin_config import admin_config
 
 current_env = admin_config.ENV
+secure_flag = False if current_env == "dev" else True
 
 home_router = APIRouter()
+
 
 @home_router.post("/session/init")
 async def session_init(
@@ -41,7 +43,7 @@ async def session_init(
         key="session_token",
         value=ds_token_plain,
         httponly=True,
-        secure=True,
+        secure=secure_flag,
         samesite="Lax",
         path="/",
         max_age=SESSION_TOKEN_COOKIE_MAX_AGE
