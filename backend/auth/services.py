@@ -10,7 +10,6 @@ from backend.config.settings import config_settings
 from backend.auth.constants import logger
 
 async def link_user_role(session,user_id):
-    # ensure user role exists (idempotent)
     q = select(Role).where(Role.name == config_settings.DEFAULT_ROLE)
     role = (await session.execute(q)).scalar_one_or_none()
     if not role:
@@ -21,7 +20,6 @@ async def link_user_role(session,user_id):
     ur = UserRole(user_id=user_id, role_id=role.id)
     session.add(ur)
 
-#* promote roles via a separate endpoint 
 
 
 async def create_user(session,payload):
@@ -31,24 +29,17 @@ async def create_user(session,payload):
         logger.warning("user.duplicate", extra={"email": payload["email"]})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with email already exists")
 
-    # create user + credential + default role (atomic)
     try:
-        # create user row
         user = Users(email=payload["email"], name=payload.get("name"))
         session.add(user)
-        await session.flush()  # get user.id
-
+        await session.flush() 
         user_id=user.id
 
         pwd_hash = hash_password(payload["password"])
-        # create password credential
         cred = Credential(user_id=user_id, type=CredentialType.PASSWORD, provider=config_settings.SELF_PROVIDER, password_hash=pwd_hash)
         session.add(cred)
         
-        # link user role
         await link_user_role(session,user_id)
-
-        #* default email_verified = False in Users model (for email verifications)
         
         await session.commit()
         await session.refresh(user)
@@ -69,10 +60,7 @@ async def save_device_state(session,request,user_id):
         ip = request.client.host
 
     device_name = (ua.split(")")[0] if ua else "unknown")
-    device_type = "browser"
-
-    # create device session row + session token (opaque) and store hashed form
-     
+    device_type = "browser"     
 
     session_token_plain = make_session_token_plain()
     session_token_hash = hash_token(session_token_plain)
@@ -92,7 +80,7 @@ async def save_device_state(session,request,user_id):
         session_expires_at=datetime.now(timezone.utc) + timedelta(days=int(config_settings.DEVICE_SESSION_EXPIRE_DAYS))
     )
     session.add(ds)
-    await session.flush()  # get ds.id
+    await session.flush()
 
     logger.info("auth.device.session_created", extra={"device_public_id": str(ds.public_id), "ip": ip})
 
@@ -121,10 +109,6 @@ async def issue_auth_tokens(session,payload,device_session):
     refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
     await session.commit()
 
-    # Cache: set device:{device_public_id} in Redis (cache-aside). (ADD LATER)
-    # await redis.set(f"device:{device_public_id}", {...}, ex=SLIDING_WINDOW_seconds)
-
-    # create access token with public_id
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
     
@@ -137,7 +121,6 @@ async def validate_refresh_and_fetch_user(session,plain_token):
     hashed_token=hash_token(plain_token)
     now=datetime.now(timezone.utc)
 
-    # Single-query join: fetch token + user + role rows in one go
     stmt = (
         select(
             Users.public_id.label("public_id"),
@@ -229,15 +212,9 @@ async def validate_refresh_and_update_refresh(session,plain_token):
    
 
     refresh_plain=await save_refresh_token(session,ds_row["id"],user_id,revoked_by="rotation")
-
     await update_device_session_last_activity(session, ds_row["id"], now)
-    
     await session.commit()
 
-    # Post-commit: invalidate device cache (hook for your Redis)
-    # await redis.delete(f"device:{ds.public_id}")   # add when you wire redis
-
-    # fetch user to get public_id, role_version if needed (can cache user metadata to avoid DB hit)
     user_claims=await fetch_user_claims(session,user_id)
 
     logger.info("auth.refresh.rotated", extra={"user_public_id": user_claims["user_public_id"]})
@@ -257,7 +234,6 @@ async def get_or_create_device_session(session,request,device_session_plain,user
     if device_session_plain:
         session_id=await identify_device_session(session,device_session_plain)
 
-    # create device session 
     if not device_session_plain :
         session_id=await save_device_state(session,request,user_id)
 
@@ -269,16 +245,12 @@ async def logout_device_session(session,device_public_id):
 
     ds_id = revoke_device_nget_id(session, device_public_id)
 
-    # revoke tokens atomically
     await revoke_device_ref_tokens(session,ds_id)
 
     await session.commit()
 
     logger.info("auth.logout.device_revoked", extra={"device_public_id": device_public_id})
 
-    # invalidate caches (add when integrating Redis)
-    # await redis.delete(f"device:{device_public_id}")
-    # optionally clear refresh cookie: Set-Cookie header from the client or server response
 
 
 

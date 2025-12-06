@@ -102,7 +102,6 @@ class OutboxPublisher:
                     return False
                 
                 lease_until = datetime.now(timezone.utc) + timedelta(seconds=self.lock_seconds)
-                # update rows' locked_until using ORM update to avoid loading full objects
                 claimed_ids = [r[0] for r in rows]
                 await session.execute(
                     update(OutboxEvent)

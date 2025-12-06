@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     REDIS_HOST : str
     REDIS_PORT : int
     REDIS_DB : int
+    RZPAY_WEBHOOK_PATH : str
+    PHYL_CURSOR_SECRET : str
 
     class Config:
         env_file = ".env"

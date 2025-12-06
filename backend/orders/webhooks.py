@@ -9,20 +9,20 @@ from backend.orders.repository import create_commit_intent, emit_outbox_event, u
 from backend.orders.services import  load_order_items_pid_qty, mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_error_recorded, webhook_event_already_processed
 from backend.orders.utils import pay_order_status_util
 from backend.schema.full_schema import OrderStatus, PaymentEventStatus
-
+from backend.config.admin_config import admin_config
 
 webhooks_router=APIRouter()
 
-@webhooks_router.post("/pay-confirm")
+EXPECTED_ENV = admin_config.ENV
+
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     body = await request.body()
     app=request.app
-    # verify signature
-    await verify_razorpay_signature(request, body)
+    # verify signature ,(save , respond 200 ok to psp and reconcile for errored cases after few retries)
+    await verify_razorpay_signature(request, session,body)
     print("hereee")
     payload = json.loads(body)
     provider_event_id = request.headers.get("X-Razorpay-Event-Id")
-
 
     if not provider_event_id:
         # bad payload; acknowledge to avoid retries , reconcile 

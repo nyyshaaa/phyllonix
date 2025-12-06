@@ -62,7 +62,7 @@ class JSONFormatter(logging.Formatter):
         # sanitize in production: show first 8 chars only
         for field in ["user_public_id", "public_id", "device_public_id"]:
             if field in extra_fields:
-                if ENV == "prod":
+                if ENV != "dev":
                     try:
                         val = str(extra_fields[field])
                         if len(val) > 12:  # UUID is typically 36 chars
@@ -79,7 +79,7 @@ class JSONFormatter(logging.Formatter):
             log_data["exception"] = self.formatException(record.exc_info)
 
         # final sanitization at message-level in prod
-        if ENV == "prod":
+        if ENV != "dev":
             log_data["message"] = sanitize_message_text(log_data.get("message", ""))
 
         return json.dumps(log_data, default=str)
@@ -97,7 +97,7 @@ class SecurityFilter(logging.Filter):
         # Sanitize msg text (best-effort)
         try:
             msg = record.getMessage()
-            if ENV == "prod":
+            if ENV != "dev":
                 # redact any obvious patterns in the message string
                 record.msg = sanitize_message_text(msg)
                 record.args = ()
@@ -133,7 +133,7 @@ def setup_logging():
 
     # Console handler writes to stdout (the queue listener will handle it)
     console_handler = logging.StreamHandler(sys.stdout)
-    if ENV == "prod":
+    if ENV != "dev":
         console_handler.setFormatter(JSONFormatter())
         console_handler.addFilter(SecurityFilter())
     else:
@@ -151,8 +151,8 @@ def setup_logging():
     _queue_listener.start()
 
     # silence noisy third-party loggers in prod
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING if ENV == "prod" else logging.INFO)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING if ENV == "prod" else logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING if ENV != "dev" else logging.INFO)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING if ENV != "dev" else logging.INFO)
 
     app_logger = logging.getLogger("chlorophyll.app")
     return app_logger

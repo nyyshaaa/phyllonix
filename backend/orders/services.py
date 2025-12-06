@@ -16,6 +16,8 @@ from backend.orders.repository import items_avblty, record_payment_attempt, upda
 from backend.config.settings import config_settings
 from backend.schema.full_schema import OrderItem, Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentEventStatus, PaymentStatus, PaymentWebhookEvent
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from backend.config.admin_config import admin_config
+from backend.orders.constants import logger
 
 PSP_API_BASE=config_settings.RZPAY_GATEWAY_URL
 PSP_KEY_ID=config_settings.RZPAY_KEY
@@ -25,6 +27,7 @@ TRANSIENT_EXCEPTIONS = (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProto
 DEFAULT_RETRIES=3
 DEFAULT_BACKOFF_BASE = 0.5 
 
+current_env = admin_config.ENV
 
 async def validate_items_avblty(session,cart_items):
     
@@ -90,8 +93,8 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
     currency = "INR"
     # receipt = f"order_{uuid.uuid4().hex[:20]}"
     receipt = f"order_{str(order_data['order_public_id'])[:20]}"
-    notes = {"order_public_id": str(order_data["order_public_id"]), "payment_public_id": str(pay_public_id)}
-    
+    notes = {"order_public_id": str(order_data["order_public_id"]), "payment_public_id": str(pay_public_id)}  
+
     pay_int_id= await pay_id_by_public_payid(session,pay_public_id)
     create_psp_order = retry_payments(create_psp_order,pay_int_id,session) 
     psp_resp,psp_non_retryable_exc,psp_retryable_exc,current_attempt_no= await create_psp_order(amount_paise=amount_in_paise, currency=currency, 
@@ -207,14 +210,18 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
 
     return retry_wrapper
 
-async def verify_razorpay_signature(request: Request, body: bytes):
+async def verify_razorpay_signature(request: Request, session, body: bytes):
     sig = request.headers.get("X-Razorpay-Signature")
-    print("sig",sig)
     if not sig:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing signature")
+        logger.error("razorpay_webhook.missing_signature")
+        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_missing_signature")
+        return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
     expected = hmac.new(RAZORPAY_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
-        raise HTTPException(status_code=400, detail="invalid signature")
+        logger.error("razorpay_webhook.invalid_signature")
+        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_invalid_signature")
+        return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
+    
 
 
 async def webhook_event_already_processed(session, provider_event_id: str , provider ) -> bool:
