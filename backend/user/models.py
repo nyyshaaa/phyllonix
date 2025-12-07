@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class PromoteIn(BaseModel):
-    role_name: List[str]
+    role_names: List[str]
     reason: str | None = None
 
 class ChangePasswordIn(BaseModel):

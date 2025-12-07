@@ -1,9 +1,10 @@
 
+from typing import List
 from fastapi import HTTPException,status
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from backend.auth.utils import hash_token
 from backend.common.utils import now
-from backend.schema.full_schema import Credential, CredentialType, DeviceSession, UserMedia,Users
+from backend.schema.full_schema import Credential, CredentialType, DeviceSession, Role, RoleAudit, UserMedia, UserRole,Users
 from sqlalchemy.exc import IntegrityError
 
 
@@ -89,7 +90,7 @@ async def identify_user_by_pid(session,user_pid):
 
 async def get_password_credential(session,user_id):
     stmt=select(Credential.password_hash,Credential.revoked_at).where(
-        Credential.user_id==user_id,Credential.credential_type==CredentialType.PASSWORD)
+        Credential.user_id==user_id,Credential.type==CredentialType.PASSWORD)
     res=await session.execute(stmt)
     res=res.one_or_none()
     if not res:
@@ -104,7 +105,7 @@ async def update_password(session, user_id, new_hash):
         update(Credential)
         .where(
             Credential.user_id==user_id,
-            Credential.credential_type==CredentialType.PASSWORD,
+            Credential.type==CredentialType.PASSWORD,
             Credential.revoked_at==None
         )
         .values(
@@ -115,6 +116,46 @@ async def update_password(session, user_id, new_hash):
     res = await session.execute(stmt)
     cred_id = res.scalar_one_or_none()
     return cred_id
+
+async def get_role_ids_by_names(session, role_names: List[str]):
+    """Get role IDs from role names"""
+    stmt = select(Role.id, Role.name).where(Role.name.in_(role_names))
+    result = await session.execute(stmt)
+    roles = result.scalars().all()
+    if not roles or len(roles) != len(role_names):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"One or more role names are invalid"
+        )
+    role_map = {name: role_id for role_id, name in roles}
+    return role_map
+
+
+async def change_user_roles(session, user_id: int, cur_role_ids,new_role_names: List[str], actor_user_id: int, reason: str | None = None):
+    """Change user roles and create audit entry"""
+    new_role_names_ids_map = await get_role_ids_by_names(session, new_role_names)
+    if cur_role_ids:
+        delete_stmt = delete(UserRole).where(
+            UserRole.user_id == user_id,
+            UserRole.role_id.in_(cur_role_ids)
+        )
+        await session.execute(delete_stmt)
+    
+    # Add new roles
+    for role_name in new_role_names:
+        role_id = new_role_names_ids_map[role_name]
+        new_user_role = UserRole(user_id=user_id, role_id=role_id)
+        session.add(new_user_role)
+    
+    # Increment role_version
+    update_stmt = (
+        update(Users)
+        .where(Users.id == user_id)
+        .values(role_version=Users.role_version + 1, updated_at=now())
+    )
+    await session.execute(update_stmt)
+    
+    await session.flush()
 
 
 

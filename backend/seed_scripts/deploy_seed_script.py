@@ -51,6 +51,7 @@ async_session_maker=async_sessionmaker(bind=async_engine,class_=AsyncSession,exp
 
 NUM_USERS = 1000
 NUM_PRODUCTS = 500
+NUM_SESSIONS = 200
 BATCH_SIZE = 200
 PRODUCT_BATCH_COMMIT = 200 
 
@@ -283,7 +284,14 @@ async def seed_device_sessions(session: AsyncSession):
     """
     Optional: create some fake device sessions for a subset of users.
     """
-    users = (await session.execute(select(Users))).scalars.all()
+    result = await session.execute(select(func.count()).select_from(DeviceSession))
+    existing_count = result.scalar_one()
+
+    if existing_count >= NUM_SESSIONS:
+        print(f"{existing_count} device sessions already exist. Skipping device session seeding.")
+        return
+    
+    users = (await session.execute(select(Users).limit(300))).scalars().all()
     if not users:
         print("No users found, skipping DeviceSession seeding")
         return

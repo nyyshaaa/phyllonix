@@ -110,7 +110,7 @@ async def issue_auth_tokens(session,payload,device_session):
     await session.commit()
 
     user_roles=await get_user_role_ids(session,user_id)
-    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version)
+    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=ds["public_id"])
     
     logger.info("auth.tokens.issued", extra={"user_public_id": str(user_public_id)})
     return access_token,refresh_token
@@ -216,7 +216,7 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     await session.commit()
 
     user_claims=await fetch_user_claims(session,user_id)
-
+    user_claims["session_pid"]=ds_row["public_id"]
     logger.info("auth.refresh.rotated", extra={"user_public_id": user_claims["user_public_id"]})
     return user_claims,refresh_plain
      
@@ -226,7 +226,7 @@ async def validate_refresh_and_update_refresh(session,plain_token):
 async def provide_access_token(claims_dict):
     
     access_token = create_access_token(user_id=claims_dict["user_public_id"], 
-                                       user_roles=claims_dict["role_ids"],role_version=claims_dict["role_version"])
+                                       user_roles=claims_dict["role_ids"],role_version=claims_dict["role_version"],session_pid=claims_dict["session_pid"])
     return access_token
     
 

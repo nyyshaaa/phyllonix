@@ -84,19 +84,18 @@ async def get_user_role_ids(session,user_id):
 
 async def identify_device_session(session,device_session):
     device_session_hash=hash_token(device_session)
-    stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.user_id
+    stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.user_id,DeviceSession.public_id
                 ).where(DeviceSession.session_token_hash==device_session_hash).with_for_update()
     res= await session.execute(stmt)
     res = res.one_or_none()
-    return {"id":res[0],"revoked_at":res[1],"user_id":res[2]}
+    return {"id":res[0],"revoked_at":res[1],"user_id":res[2],"public_id":res[3]}
 
-async def get_device_session(session,device_session,user_id):
-    device_session_hash=hash_token(device_session)
+async def get_device_session_by_pid(session,session_pid,user_id):
     stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.session_expires_at
-                ).where(DeviceSession.session_token_hash==device_session_hash,DeviceSession.user_id==user_id)
+                ).where(DeviceSession.public_id==session_pid,DeviceSession.user_id==user_id)
     res= await session.execute(stmt)
     res = res.one_or_none()
-    return {"id":res[0],"revoked_at":res[1],"expires_at":res[2]}
+    return {"id":res[0],"revoked_at":res[1],"session_expires_at":res[2]}
 
 async def link_user_device(session,ds_id,user_id):
     stmt = update(DeviceSession).where(DeviceSession.id==ds_id

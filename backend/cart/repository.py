@@ -17,7 +17,7 @@ async def get_or_create_cart(session,user_id,session_id):
             return cart_id
 
         # create cart 
-        cart = Cart(user_id=user_id)
+        cart = Cart(user_id=user_id,session_id=session_id)
         session.add(cart)
         try:
             await session.commit()
@@ -25,14 +25,14 @@ async def get_or_create_cart(session,user_id,session_id):
             return cart.id
         except IntegrityError:
             await session.rollback()
-            stmt = select(Cart.id).where(Cart.user_id == user_id).limit(1)
+            stmt = select(Cart.id).where(Cart.user_id == user_id)
             res = await session.execute(stmt)
             cart_id = res.scalar_one_or_none()
             return cart_id
 
     # fallback: session (guest) cart
     if session_id is not None:
-        stmt = select(Cart.id).where(Cart.session_id == session_id).limit(1)
+        stmt = select(Cart.id).where(Cart.session_id == session_id)
         res = await session.execute(stmt)
         cart_id = res.scalar_one_or_none()
         if cart_id is not None:
@@ -46,13 +46,13 @@ async def get_or_create_cart(session,user_id,session_id):
             return cart.id
         except IntegrityError:
             await session.rollback()
-            stmt = select(Cart.id).where(Cart.session_id == session_id).limit(1)
+            stmt = select(Cart.id).where(Cart.session_id == session_id)
             res = await session.execute(stmt)
             cart_id = res.scalar_one_or_none()
             return cart_id
 
     if not session_id or not user_id:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Either session id or user id is required")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Either session id or user id is required")
 
 
 async def get_product_data(session,product_pid):

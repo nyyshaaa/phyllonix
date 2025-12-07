@@ -40,7 +40,7 @@ def validate_password(password: str, min_length: int = 8) -> tuple[bool, str]:
     return True, "OK"
     
 
-def create_access_token(user_id,user_roles,role_version,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
+def create_access_token(user_id,user_roles,role_version,session_pid,expires_dur=ACCESS_TOKEN_EXPIRE_MINUTES):
     now=datetime.now(timezone.utc)
     expiry= now + (timedelta(minutes=expires_dur))
     
@@ -51,6 +51,7 @@ def create_access_token(user_id,user_roles,role_version,expires_dur=ACCESS_TOKEN
         "jti": secrets.token_hex(32),
         "roles": user_roles,
         "role_version":role_version,
+        "session_pid":str(session_pid),
     }
     token=jwt.encode(claims=payload,key=config_settings.JWT_SECRET,algorithm=config_settings.JWT_ALGO)
     return token

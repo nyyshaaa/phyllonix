@@ -42,6 +42,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         user_pid = auth_token.get("sub")
         user_roles=auth_token.get("roles")
         role_version=auth_token.get("role_version")
+        session_pid=auth_token.get("session_pid")
 
         # device_session_plain = request.cookies.get("session_token") or request.headers.get("X-Device-Token") or None
 
@@ -66,6 +67,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             request.state.user_public_id = user_pid  # Store public_id for logging
             request.state.user_roles=user_roles
             request.state.role_version=role_version
+            request.state.session_pid=session_pid
 
         logger.info("auth.middleware.success", extra={
             "user_public_id": user_pid,

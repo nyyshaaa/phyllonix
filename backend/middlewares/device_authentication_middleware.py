@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from backend.auth.repository import get_device_session
+from backend.auth.repository import get_device_session_by_pid
 from backend.auth.services import save_device_state
 from backend.middlewares.constants import logger
 
@@ -20,19 +20,19 @@ class DeviceSessionMiddleware(BaseHTTPMiddleware):
             # Skip device authentication for paths that don't require it
             return await call_next(request)
        
-        device_session_plain = request.cookies.get("session_token") or request.headers.get("X-Device-Token")
+        session_pid = getattr(request.state, "session_pid", None)
         user_id = getattr(request.state, "user_identifier", None)
         
         logger.info("device.middleware.check", extra={
             "path": request.url.path,
-            "has_device_token": bool(device_session_plain),
+            "has_session_pid": bool(session_pid),
             "has_user_id": bool(user_id)
         })
 
         async with self.session() as session:
             
-            if device_session_plain:
-                session_data=await get_device_session(session,device_session_plain,user_id)
+            if session_pid:
+                session_data=await get_device_session_by_pid(session,session_pid,user_id)
 
                 if not session_data:
                     logger.warning("device.middleware.session_not_found", extra={
