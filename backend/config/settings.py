@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     SEED_PASSWORD_TEMPLATE : str
     ADMIN_DEPLOY_TEST_PASSWORD : str
     ADMIN_DEPLOY_TEST_EMAIL : str
-    DATABASE_URL : str
+    DATABASE_URL : str | None = None
 
     class Config:
         env_file = ".env"
