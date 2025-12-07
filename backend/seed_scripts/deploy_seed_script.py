@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import os
 import random
+from sqlalchemy import func
 from uuid6 import uuid7
 import string
 from typing import List
@@ -97,6 +98,13 @@ async def get_category_map(session: AsyncSession):
 # ------------------ Seed Users + UserRoles + Credentials ------------------
 
 async def seed_users_and_credentials(session: AsyncSession):
+    result = await session.execute(select(func.count()).select_from(Users))
+    existing_count = result.scalar_one()
+
+    if existing_count >= NUM_USERS:
+        print(f"{existing_count} users already exist. Skipping user seeding.")
+        return
+    
     role_map = await get_role_map(session)
 
     buyer_role = role_map.get("buyer")
@@ -188,6 +196,13 @@ async def seed_users_and_credentials(session: AsyncSession):
 # ------------------ Seed Products + ProductCategoryLink ------------------
 
 async def seed_products_and_links(session: AsyncSession):
+    result = await session.execute(select(func.count()).select_from(Product))
+    existing_count = result.scalar_one()
+
+    if existing_count >= NUM_PRODUCTS:
+        print(f"{existing_count} products already exist. Skipping product seeding.")
+        return
+    
     cat_map = await get_category_map(session)
     if not cat_map:
         print("[WARN] No ProductCategory rows found, skipping products.")
@@ -198,11 +213,11 @@ async def seed_products_and_links(session: AsyncSession):
 
     admin_user = (
         await session.execute(select(Users).where(Users.email == ADMIN_EMAIL))
-    ).first()
+    ).scalars().first()
     owner_id = admin_user.id if admin_user else None
 
     created_products = 0
-    ops_since_commit = 0
+    since_commit = 0
 
     for i in range(1, NUM_PRODUCTS + 1):
         name = gen_product_name(i)
