@@ -33,11 +33,6 @@ async def session_init(
     if current_env=="dev":
         resp["message"]["session_token"]=ds_token_plain
 
-
-    response = JSONResponse(
-        content=resp,
-        status_code=200
-    )
     response = success_response(resp, 200)
     
     response.set_cookie(
