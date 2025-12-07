@@ -1,6 +1,4 @@
 
-
-# insert_products_testdata.py
 import asyncio
 import random
 from datetime import datetime, timedelta

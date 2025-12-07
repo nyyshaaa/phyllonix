@@ -21,7 +21,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Skip authorization for excluded paths
-        if any(request.url.path.startswith(p) for p in self.paths):
+        if not any(request.url.path.startswith(p) for p in self.paths):
             return await call_next(request)
         
         identifier = getattr(request.state, "user_identifier", None)

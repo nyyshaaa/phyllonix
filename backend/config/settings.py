@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     REDIS_DB : int
     RZPAY_WEBHOOK_PATH : str
     PHYL_CURSOR_SECRET : str
+    SEED_PASSWORD_TEMPLATE : str
+    ADMIN_DEPLOY_TEST_PASSWORD : str
+    ADMIN_DEPLOY_TEST_EMAIL : str
+    DATABASE_URL : str
 
     class Config:
         env_file = ".env"

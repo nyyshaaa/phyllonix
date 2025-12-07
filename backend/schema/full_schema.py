@@ -8,7 +8,6 @@ from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import Column, SQLModel, Field, Relationship, String
 from backend.common.utils import now
 
-# Join tables
 class UserRole(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True,nullable=False)
@@ -114,6 +113,19 @@ class Credential(SQLModel, table=True):
 
 
     user: "Users" = Relationship(back_populates="credentials")  # every credential must be linked to user .
+
+    __table_args__ = (
+        # one credential per (user, type, provider)
+        UniqueConstraint(
+            "user_id", "type", "provider",
+            name="uq_credential_user_type_provider",
+        ),
+        # ensure an external account can't map to 2 users
+        UniqueConstraint(
+            "provider", "provider_user_id",
+            name="uq_credential_provider_userid",
+        ),
+    )
 
 
 class Address(SQLModel, table=True):
@@ -624,41 +636,4 @@ class CommitIntent(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("reason", "aggregate_type", "aggregate_id", name="uq_commitintent_reason_agtype_agid"),
     )
-
-# --------------------------------------------------------------------------------------------------------------------------------
-
-# class Shipment(SQLModel, table=True):
-   
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
-#     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))
-#     tracking_number: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
-#     status: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True, index=True))
-#     shipped_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-#     delivered_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-
-
-# # Returns and Refunds
-# class ReturnRequest(SQLModel, table=True):
-    
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
-#     shipment_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("shipment.id", ondelete="SET NULL"), nullable=True))
-#     items: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))  # list of product_id/qty
-#     reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-#     status: Optional[str] = Field(default="REQUESTED", sa_column=Column(String(32), nullable=False, index=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-#     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-
-# class Refund(SQLModel, table=True):
-  
-#     id: Optional[int] = Field(default=None, primary_key=True)
-#     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
-#     payment_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("payment.id", ondelete="SET NULL"), nullable=True))
-#     amount: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
-#     provider_refund_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
-#     status: Optional[str] = Field(default="PENDING", sa_column=Column(String(32), nullable=False, index=True))
-#     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
-#     refunded_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-
 

@@ -7,6 +7,7 @@ from backend.common.custom_exceptions import register_all_exceptions
 from backend.common.logging_setup import setup_logging
 from backend.db.dependencies import get_session
 from backend.middlewares.auth_middleware import AuthenticationMiddleware
+from backend.middlewares.authorization_middleware import AuthorizationMiddleware
 from backend.middlewares.device_authentication_middleware import DeviceSessionMiddleware
 from backend.middlewares.rate_limit_middleware import RateLimitMiddleware
 from backend.middlewares.request_id_middleware import RequestIdMiddleware
@@ -61,6 +62,8 @@ def create_app():
     # app.add_middleware(DeviceSessionMiddleware,session=async_session,paths=[f"{version_prefix}/cart/items",
     #                                                                         f"{version_prefix}/checkout"])
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(AuthorizationMiddleware,session=async_session,paths=[f"{version_prefix}/admin/products"])
+    
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
                                                                              f"{version_prefix}/health",
                                                                              f"{version_prefix}/session/init",
