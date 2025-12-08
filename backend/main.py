@@ -49,8 +49,8 @@ def create_app():
     app.include_router(public_routers)
 
     app.add_api_route(rzpay_webhook_path,razorpay_webhook,methods=["POST"],name="razorpay_webhook",dependencies=[Depends(get_session)] 
-    )
-     
+    ) 
+       
     if admin_config.ENABLE_ADMIN:
         # extra safety: require an ADMIN_SECRET to be set when enabling in non-dev envs
         # if admin_config.ENV == "prod" and not admin_config.ADMIN_SECRET:
@@ -62,6 +62,7 @@ def create_app():
     # app.add_middleware(DeviceSessionMiddleware,session=async_session,paths=[f"{version_prefix}/cart/items",
     #                                                                         f"{version_prefix}/checkout"])
     app.add_middleware(RateLimitMiddleware)
+    
     app.add_middleware(AuthorizationMiddleware,session=async_session,paths=[f"{version_prefix}/admin/products"])
     
     app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
@@ -70,12 +71,12 @@ def create_app():
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
                                                                              f"webhooks",
                                                                              f"{version_prefix}/products",                         # for non admin public product routes 
-                                                                             f"{version_prefix}/orders/test/checkout"],
+                                                                             f"{version_prefix}/checkout/test"],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     app.add_middleware(RequestIdMiddleware)
     register_all_exceptions(app)
     # instrumentator.instrument(app).expose(app, endpoint="/metrics")
     
     return app
-
+ 
 app=create_app()

@@ -534,6 +534,7 @@ class PaymentStatus(enum.IntEnum):
     SUCCESS = 30
     FAILED = 40
     REFUNDED = 50
+    UNKOWN = 60
 
 class PaymentAttemptStatus(enum.IntEnum):
     PENDING = 0
@@ -545,7 +546,10 @@ class PaymentAttemptStatus(enum.IntEnum):
 class PaymentEventStatus(enum.IntEnum):
     RECEIVED = 0
     PROCESSED = 10
-    IGNORED = 20
+    FAILED = 20
+    INVALID = 30
+    INCONSISTENT = 40
+    IGNORED = 50
 
 class OutboxEventStatus(enum.IntEnum):
     PENDING = 0
@@ -587,7 +591,8 @@ class PaymentAttempt(SQLModel, table=True):
 class PaymentWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     provider: str = Field(sa_column=Column(String(64), nullable=False))
-    provider_event_id: str = Field(sa_column=Column(String(128), nullable=False))  # unique per provider recommended
+    provider_event_id: Optional[str] = Field(sa_column=Column(String(128), nullable=True))  # unique per provider recommended
+    provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     status: int = Field(default=PaymentEventStatus.RECEIVED.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
@@ -595,7 +600,15 @@ class PaymentWebhookEvent(SQLModel, table=True):
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     
-    __table_args__ = (UniqueConstraint("provider", "provider_event_id", name="uq_provider_event"),)
+    __table_args__ = (
+        Index(
+            "uq_provider_event",
+            "provider",
+            "provider_event_id",
+            unique=True,
+            postgresql_where=text("provider_event_id IS NOT NULL")
+        ),
+    )
 
 
 class OutboxEvent(SQLModel, table=True):

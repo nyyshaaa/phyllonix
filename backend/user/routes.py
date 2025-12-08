@@ -149,17 +149,17 @@ async def change_user_role(
     actor_user_id = request.state.user_identifier
     cur_roles = request.state.user_roles  # verified by authorization middleware
 
-    role_names = await get_rolenames_by_ids(session,cur_roles)
-    if "admin" in role_names and "admin" not in payload.role_names:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="An admin cannot downgrade their role")
-
-
     target_user_id = await userid_by_public_id(session, user_public_id)
     if not target_user_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+    role_names = await get_rolenames_by_ids(session,cur_roles)
+    print("rolenames",role_names)
+    if actor_user_id == target_user_id and "admin" in role_names and "admin" not in payload.role_names:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="An admin cannot downgrade their role")
 
     role_version = await change_user_roles(
         session=session,

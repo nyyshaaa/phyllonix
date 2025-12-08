@@ -20,13 +20,13 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     app=request.app
     # verify signature ,(save , respond 200 ok to psp and reconcile for errored cases after few retries)
     await verify_razorpay_signature(request, session,body)
-    print("hereee")
     payload = json.loads(body)
     provider_event_id = request.headers.get("X-Razorpay-Event-Id")
+    event = payload.get("event")
 
     if not provider_event_id:
         # bad payload; acknowledge to avoid retries , reconcile 
-        await mark_webhook_received(session, None, "razorpay", payload, last_error="missing event id")
+        await mark_webhook_received(session, None, "razorpay", payload, last_error="missing event id",status = PaymentEventStatus.INCONSISTENT.value)
         return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
 
     provider = "razorpay"
@@ -38,6 +38,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     ev_id = await mark_webhook_received(session, provider_event_id, provider, payload)
 
     # process the event
+    
     payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {}) or {}
     provider_payment_id = payment_entity.get("id") or payment_entity.get("payment_id")
     provider_order_id = payment_entity.get("order_id")
@@ -47,18 +48,18 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     # If it's not a payment event, can ignore or handle other events (order.paid etc)
     if not provider_payment_id:
-        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no payment entity")
+        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.INCONSISTENT.value, last_error="no payment entity")
         await session.commit()
         # send ok to stop retries and reconcile later
         return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
-    payment_status,order_status,note = pay_order_status_util(psp_pay_status)
+    payment_status,order_status,note = pay_order_status_util(psp_pay_status,event)
     
     order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status)
     if not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
         # mark event error for reconcile and return 200 to provider
-        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.IGNORED.value, last_error="no pay record found for provider_order_id")
+        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.INCONSISTENT.value, last_error="no pay record found for provider_order_id")
         return JSONResponse({"status": "ok", "note": "ignored: payment not found"}, status_code=200)
     
     await update_order_status(session,order_id,order_status)
@@ -68,7 +69,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         "payment_provider_id": provider_payment_id,
         "provider_order_id": provider_order_id
     }
-    topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.payment_failed" 
+    topic="order.paid" if order_status == OrderStatus.CONFIRMED.value else "order.pending_payment" 
     
     commit_int_id =None
     if order_status == OrderStatus.CONFIRMED.value:

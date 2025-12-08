@@ -258,11 +258,13 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
                       CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
+    
+    if not cs:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
+
     print(cs)
     print("cs[3]",cs[3])
     cs_id=cs[0]
-    if not cs:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
     
     # by default concurrent requests must not be allowed for this endpoint from frontend side
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
@@ -566,9 +568,12 @@ async def update_pay_completion_get_orderid(session,provider_order_id,provider_p
         paid_at=now(),
         provider_payment_id=provider_payment_id
     ).returning(Payment.order_id))
-    result=await session.execute(stmt)
+    try:
+        result=await session.execute(stmt)
+    except IntegrityError as e:
+        await session.rollback()
+        return None
     order_id = result.scalar_one_or_none()
-    print("order ",order_id)
     return order_id
 
 async def update_order_status(session,order_id,order_status):

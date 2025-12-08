@@ -65,15 +65,28 @@ async def acquire_pglock(session,lock_key):
     return got_lock
 
 
-def pay_order_status_util(psp_pay_status):
+def pay_order_status_util(psp_pay_status,event):
     payment_status = PaymentStatus.PENDING.value  
     order_status = OrderStatus.PENDING_PAYMENT.value 
     note = "processed order and pay failure"
+    if psp_pay_status not in ("captured", "authorized", "success"):
+        payment_status = PaymentStatus.UNKNOWN.value
+        note = "unknown payment status"
+    if psp_pay_status in ("failed"):
+        payment_status = PaymentStatus.FAILED.value
+        note = "payment status failed"
+
     if psp_pay_status in ("captured", "authorized", "success"):
-        print("captured")
-        payment_status = PaymentStatus.SUCCESS.value
-        order_status = OrderStatus.CONFIRMED.value
-        note = "processed order and pay success"
+        if event == "payment.authorized":
+            payment_status = PaymentStatus.AUTHORIZED.value
+            note = "payment authorized"
+        elif event == "payment.captured" :
+            payment_status = PaymentStatus.CAPTURED.value
+            note = "payment captured"
+        elif event == "order.paid":
+            payment_status = PaymentStatus.SUCCESS.value
+            note = "order paid"
+    
 
     return payment_status,order_status,note
 

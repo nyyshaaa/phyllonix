@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request , status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.auth.utils import decode_token
 from backend.config.settings import config_settings
 from backend.common.utils import build_success, json_ok, now
 from backend.db.dependencies import get_session
@@ -14,6 +15,7 @@ from backend.orders.services import create_payment_intent, validate_items_avblty
 from backend.orders.utils import acquire_pglock, compute_order_totals, idempotency_lock_key
 from backend.schema.full_schema import Orders, Payment
 from backend.config.admin_config import admin_config
+from backend.user.repository import identify_user_by_pid
 
 current_env = admin_config.ENV
 
@@ -213,8 +215,8 @@ TEST_HTML_TEMPLATE = """<!doctype html>
 </html>
 """
 
-@orders_router.get("checkout/{provider_order_public_id}/secure-process", response_class=HTMLResponse)
-async def serve_test_checkout(request: Request, provider_order_public_id: str, session = Depends(get_session)):
+@orders_router.get("/checkout/{provider_order_public_id}/secure-process", response_class=HTMLResponse)
+async def serve_checkout(request: Request, provider_order_public_id: str, session = Depends(get_session)):
     user_identifier=request.state.user_identifier
     
     async with session as s:
@@ -240,29 +242,40 @@ async def serve_test_checkout(request: Request, provider_order_public_id: str, s
 
 
     
-# only in dev test mode 
-@orders_router.get("/test/checkout/{provider_order_public_id}", response_class=HTMLResponse)
-async def test_checkout_upi_app_sim(request: Request, provider_order_public_id: str, auth_token : str ,session = Depends(get_session)):
+# only in dev and staging test mode 
+async def test_checkout_upi_app_sim(request: Request, provider_order_public_id: str,auth_token:str ,session = Depends(get_session)):
    
+    decoded_token=decode_token(auth_token)
+    if not decoded_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired token provided.")
+    
+    user_pid = decoded_token.get("sub")
+    user_identifier=await identify_user_by_pid(session,user_pid)
+
     async with session as s:
-        stmt = select(Payment.provider_order_id, Payment.amount, Payment.currency).where(Payment.provider_order_id == provider_order_public_id).limit(1)
+        stmt = (
+                    select(Payment.provider_order_id, Payment.amount, Payment.currency, Orders.user_id)
+                    .join(Orders, Payment.order_id == Orders.id)
+                    .where(Payment.provider_order_id == provider_order_public_id)
+                )
         res = await s.execute(stmt)
         row = res.one_or_none()
         if row is None:
-            raise HTTPException(status_code=404, detail="payment/order not found")
-        provider_order_id, amount, currency = row
+            #** add for reconcilation (delete earlier pending payment rows ) as it cannot be attempted without valid record
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="payment record not found for provided provider public order id ")
+        provider_order_id, amount, currency ,order_user_id= row
 
-    if not provider_order_id:
-        print("provider id no ")
-        raise HTTPException(status_code=400, detail="provider_payment_id missing; create payment intent first")
+    if order_user_id is None or user_identifier != order_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorizes user")
 
     RAZORPAY_KEY_ID =  config_settings.RZPAY_KEY
 
     html = TEST_HTML_TEMPLATE.replace("{{KEY}}", RAZORPAY_KEY_ID).replace("{{ORDER_ID}}", provider_order_id).replace("{{AMOUNT}}", str(int(amount)))
     return HTMLResponse(html)
 
-if current_env == "dev":
-    orders_router.add_api_route("/test/checkout/{provider_order_public_id}",
+    
+if current_env == "dev" or current_env == "staging":
+    orders_router.add_api_route("/checkout/test/{provider_order_public_id}",
                                 test_checkout_upi_app_sim,methods=["GET"],name="UPI_APP_TEST_CHECKOUT",dependencies=[Depends(get_session)],
                                 response_class=HTMLResponse)
-    
+

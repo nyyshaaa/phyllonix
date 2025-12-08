@@ -45,27 +45,16 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         async with self.session() as session:
             current_role_version=await check_user_roles_version(session,identifier,role_version)
         
-        if not current_role_version:
+        if current_role_version is None:
             logger.warning("auth.authorization.user_not_found", extra={
                 "path": request.url.path,
                 "user_public_id": user_public_id
             })
             return JSONResponse(
-                    {"detail": "No user found or access revoked"},   # should not happen as auth middleware passed
+                    {"detail": "Role version mismatch, trigger re login"},  
                     status_code=status.HTTP_401_UNAUTHORIZED
             )
         
-        if int(current_role_version) != int(role_version):
-            logger.warning("auth.authorization.role_version_mismatch", extra={
-                "path": request.url.path,
-                "token_role_version": role_version,
-                "current_role_version": current_role_version,
-                "user_public_id": user_public_id
-            })
-            return JSONResponse(
-                {"detail": "Trigger re-login , role_version mismatch"},
-                status_code=status.HTTP_401_UNAUTHORIZED,
-            )
         
         logger.debug("auth.authorization.success", extra={
             "path": request.url.path,

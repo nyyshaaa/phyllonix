@@ -214,15 +214,14 @@ async def verify_razorpay_signature(request: Request, session, body: bytes):
     sig = request.headers.get("X-Razorpay-Signature")
     if not sig:
         logger.error("razorpay_webhook.missing_signature")
-        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_missing_signature")
+        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_missing_signature",status = PaymentEventStatus.INCONSISTENT.value)
         return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
     expected = hmac.new(RAZORPAY_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         logger.error("razorpay_webhook.invalid_signature")
-        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_invalid_signature")
+        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_invalid_signature",status=PaymentEventStatus.INVALID.value)
         return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
     
-
 
 async def webhook_event_already_processed(session, provider_event_id: str , provider ) -> bool:
     stmt = select(PaymentWebhookEvent.id,PaymentWebhookEvent.processed_at).where(
@@ -235,7 +234,8 @@ async def webhook_event_already_processed(session, provider_event_id: str , prov
     return False
 
 
-async def mark_webhook_received(session, provider_event_id: Optional[str], provider: str, payload: dict , last_error: Optional[str] = None) -> Optional[int]:
+async def mark_webhook_received(session, provider_event_id: Optional[str], provider: str, payload: dict ,
+                                    last_error: Optional[str] = None, pay_status:Optional[str]=None, ) -> Optional[int]:
     
     try:
         stmt = pg_insert(PaymentWebhookEvent).values(
@@ -243,7 +243,7 @@ async def mark_webhook_received(session, provider_event_id: Optional[str], provi
             provider_event_id=provider_event_id,
             payload=payload,
             attempts=1,
-            status=PaymentEventStatus.RECEIVED.value,
+            status= pay_status or PaymentEventStatus.RECEIVED.value,
             created_at=now()
         ).on_conflict_do_nothing(
             constraint="uq_provider_event"
