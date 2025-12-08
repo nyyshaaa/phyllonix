@@ -563,7 +563,7 @@ class Payment(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
-    order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True))
+    order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, unique=True))
     provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
     provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
@@ -592,7 +592,7 @@ class PaymentWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     provider: str = Field(sa_column=Column(String(64), nullable=False))
     provider_event_id: Optional[str] = Field(sa_column=Column(String(128), nullable=True))  # unique per provider recommended
-    provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
+    order_id: Optional[int] = Field(sa_column=Column(Integer, nullable=True, index=True))
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     status: int = Field(default=PaymentEventStatus.RECEIVED.value, sa_column=Column(Integer, nullable=False))
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))

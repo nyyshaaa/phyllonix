@@ -558,16 +558,28 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status):
+async def update_pay_completion_get_orderid(session,order_id,provider_order_id,provider_payment_id,provider,payment_status):
 
     stmt = (
     update(Payment)
-    .where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
+    .where(Payment.order_id==order_id,Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
     .values(
         status=payment_status,
         paid_at=now(),
         provider_payment_id=provider_payment_id
     ).returning(Payment.order_id))
+    try:
+        result=await session.execute(stmt)
+    except IntegrityError as e:
+        await session.rollback()
+        return None
+    order_id = result.scalar_one_or_none()
+    return order_id
+
+async def get_order_id_by_provider_orderid(session,provider_order_id,provider):
+
+    stmt = select(Payment.order_id).where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
+   
     try:
         result=await session.execute(stmt)
     except IntegrityError as e:

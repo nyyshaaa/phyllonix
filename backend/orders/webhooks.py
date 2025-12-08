@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
 from backend.config.settings import config_settings
-from backend.orders.repository import create_commit_intent, emit_outbox_event, update_order_status, update_pay_completion_get_orderid
+from backend.orders.repository import create_commit_intent, emit_outbox_event, get_order_id_by_provider_orderid, update_order_status, update_pay_completion_get_orderid
 from backend.orders.services import  load_order_items_pid_qty, mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_error_recorded, webhook_event_already_processed
 from backend.orders.utils import pay_order_status_util
 from backend.schema.full_schema import OrderStatus, PaymentEventStatus
@@ -34,33 +34,32 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     # insert/mark webhook receipt (dedupe)
     if await webhook_event_already_processed(session, provider_event_id,provider):
         return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
-    
-    ev_id = await mark_webhook_received(session, provider_event_id, provider, payload)
 
     # process the event
-    
     payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {}) or {}
     provider_payment_id = payment_entity.get("id") or payment_entity.get("payment_id")
     provider_order_id = payment_entity.get("order_id")
     psp_pay_status = payment_entity.get("status")  # e.g., 'captured', 'failed', 'authorized'
 
-    print("provider_payment_id",provider_payment_id)
-
     # If it's not a payment event, can ignore or handle other events (order.paid etc)
     if not provider_payment_id:
-        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.INCONSISTENT.value, last_error="no payment entity")
+        await mark_webhook_received(session, provider_event_id, "razorpay", payload, last_error="no provider_payment_id",status = PaymentEventStatus.INCONSISTENT.value)
         await session.commit()
         # send ok to stop retries and reconcile later
         return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
-    payment_status,order_status,note = pay_order_status_util(psp_pay_status,event)
-    
-    order_id = await update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status)
+    order_id = await get_order_id_by_provider_orderid(session,provider_order_id,provider)
     if not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
         # mark event error for reconcile and return 200 to provider
-        await webhook_error_recorded(session, ev_id,status=PaymentEventStatus.INCONSISTENT.value, last_error="no pay record found for provider_order_id")
+        await mark_webhook_received(session, provider_event_id, "razorpay", payload, last_error="no pay record found for provider_order_id",status = PaymentEventStatus.INCONSISTENT.value)
         return JSONResponse({"status": "ok", "note": "ignored: payment not found"}, status_code=200)
+    
+    ev_id = await mark_webhook_received(session, provider_event_id, provider, payload,order_id=order_id)
+    
+    payment_status,order_status,note = pay_order_status_util(psp_pay_status,event)
+    
+    order_id = await update_pay_completion_get_orderid(session,order_id,provider_order_id,provider_payment_id,provider,payment_status)
     
     await update_order_status(session,order_id,order_status)
 

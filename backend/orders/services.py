@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, Response , status
 from fastapi.responses import JSONResponse
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import now
 from backend.orders.repository import items_avblty, record_payment_attempt, update_idempotent_response, update_payment_attempt_resp, update_payment_status_nprovider
@@ -234,19 +234,22 @@ async def webhook_event_already_processed(session, provider_event_id: str , prov
     return False
 
 
-async def mark_webhook_received(session, provider_event_id: Optional[str], provider: str, payload: dict ,
-                                    last_error: Optional[str] = None, pay_status:Optional[str]=None, ) -> Optional[int]:
+async def mark_webhook_received(session,provider_event_id: Optional[str], provider: str, payload: dict ,
+                                    order_id:Optional[int]=None,last_error: Optional[str] = None, pay_status:Optional[str]=None, ) -> Optional[int]:
     
     try:
         stmt = pg_insert(PaymentWebhookEvent).values(
             provider=provider,
             provider_event_id=provider_event_id,
+            order_id=order_id,
             payload=payload,
             attempts=1,
             status= pay_status or PaymentEventStatus.RECEIVED.value,
+            last_error=last_error,
             created_at=now()
         ).on_conflict_do_nothing(
-            constraint="uq_provider_event"
+            index_elements=["provider", "provider_event_id"],
+            index_where=text("provider_event_id IS NOT NULL"),
         ).returning(PaymentWebhookEvent.id)
         result = await session.execute(stmt)
     except IntegrityError as e:
