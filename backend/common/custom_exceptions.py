@@ -21,7 +21,7 @@ async def fallback_handler(request: Request, exc: Exception):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"{exc} validation exception error ")
     rid = request_id_ctx.get(None)
-    payload = build_error(code="UNPROCESSABLE_ENTITY", details=exc.errors(), request_id=rid)
+    payload = build_error(code="UNPROCESSABLE_ENTITY", details=str(exc.errors()), request_id=rid)
     return json_error(payload, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 

@@ -12,9 +12,13 @@ from backend.common.utils import success_response
 from backend.db.dependencies import get_session
 from backend.products.dependency import require_permissions
 from backend.user.models import ChangePasswordIn, PromoteIn
-from backend.user.repository import get_password_credential, save_user_avatar, update_password, userid_by_public_id
+from backend.user.repository import get_password_credential, get_rolenames_by_ids, save_user_avatar, update_password, userid_by_public_id, change_user_roles
 from backend.user.utils import FileUpload, file_hash
 from backend.config.media_config import media_settings
+from typing import List
+from sqlalchemy import delete
+from backend.schema.full_schema import Role, UserRole, RoleAudit
+from sqlalchemy import select, update
 
 
 user_router=APIRouter()
@@ -129,6 +133,48 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to process upload")
 
     return {"message": "uploaded", "image_path": rel_path}
+
+
+@user_admin_router.patch("/{user_public_id}/roles", dependencies=[require_permissions("user:manage")])
+async def change_user_role(
+    user_public_id: str,
+    request: Request,
+    payload: PromoteIn,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Change user roles (admin only).
+    Requires 'user:manage_roles' permission.
+    """
+    actor_user_id = request.state.user_identifier
+    cur_roles = request.state.user_roles  # verified by authorization middleware
+
+    role_names = await get_rolenames_by_ids(session,cur_roles)
+    if "admin" in role_names and "admin" not in payload.role_names:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="An admin cannot downgrade their role")
+
+
+    target_user_id = await userid_by_public_id(session, user_public_id)
+    if not target_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    role_version = await change_user_roles(
+        session=session,
+        user_id=target_user_id,
+        cur_role_ids=cur_roles,
+        new_role_names=payload.role_names,
+        actor_user_id=actor_user_id,
+        reason=payload.reason
+    )
+    await session.commit()
+    
+    
+    return success_response({
+        "message": f"User roles updated successfully ,role_version: {role_version}"}, 200)
+
 
 
 
