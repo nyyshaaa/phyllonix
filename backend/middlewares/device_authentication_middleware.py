@@ -8,7 +8,9 @@ from backend.auth.services import save_device_state
 from backend.middlewares.constants import logger
 
 
-# this middleware will run only for endpoints that don't require auth otherwise device checks will happen at user authetication stage and ttached to request state
+# device pid is included in access token . 
+# access token is refreshed every few minutes via refresh and device token is validated and attached newly to access token , so every refresh gets current state of device activation .
+# use it for paths that need to do something with device id , in case device session got chnaged after attaching it to access token .
 class DeviceSessionMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, *, session,paths:str):
         super().__init__(app)

@@ -121,7 +121,7 @@ async def get_role_ids_by_names(session, role_names: List[str]):
     """Get role IDs from role names"""
     stmt = select(Role.id, Role.name).where(Role.name.in_(role_names))
     result = await session.execute(stmt)
-    roles = result.scalars().all()
+    roles = result.all()
     if not roles or len(roles) != len(role_names):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -129,6 +129,15 @@ async def get_role_ids_by_names(session, role_names: List[str]):
         )
     role_map = {name: role_id for role_id, name in roles}
     return role_map
+
+async def get_rolenames_by_ids(session,role_ids):
+    stmt = select(Role.name).where(Role.id.in_(role_ids))
+    res = await session.execute(stmt)
+    role_names = res.scalars().all()
+    return role_names
+
+
+
 
 
 async def change_user_roles(session, user_id: int, cur_role_ids,new_role_names: List[str], actor_user_id: int, reason: str | None = None):
@@ -146,16 +155,39 @@ async def change_user_roles(session, user_id: int, cur_role_ids,new_role_names: 
         role_id = new_role_names_ids_map[role_name]
         new_user_role = UserRole(user_id=user_id, role_id=role_id)
         session.add(new_user_role)
+        try:
+            await session.flush()
+        except IntegrityError as e:
+            # Check if it's a unique constraint violation (already exists)
+            if hasattr(e.orig, 'pgcode') and e.orig.pgcode == '23505':
+                await session.rollback()
+                continue
+            else:
+                # Other integrity errors (foreign key, check constraint, etc.)
+                await session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Integrity constraint violation while adding role {role_name}: {str(e)}"
+                )
     
     # Increment role_version
-    update_stmt = (
-        update(Users)
-        .where(Users.id == user_id)
-        .values(role_version=Users.role_version + 1, updated_at=now())
-    )
-    await session.execute(update_stmt)
-    
-    await session.flush()
+    try:
+        update_stmt = (
+            update(Users)
+            .where(Users.id == user_id)
+            .values(role_version=Users.role_version + 1, updated_at=now()).returning(Users.role_version)
+        )
+        res = await session.execute(update_stmt)
+        await session.flush()
+        res = res.scalar_one_or_none()
+        return res
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Integrity constraint violation while updating role_version: {str(e)}"
+        )
+
 
 
 

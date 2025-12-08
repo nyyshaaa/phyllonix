@@ -36,28 +36,31 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         rate_limit_strategy = getattr(request.app.state, "rate_limit_strategy", "fixed_window")
 
-        try:
-            identifier, scope = _identifier_from_request(request)
-            route_key = request.url.path
-            key = f"{RATE_LIMIT_PREFIX}:{scope}:{identifier}:{route_key}"
-            if rate_limit_strategy == "sliding_window":
+
+      
+        identifier, scope = _identifier_from_request(request)
+        route_key = request.url.path
+        key = f"{RATE_LIMIT_PREFIX}:{scope}:{identifier}:{route_key}"
+        if rate_limit_strategy == "sliding_window":
+            try:
                 allowed, remaining, reset = await redis_allow_sliding(key, limit, window)
-            if rate_limit_strategy == "fixed_window":
+            except Exception as e:
+                return await call_next(request)
+
+        if rate_limit_strategy == "fixed_window":
+            try:
                 allowed, remaining, reset = await redis_allow(key, limit, window)
-            request.state.rate_limit = {"limit": limit, "remaining": remaining, "reset": reset}
-            if not allowed:
-                print("not allowed rate limit reached")
-                retry_after = max(0, reset - int(time.time()))
-                return Response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content="Too many requests", headers={"Retry-After": str(retry_after)})
-            response = await call_next(request)
-            rl = request.state.rate_limit
-            response.headers["X-RateLimit-Limit"] = str(rl["limit"])
-            response.headers["X-RateLimit-Remaining"] = str(rl["remaining"])
-            response.headers["X-RateLimit-Reset"] = str(rl["reset"])
-            return response
-        except Exception as e:
-            print("rate limiting middleware exception:", str(e))
-            # If Redis broken, we follow FAIL_OPEN / in-memory fallback inside redis_allow()
-            response = await call_next(request)
-            return response
+            except Exception as e:
+                return await call_next(request)
+        request.state.rate_limit = {"limit": limit, "remaining": remaining, "reset": reset}
+        if not allowed:
+            print("not allowed rate limit reached")
+            retry_after = max(0, reset - int(time.time()))
+            return Response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content="Too many requests", headers={"Retry-After": str(retry_after)})
+        response = await call_next(request)
+        rl = request.state.rate_limit
+        response.headers["X-RateLimit-Limit"] = str(rl["limit"])
+        response.headers["X-RateLimit-Remaining"] = str(rl["remaining"])
+        response.headers["X-RateLimit-Reset"] = str(rl["reset"])
+        return response
         
