@@ -12,7 +12,7 @@ from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, up
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, OrderIdempotencyStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, OrderIdempotencyStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, PaymentWebhookEvent, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -558,11 +558,11 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_completion_get_orderid(session,order_id,provider_order_id,provider_payment_id,provider,payment_status):
+async def update_pay_completion_get_orderid(session,pay_id:int,provider_payment_id:str,payment_status:int):
 
     stmt = (
     update(Payment)
-    .where(Payment.order_id==order_id,Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
+    .where(Payment.id==pay_id,Payment.status < payment_status) 
     .values(
         status=payment_status,
         paid_at=now(),
@@ -572,21 +572,31 @@ async def update_pay_completion_get_orderid(session,order_id,provider_order_id,p
         result=await session.execute(stmt)
     except IntegrityError as e:
         await session.rollback()
-        return None
+        raise
     order_id = result.scalar_one_or_none()
     return order_id
 
-async def get_order_id_by_provider_orderid(session,provider_order_id,provider):
+async def webhook_error_recorded(session, ev_id,last_error: Optional[str] = None):
+   
+    stmt = (
+        update(PaymentWebhookEvent)
+        .where(PaymentWebhookEvent.id == ev_id)
+        .values(
+                last_error=last_error)
+    )
+    await session.execute(stmt)
 
-    stmt = select(Payment.order_id).where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
+async def get_pay_record_by_provider_orderid(session,provider_order_id,provider):
+
+    stmt = select(Payment.id,Payment.order_id).where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
    
     try:
         result=await session.execute(stmt)
     except IntegrityError as e:
         await session.rollback()
         return None
-    order_id = result.scalar_one_or_none()
-    return order_id
+    res = result.one_or_none()
+    return {"id":res[0],"order_id":res[1]}
 
 async def update_order_status(session,order_id,order_status):
   
@@ -600,7 +610,12 @@ async def update_order_status(session,order_id,order_status):
         )
         .returning(Orders.id)
     )
-    await session.execute(stmt)
+    try:
+        result=await session.execute(stmt)
+    except IntegrityError as e:
+        await session.rollback()
+        raise
+    
 
 async def emit_outbox_event(session, topic: str, payload: dict,
                             aggregate_type: Optional[str] = None,
@@ -635,6 +650,7 @@ async def emit_outbox_event(session, topic: str, payload: dict,
     )
         res = await session.execute(stmt2)
         ev_id =  res.scalar_one_or_none()
+    return ev_id
 
 
 async def load_order_items_for_commit(session, order_id: int):
@@ -666,6 +682,7 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
                                           CommitIntent.aggregate_type==aggr_type, CommitIntent.reason==reason)
         res3 = await session.execute(stmt)
         return res3.scalar_one_or_none()
+    return commit_intent_id
 
         
    

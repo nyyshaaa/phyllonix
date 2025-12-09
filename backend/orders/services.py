@@ -219,7 +219,7 @@ async def verify_razorpay_signature(request: Request, session, body: bytes):
     expected = hmac.new(RAZORPAY_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         logger.error("razorpay_webhook.invalid_signature")
-        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_invalid_signature",status=PaymentEventStatus.INVALID.value)
+        await mark_webhook_received(session, None, "razorpay", None, last_error="rzpay_invalid_signature",status=PaymentEventStatus.INCONSISTENT.value)
         return JSONResponse({"status": "ok", "note": "ignored: missing event id"}, status_code=200)
     
 
@@ -233,9 +233,9 @@ async def webhook_event_already_processed(session, provider_event_id: str , prov
         return True
     return False
 
-
+ 
 async def mark_webhook_received(session,provider_event_id: Optional[str], provider: str, payload: dict ,
-                                    order_id:Optional[int]=None,last_error: Optional[str] = None, pay_status:Optional[str]=None, ) -> Optional[int]:
+                                    order_id:Optional[int]=None,last_error: Optional[str] = None, pay_status:Optional[str]=None ) -> Optional[int]:
     
     try:
         stmt = pg_insert(PaymentWebhookEvent).values(
@@ -266,7 +266,7 @@ async def mark_webhook_received(session,provider_event_id: Optional[str], provid
         return ev_id
     else:
         stmt = update(PaymentWebhookEvent
-                       ).where(PaymentWebhookEvent.provider_event_id == provider_event_id,
+                       ).where(PaymentWebhookEvent.provider==provider,PaymentWebhookEvent.provider_event_id == provider_event_id,
                        PaymentWebhookEvent.processed_at.is_(None)).values(
                        attempts=PaymentWebhookEvent.attempts + 1
                        ).returning(PaymentWebhookEvent.id)
@@ -274,28 +274,15 @@ async def mark_webhook_received(session,provider_event_id: Optional[str], provid
         ev_id = res.scalar_one_or_none()
         return ev_id
 
-async def mark_webhook_processed(session, ev_id,status: str, last_error: Optional[str] = None):
+async def mark_webhook_processed(session, ev_id,last_error: Optional[str] = None):
    
     stmt = (
         update(PaymentWebhookEvent)
         .where(PaymentWebhookEvent.id == ev_id)
         .values(processed_at=now(),
-                status=status,
                 last_error=last_error)
     )
     await session.execute(stmt)
-
-async def webhook_error_recorded(session, ev_id,status: str, last_error: Optional[str] = None):
-   
-    stmt = (
-        update(PaymentWebhookEvent)
-        .where(PaymentWebhookEvent.id == ev_id)
-        .values(status=status,
-                last_error=last_error)
-    )
-    await session.execute(stmt)
-
-
 
 async def load_order_items_pid_qty(session, order_id: int):
   

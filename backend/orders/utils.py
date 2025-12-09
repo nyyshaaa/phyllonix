@@ -69,9 +69,9 @@ def pay_order_status_util(psp_pay_status,event):
     payment_status = PaymentStatus.PENDING.value  
     order_status = OrderStatus.PENDING_PAYMENT.value 
     note = "processed order and pay failure"
-    if psp_pay_status not in ("captured", "authorized", "success"):
-        payment_status = PaymentStatus.UNKNOWN.value
-        note = "unknown payment status"
+
+    # keep order status pending payment for failed pay status as user will be given option to retry in case of failed attempts 
+   
     if psp_pay_status in ("failed"):
         payment_status = PaymentStatus.FAILED.value
         note = "payment status failed"
@@ -82,11 +82,16 @@ def pay_order_status_util(psp_pay_status,event):
             note = "payment authorized"
         elif event == "payment.captured" :
             payment_status = PaymentStatus.CAPTURED.value
+            order_status = OrderStatus.CONFIRMED.value 
             note = "payment captured"
         elif event == "order.paid":
-            payment_status = PaymentStatus.SUCCESS.value
+            payment_status = PaymentStatus.CAPTURED.value
+            order_status = OrderStatus.CONFIRMED.value 
             note = "order paid"
     
+    if psp_pay_status not in ("captured", "authorized", "failed" , "success"):
+        payment_status = PaymentStatus.FAILED.value   #** maybe handle unkown psp status differently as unkown , for now just set to failed
+        note = "unknown payment status"
 
     return payment_status,order_status,note
 

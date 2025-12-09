@@ -46,7 +46,7 @@ class BasePubSubWorker():
 
         orders_outbox_handler=self.handlers["order_finalize"]
         self.subscribe("order.paid",orders_outbox_handler.outbox_handler)
-        self.subscribe("order.payment_failed",orders_outbox_handler.outbox_handler)
+        self.subscribe("order.payment_pending",orders_outbox_handler.outbox_handler)
         order_inv_handler= self.handlers["order_confirm_intent.created"]
         self.subscribe("order_confirm_intent.created",order_inv_handler)
 

@@ -529,33 +529,35 @@ class IdempotencyKey(SQLModel, table=True):
 
 class PaymentStatus(enum.IntEnum):
     PENDING = 0
-    CAPTURED = 10
-    AUTHORIZED = 20
-    SUCCESS = 30
-    FAILED = 40
-    REFUNDED = 50
-    UNKOWN = 60
+    AUTHORIZED = 10
+    FAILED = 20
+    CAPTURED = 30
+    REFUNDED = 40
+   
 
 class PaymentAttemptStatus(enum.IntEnum):
     PENDING = 0
-    RETRYING = 10
-    SUCCESS = 20
-    FAILED = 30
-    UNKNOWN = 40
+    UNKNOWN = 10
+    RETRYING = 20
+    SUCCESS = 30
+    FAILED = 40
+    
+    
 
 class PaymentEventStatus(enum.IntEnum):
     RECEIVED = 0
-    PROCESSED = 10
-    FAILED = 20
-    INVALID = 30
-    INCONSISTENT = 40
-    IGNORED = 50
-
+    INCONSISTENT = 10
+    AUTHORIZED = 20
+    CAPTURED = 30
+    FAILED = 50
+    PROCESSED = 60
+   
 class OutboxEventStatus(enum.IntEnum):
     PENDING = 0
     SENT = 10 
     DONE = 20
     FAILED = 30
+    
 
 
 # Payments & payment attempts / events
@@ -631,8 +633,8 @@ class OutboxEvent(SQLModel, table=True):
 class CommitIntentStatus(enum.IntEnum):
     PENDING = 0
     PROCESSING = 10
-    DONE = 20
-    FAILED = 30
+    FAILED = 20
+    DONE = 30
 
 class CommitIntent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

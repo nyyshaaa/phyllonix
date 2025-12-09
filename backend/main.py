@@ -35,7 +35,7 @@ async def app_lifespan(app: FastAPI):
         yield
     finally:
         # at this point new requests accept has been stopped already before calling shutdown
-        # await base_pubsub.shutdown()
+        await base_pubsub.shutdown()
         # safe to dispose DB engine after workers exit
         await async_engine.dispose()
 

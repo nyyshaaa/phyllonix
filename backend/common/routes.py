@@ -11,6 +11,7 @@ from backend.common.utils import build_success, json_ok, success_response
 from backend.db.dependencies import get_session
 from fastapi.responses import JSONResponse
 from backend.config.admin_config import admin_config
+from backend.schema.full_schema import CommitIntent, CommitIntentStatus
 
 current_env = admin_config.ENV
 secure_flag = False if current_env == "dev" else True
@@ -68,3 +69,4 @@ async def health_check(session:AsyncSession=Depends(get_session)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database connection error")
     
     return {"status": "healthy"}
+
