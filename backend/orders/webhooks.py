@@ -10,6 +10,9 @@ from backend.orders.services import  load_order_items_pid_qty, mark_webhook_proc
 from backend.orders.utils import pay_order_status_util
 from backend.schema.full_schema import OrderStatus, PaymentEventStatus
 from backend.config.admin_config import admin_config
+from backend.common.constants import request_id_ctx
+from backend.common.retries import is_recoverable_exception
+from backend.orders.constants import logger
 
 webhooks_router=APIRouter()
 
@@ -53,56 +56,122 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     # If it's not a payment event, can ignore
     if not provider_payment_id:
         await mark_webhook_received(session, provider_event_id, "razorpay", payload, last_error="no provider_payment_id",status = PaymentEventStatus.INCONSISTENT.value)
-        await session.commit()
         # send ok to stop retries and reconcile later
         return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
     payment_status,final_order_status,note = pay_order_status_util(psp_pay_status,event)
     ev_id = await mark_webhook_received(session, provider_event_id, provider, payload,order_id=order_id,pay_status=payment_status)
     
+    # critical section , record/update errors safely for easiest reconcilation .
     try:
-        order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,provider,payment_status)
-    except Exception as e:
-        # log error
-        await session.rollback()
-        await webhook_error_recorded(session,ev_id,last_error=f"error while updating {payment_status} status in payments")
-         
-    
-    try:
-        await update_order_status(session,order_id,final_order_status)
-    except Exception as e:
-        await session.rollback()
-        await webhook_error_recorded(session,ev_id,last_error=f"error while updating {final_order_status} status in orders")
-    
-    #** fix it to check based on including failed event and remove order.paid as captured works fine  for deployed webhook
-    if event != "payment.authorized" and event!="order.paid":
-        outbox_payload = {
-        "order_id": order_id,
-        "payment_provider_id": provider_payment_id,
-        "provider_order_id": provider_order_id
-        }
-        topic="order.paid" if final_order_status == OrderStatus.CONFIRMED.value else "order.pending_payment" 
         
-        commit_int_id =None
-        if final_order_status == OrderStatus.CONFIRMED.value:
-                # build commit payload: items & quantities from order_items
-                items = await load_order_items_pid_qty(session, order_id)  # returns list of {product_id, qty}
-                commit_payload = {"order_id": order_id, "items": items}
-                # create commit intent (idempotent: do not duplicate if exists)
-                commit_int_id = await create_commit_intent(session, order_id, "payment_succeeded", aggr_type = "order",payload = commit_payload)
-                print("commit id",commit_int_id) 
-        outbox_event_id = await emit_outbox_event(session, 
-                                topic=topic, 
-                                payload=outbox_payload,
-                                aggregate_type="order",
-                                aggregate_id=order_id,)
+        order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,provider,payment_status)
+        await update_order_status(session,order_id,final_order_status)
+       
+        #** fix it to check based on including failed event and remove order.paid as captured works fine  -- for deployed app
+        if event != "payment.authorized" and event!="order.paid":
+            outbox_payload = {
+            "order_id": order_id,
+            "payment_provider_id": provider_payment_id,
+            "provider_order_id": provider_order_id
+            }
+            topic="order.paid" if final_order_status == OrderStatus.CONFIRMED.value else "order.pending_payment" 
+            
+            commit_int_id =None
+            if final_order_status == OrderStatus.CONFIRMED.value:
+                    # build commit payload: items & quantities from order_items
+                    items = await load_order_items_pid_qty(session, order_id)  # returns list of {product_id, qty}
+                    commit_payload = {"order_id": order_id, "items": items}
+                    # create commit intent (idempotent: do not duplicate if exists)
+                    commit_int_id = await create_commit_intent(session, order_id, "payment_succeeded", aggr_type = "order",payload = commit_payload)
+                    print("commit id",commit_int_id) 
+            outbox_event_id = await emit_outbox_event(session, 
+                                    topic=topic, 
+                                    payload=outbox_payload,
+                                    aggregate_type="order",
+                                    aggregate_id=order_id,)
 
-                
-    try:
         await mark_webhook_processed(session, ev_id)
+        await session.commit()
+
     except Exception as e:
-        await session.rollback()
-    await session.commit()
+        rid = request_id_ctx.get(None)
+
+        if is_recoverable_exception(e):
+            logger.error(
+                "razorpay.webhook.transient_failure",
+                exc_info=(type(e), e, e.__traceback__),
+                extra={
+                    "request_id": rid,
+                    "webhook_event_id": ev_id,
+                    "provider_event_id": provider_event_id,
+                    "payment_status": payment_status,
+                    "order_status": final_order_status,
+                },
+            )
+            try:
+                await session.rollback()
+            except Exception as rb_err:
+                logger.error(
+                    "razorpay.webhook.rollback_failed",
+                    exc_info=(type(rb_err), rb_err, rb_err.__traceback__),
+                    extra={"request_id": rid, "webhook_event_id": ev_id},
+                )
+            # psp retries non 200's so psp will retry even without reraise , if we just swallow error and don't retry
+            # but to get error trackebacks in logs reraise so logs show generic fallback's code and error traceback
+            raise
+        
+        # non recoverable
+        logger.error(
+            "razorpay.webhook.permanent_failure",
+            exc_info=(type(e), e, e.__traceback__),
+            extra={
+                "request_id": rid,
+                "webhook_event_id": ev_id,
+                "provider_event_id": provider_event_id,
+                "payment_status": payment_status,
+                "order_status": final_order_status,
+            },
+        )
+
+        try:
+            await session.rollback()
+        except Exception as rb_err:
+            logger.error(
+                "razorpay.webhook.rollback_failed",
+                exc_info=(type(rb_err), rb_err, rb_err.__traceback__),
+                extra={"request_id": rid, "webhook_event_id": ev_id},
+            )
+   
+        recorded = False
+        try:
+            await webhook_error_recorded(
+                session,
+                ev_id,
+                last_error=(
+                    f"error while processing webhook "
+                    f"current statuses: (payment_status={payment_status}, order_status={final_order_status})"
+                ),
+            )
+            await session.commit()
+            recorded = True
+        except Exception as rec_err:
+            logger.error(
+                "razorpay.webhook.error_record_failed",
+                exc_info=(type(rec_err), rec_err, rec_err.__traceback__),
+                extra={"request_id": rid, "webhook_event_id": ev_id},
+            )
+        
+        if recorded:
+            return JSONResponse(
+                {"status": "ok", "note": "recorded for reconciliation"},
+                status_code=200,
+            )
+        else:
+            # couldn't record – better let PSP retry than silently drop the event
+            raise
+
+
 
     if event!="payment.authorized" and event!="order.paid" :
         print("commit id",commit_int_id) 
