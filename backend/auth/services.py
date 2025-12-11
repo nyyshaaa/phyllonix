@@ -4,6 +4,7 @@ from fastapi import HTTPException,status
 from uuid6 import uuid7
 from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
 from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
+from backend.common.retries import retry_transaction
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
@@ -87,33 +88,37 @@ async def save_device_state(session,request,user_id):
     return ds.id,ds.public_id,session_token_plain
         
 
-async def issue_auth_tokens(session,payload,device_session):
+async def issue_auth_tokens(session,session_maker,payload,device_session):
+    
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
     user_public_id = user.public_id
     
-    ds=await identify_device_session(session,device_session)
 
-    if ds["revoked_at"] is not None:
-        logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
+    async def txn_fn():
+        ds=await identify_device_session(session,device_session)
 
-    session_id = ds["id"]
+        if ds["revoked_at"] is not None:
+            logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
 
-    if not ds["user_id"]:
-        await link_user_device(session, session_id, user_id)
-        logger.info("auth.device.linked", extra={"user_public_id": str(user_public_id)})
-        
-        # await merge_guest_cart_into_user(session, user_id, session_id)
+        session_id = ds["id"]
 
-    refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
-    await session.commit()
+        if not ds["user_id"]:
+            await link_user_device(session, session_id, user_id)
+            logger.info("auth.device.linked", extra={"user_public_id": str(user_public_id)})
+            
+            # await merge_guest_cart_into_user(session, user_id, session_id)
+
+        refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
+        return {"refresh_token": refresh_token, "session_pid": ds["public_id"]}
+    res = await retry_transaction(txn_fn=txn_fn,async_session_maker=session_maker)
 
     user_roles=await get_user_role_ids(session,user_id)
-    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=ds["public_id"])
+    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=res["public_id"])
     
     logger.info("auth.tokens.issued", extra={"user_public_id": str(user_public_id)})
-    return access_token,refresh_token
+    return access_token,res["refresh_token"]
 
 
 async def validate_refresh_and_fetch_user(session,plain_token):

@@ -1,6 +1,9 @@
 import contextvars
 from typing import Optional
 from backend.config.settings import config_settings
+from backend.common.logging_setup import get_logger
+
+logger = get_logger("chlorophyll.common")
 
 NUM_CONSUMERS = 2
 

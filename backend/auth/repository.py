@@ -2,6 +2,7 @@
 from sqlalchemy import select, text, update
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
+from backend.common.retries import retry_read
 from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE, hash_token, make_refresh_plain, verify_password
@@ -23,6 +24,7 @@ async def user_id_by_email(session,email):
     user=result.first()
     return user
 
+@retry_read(attempts=3)
 async def identify_user(session,email,password):
     email = email.strip().lower()
     user=await user_by_email(session,email)
@@ -77,6 +79,7 @@ async def save_refresh_token(session,ds_id,user_id,revoked_by):
     
     return refresh_plain
 
+@retry_read()
 async def get_user_role_ids(session,user_id):
     stmt=select(Role.id).join(UserRole,Role.id==UserRole.role_id).where(UserRole.user_id==user_id)
     result = await session.execute(stmt)
