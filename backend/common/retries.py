@@ -8,7 +8,9 @@ from typing import Any, Awaitable, Callable, Optional, Tuple, Type
 from fastapi import HTTPException , status
 from sqlalchemy.exc import DBAPIError,OperationalError,InterfaceError
 from backend.common import logger
+from backend.common.circuit_breaker import CircuitBreaker, CircuitOpenError
 
+db_circuit = CircuitBreaker(name="postgres", failure_threshold=3, recovery_timeout=20.0, half_open_success_threshold=1, max_concurrent_half_open_probes=1)
 
 
 def is_recoverable_exception(exc: BaseException) -> bool:
@@ -103,6 +105,18 @@ async def retry_transaction(
 
     last_exc = None
     for attempt in range(1, attempts + 1):
+        
+        try:
+            await db_circuit.before_call()
+        except CircuitOpenError:
+            raise HTTPException(status_code=503, detail="service unavailable (db)")
+        
+        acquired_probe = False
+        if db_circuit._state == "HALF_OPEN":
+            acquired_probe = await db_circuit.acquire_half_open_probe(timeout=0.1)
+            if not acquired_probe:
+                raise HTTPException(status_code=503, detail="service unavailable (db)")
+        
         async with async_session_maker() as session:
             try:
                 if per_attempt_timeout:
@@ -110,7 +124,13 @@ async def retry_transaction(
                 else:
                     result = await txn_fn(session)
                 await session.commit()
+
+                if acquired_probe:
+                    db_circuit.release_half_open_probe()
+                await db_circuit._record_success()
+
                 return result
+            
             except asyncio.CancelledError:
                 await session.rollback()
                 raise
@@ -123,7 +143,11 @@ async def retry_transaction(
                     retryable = False
                 if not retryable or attempt == attempts:
                     raise
-        
+
+                if acquired_probe:
+                    db_circuit.release_half_open_probe()
+                await db_circuit._record_failure()
+
                 delay = min(max_delay, base_delay * (factor ** (attempt - 1)))
                 logger.debug("transaction retry attempt %d failed; retrying in %f: %s", attempt, delay, exc)
                 await _sleep_with_jitter(delay, jitter)
@@ -157,100 +181,6 @@ async def retry_transaction(
 
 
 
-
-
-
-
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-def _safe_name(obj) -> str:
-    try:
-        return type(obj).__name__
-    except Exception:
-        return ""
-
-
-def is_recoverable_exception_old(exc: BaseException) -> bool:
-    """
-    Conservative retryable detection:
-    - network/timeout errors
-    - SQLAlchemy DBAPIError with connection_invalidated
-    - asyncio.TimeoutError
-    
-    """
-
-    # common python timeouts/connections
-    if isinstance(exc, (AsyncioTimeoutError, TimeoutError, socket.timeout, ConnectionError, OSError)):
-        return True
-
-    if isinstance(exc, DBAPIError):
-        # connection invalidated by engine
-        if getattr(exc, "connection_invalidated", False):
-            return True
-        # underlying driver errors often in exc.orig - be conservative:
-        orig = getattr(exc, "orig", None)
-        if orig is not None:
-           
-            name = _safe_name(orig).lower()
-            if any(k in name for k in ("timeout", "connection", "brokenpipe", "connectionrefused", "connectionreset","interfaceerror", "operationalerror")):
-                return True
-            
-    if OperationalError and isinstance(exc, OperationalError):
-        return True
-    if InterfaceError and isinstance(exc, InterfaceError):
-        return True
-
-    return False
-
-
-def retry_async_old(
-    *,
-    attempts: int = 1,
-    base_delay: float = 0.2,
-    factor: float = 2.0,
-    max_delay: float = 10.0,
-    jitter: float = 0.2,
-    retry_on: Optional[Tuple[Type[BaseException], ...]] = None,
-    if_retryable: Optional[Callable[[BaseException], bool]] = None,
-):
-    """
-    Async exponential-backoff retry decorator with jitter.
-
-    - attempts: total attempts including first.
-    - if_retryable: optional function(exc) -> bool to decide based on exception (e.g. is_recoverable_exception)
-    - retry_on: explicit exception classes to retry (if provided).
-    """
-    if retry_on is not None:
-        retry_on = tuple(retry_on)
-
-    def deco(fn: Callable):
-        @functools.wraps(fn)
-        async def wrapper(*args, **kwargs):
-            last_exc = None
-            for attempt in range(1, attempts + 1):
-                print("retry here")
-                try:
-                    return await fn(*args, **kwargs)
-                except Exception as exc:
-                    last_exc = exc
-                    # check class
-                    if retry_on is not None and not isinstance(exc, retry_on):
-                        raise 
-                    # check predicate
-                    if if_retryable is not None and not if_retryable(exc):
-                        raise
-                    # compute delay
-                    delay = min(max_delay, base_delay * (factor ** (attempt - 1)))
-                    # jitter +/- jitter*delay
-                    jitter_val = random.uniform(-jitter * delay, jitter * delay)
-                    sleep_for = max(0.0, delay + jitter_val)
-                    # metric example:
-                    # RETRIES_TOTAL.labels(operation=fn.__name__).inc()
-                    await asyncio.sleep(sleep_for)
-            # if we exit loop, re-raise last:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,detail=f"{type(last_exc).__name__}")
-        return wrapper
-    return deco
 
 
 
