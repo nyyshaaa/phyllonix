@@ -1,8 +1,6 @@
-import json
+
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response , status
-from fastapi.params import Cookie
-from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.constants import ACCESS_COOKIE_NAME, ACCESS_TOKEN_TTL_SECONDS, COOKIE_NAME, REFRESH_TOKEN_TTL_SECONDS
@@ -11,9 +9,6 @@ from backend.auth.models import SignIn, SignupIn
 from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
 from backend.common.utils import success_response
 from backend.db.dependencies import get_session, get_session_factory
-from sqlalchemy.exc import InterfaceError,OperationalError
-# from backend.common.circuit_breaker import db_circuit, guard_with_circuit
-from backend.common.retries import retry_async, is_recoverable_exception
 from backend.config.admin_config import admin_config
 from backend.auth.constants import logger
 
@@ -21,7 +16,6 @@ current_env = admin_config.ENV
 secure_flag = False if current_env == "dev" else True
 
 auth_router = APIRouter()
-
 
 #* sign in via both mobile or email(only email for now)
 @auth_router.post("/login")
@@ -44,7 +38,6 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
 
     response.set_cookie(COOKIE_NAME, refresh, httponly=True, secure=secure_flag, path="/auth/refresh",
                         max_age=int(REFRESH_TOKEN_TTL_SECONDS), samesite="Lax")
-
 
     logger.info("login.success", extra={"email": payload.email})
     return response
@@ -106,21 +99,6 @@ async def logout(device_public_id: str = Depends(device_session_pid), session = 
     return res
   
 
-# -------------------------------------------------------------------------------------------------------------
-
-@auth_router.get("/retries_cb_test")
-async def health_check(session:AsyncSession=Depends(get_session)):
-    stmt=select(1)
-    
-    try:
-        res=await session.execute(stmt)
-        print(res.scalar_one_or_none())
-        print("heya")
-        raise OperationalError("DB Error",None,None)
-
-    except (OperationalError, InterfaceError):
-        print("neya")
-        raise 
     
     
 

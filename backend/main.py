@@ -61,7 +61,7 @@ def create_app():
     
     # app.add_middleware(DeviceSessionMiddleware,session=async_session,paths=[f"{version_prefix}/cart/items",
     #                                                                         f"{version_prefix}/checkout"])
-    app.add_middleware(RateLimitMiddleware)
+    # app.add_middleware(RateLimitMiddleware)
     
     app.add_middleware(AuthorizationMiddleware,session=async_session,paths=[f"{version_prefix}/admin/products"])
     
@@ -71,7 +71,8 @@ def create_app():
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
                                                                              f"webhooks",
                                                                              f"{version_prefix}/products",                         # for non admin public product routes 
-                                                                             f"{version_prefix}/checkout/test"],
+                                                                             f"{version_prefix}/checkout/test",
+                                                                             f"{version_prefix}/admin/tests",],
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     app.add_middleware(RequestIdMiddleware)
     register_all_exceptions(app)

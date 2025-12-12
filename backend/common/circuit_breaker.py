@@ -22,7 +22,7 @@ class CircuitBreaker:
     def __init__(
         self,
         name: str,
-        failure_threshold: int = 5,
+        failure_threshold: int = 2,
         recovery_timeout: float = 30.0,
         half_open_success_threshold: int = 1,
         max_concurrent_half_open_probes: int = 1,
@@ -47,12 +47,12 @@ class CircuitBreaker:
         # called under lock before allowing calls
         if self._state == "OPEN" and self._opened_at is not None :
             if time.monotonic() - self._opened_at >= self.recovery_timeout:
-                self._state == "HALF_OPEN"
+                self._state = "HALF_OPEN"
                 self._half_open_success_count = 0
 
 
     async def before_call(self):
-        
+        print("before call ")
         async with self._lock:
             await self._maybe_transition()
             if self._state == "OPEN":
@@ -75,14 +75,15 @@ class CircuitBreaker:
                         self._fail_count = 0
                         self._opened_at = None
                         self._half_open_success_count = 0
-                else:
-                    # success in OPEN shouldn't normally happen (we shouldn't be calling)
-                    self._state = "CLOSED"
-                    self._fail_count = 0
-                    self._opened_at = None
+                # else:
+                #     # success in OPEN shouldn't normally happen (we shouldn't be calling)
+                #     self._state = "CLOSED"
+                #     self._fail_count = 0
+                #     self._opened_at = None
             else:
                 # CLOSED: reset fail_count on success
                 self._fail_count = 0
+        print(self._state,self._fail_count)
 
     async def _record_failure(self):
         async with self._lock:
@@ -118,3 +119,4 @@ class CircuitBreaker:
             pass
 
 
+db_circuit = CircuitBreaker(name="postgres", failure_threshold=3, recovery_timeout=20.0, half_open_success_threshold=1, max_concurrent_half_open_probes=1)
