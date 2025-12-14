@@ -5,6 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from backend.auth.repository import get_device_session_by_pid
 from backend.auth.services import save_device_state
+from backend.common.utils import build_error, json_error
 from backend.middlewares.constants import logger
 
 
@@ -41,20 +42,16 @@ class DeviceSessionMiddleware(BaseHTTPMiddleware):
                         "path": request.url.path,
                         "user_id": user_id
                     })
-                    return JSONResponse(
-                        {"detail": "User not authorized or session not found"},
-                        status_code=status.HTTP_403_FORBIDDEN,
-                    )
+                    payload = build_error(code="INVALID_DEVICE_SESSION", details={"message":"User not authorized or session not found"})
+                    return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
                 
                 if session_data["revoked_at"] is not None or session_data["expires_at"] is not None:
                     logger.warning("device.expired_or_revoked",extra={
                         "path": request.url.path,
                         "user_id": user_id
                     })
-                    return JSONResponse(
-                        {"detail": "Session expired or revoked"},
-                        status_code=status.HTTP_403_FORBIDDEN,
-                    )
+                    payload = build_error(code="INVALID_DEVICE_SESSION", details={"message":"Session expired or revoked"})
+                    return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
 
                 request.state.sid = session_data["id"]
             

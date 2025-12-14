@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from backend.common.utils import build_error, json_error, success_response
 from backend.user.dependencies import Authentication
 from backend.user.repository import  identify_user_by_pid
 from backend.middlewares.constants import logger
@@ -27,16 +28,15 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         try:
             auth_token = await Authentication()(request) 
         except Exception as e:
-            detail = getattr(e, "detail", "Missing or Invalid Auth Headers")
+            reason = getattr(e, "detail", "Missing or Invalid Auth Headers")
             logger.warning("auth.middleware.failed", extra={
-                "reason": detail,
+                "reason": reason,
                 "path": request.url.path,
                 "method": request.method
             })
-            return JSONResponse(
-                    {"detail": detail or "Missing or Invalid Auth Headers"},
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                )
+            payload = build_error(code="INVALID_AUTH", details={"message":"Missing or Invalid Auth Headers"})
+            return json_error(payload, status_code=status.HTTP_401_UNAUTHORIZED)
+
         
         user_pid = auth_token.get("sub")
         user_roles=auth_token.get("roles")
@@ -52,10 +52,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 "user_public_id": user_pid,
                 "path": request.url.path
             })
-            return JSONResponse(
-                {"detail": "User unidentified and not authorized"},
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+            payload = build_error(code="INVALID_AUTH", details={"message":"User unidentified and not authorized"})
+            return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
             
         request.state.user_identifier = user_identifier
         request.state.user_public_id = user_pid  # Store public_id for logging

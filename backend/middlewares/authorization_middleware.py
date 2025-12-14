@@ -3,6 +3,7 @@ from fastapi import Request, status
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from backend.common.utils import build_error, json_error
 from backend.schema.full_schema import Users
 from backend.user.dependencies import Authentication
 from backend.user.repository import check_user_roles_version, userid_by_public_id
@@ -31,10 +32,9 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
             logger.warning("auth.authorization.missing_user", extra={
                 "path": request.url.path
             })
-            return JSONResponse(
-                {"detail": "User not authenticated"},
-                status_code=status.HTTP_401_UNAUTHORIZED
-            )
+            payload = build_error(code="INVALID_AUTH", details={"message":"User not authenticated"})
+            return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
+            
         
         logger.debug("auth.authorization.check", extra={
             "path": request.url.path,
@@ -50,11 +50,8 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
                 "path": request.url.path,
                 "user_public_id": user_public_id
             })
-            return JSONResponse(
-                    {"detail": "Role version mismatch, trigger re login"},  
-                    status_code=status.HTTP_401_UNAUTHORIZED
-            )
-        
+            payload = build_error(code="INVALID_AUTH", details={"message":"Role version mismatch, trigger re login"})
+            return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
         
         logger.debug("auth.authorization.success", extra={
             "path": request.url.path,

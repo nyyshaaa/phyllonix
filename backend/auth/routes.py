@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.constants import ACCESS_COOKIE_NAME, ACCESS_TOKEN_TTL_SECONDS, COOKIE_NAME, REFRESH_TOKEN_TTL_SECONDS
 from backend.auth.dependencies import device_session_pid, device_session_plain, refresh_token, signup_validation
 from backend.auth.models import SignIn, SignupIn
-from backend.auth.services import create_user, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
+from backend.auth.services import create_signup, issue_auth_tokens, logout_device_session, provide_access_token, validate_refresh_and_fetch_user, validate_refresh_and_update_refresh
 from backend.common.utils import success_response
 from backend.db.dependencies import get_session, get_session_factory
 from backend.config.admin_config import admin_config
 from backend.auth.constants import logger
+from backend.common.retries import retry_with_db_circuit
 
 current_env = admin_config.ENV
 secure_flag = False if current_env == "dev" else True
@@ -19,6 +20,7 @@ auth_router = APIRouter()
 
 #* sign in via both mobile or email(only email for now)
 @auth_router.post("/login")
+@retry_with_db_circuit()
 async def login_user(request:Request,payload:SignIn,device_session_token: Optional[str] = Depends(device_session_plain),
                      session: AsyncSession = Depends(get_session),session_maker = Depends(get_session_factory)):
     
@@ -49,7 +51,7 @@ async def signup_user(payload: SignupIn=Depends(signup_validation), session: Asy
     
     logger.info("signup.attempt", extra={"email": payload.get("email")})
     
-    user_id=await create_user(session,payload)
+    user_data=await create_signup(session,payload)
     logger.info("signup.success", extra={"email": payload.get("email")})
     return success_response({"message": f"User created successfully."}, 201)
  

@@ -1,54 +1,59 @@
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from fastapi import HTTPException,status
 from uuid6 import uuid7
-from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
+from backend.auth.repository import create_credential, create_n_get_user, fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
 from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
 from backend.auth.constants import logger
 
-async def link_user_role(session,user_id):
-    q = select(Role).where(Role.name == config_settings.DEFAULT_ROLE)
-    role = (await session.execute(q)).scalar_one_or_none()
-    if not role:
-        role = Role(name=config_settings.DEFAULT_ROLE)
-        session.add(role)
-        await session.flush()
+async def link_user_role(session, user_id: int):
 
-    ur = UserRole(user_id=user_id, role_id=role.id)
-    session.add(ur)
+    res = await session.execute(
+        select(Role.id).where(Role.name == config_settings.DEFAULT_ROLE)
+    )
+    role_id = res.scalar_one_or_none()
 
+    if not role_id:
+        logger.critical("role.missing", extra={"role_name": config_settings.DEFAULT_ROLE})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Default role missing (migration required)")
 
-
-async def create_user(session,payload):
-
-    user_id = await user_id_by_email(session,payload["email"])
-    if user_id:
-        logger.warning("user.duplicate", extra={"email": payload["email"]})
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with email already exists")
+    stmt = (
+        insert(UserRole)
+        .values(user_id=user_id, role_id=role_id)
+        .on_conflict_do_nothing(index_elements=[UserRole.user_id, UserRole.role_id])
+        .returning(UserRole.id)
+    )
 
     try:
-        user = Users(email=payload["email"], name=payload.get("name"))
-        session.add(user)
-        await session.flush() 
-        user_id=user.id
-
-        pwd_hash = hash_password(payload["password"])
-        cred = Credential(user_id=user_id, type=CredentialType.PASSWORD, provider=config_settings.SELF_PROVIDER, password_hash=pwd_hash)
-        session.add(cred)
-        
-        await link_user_role(session,user_id)
-        
-        await session.commit()
-        await session.refresh(user)
-        logger.info("user.created", extra={"user_public_id": str(user.public_id), "email": payload["email"]})
-        return user.id
-    except IntegrityError:
+        result = await session.execute(stmt)
+        user_role_id = result.scalar_one_or_none()
+        if user_role_id:
+            logger.debug("user_role.linked", extra={"user_id": user_id, "role_id": role_id})
+        else:
+            logger.debug("user_role.already_linked", extra={"user_id": user_id, "role_id": role_id})
+    except IntegrityError as exc:
         await session.rollback()
-        logger.warning("user.create.integrity_error", extra={"email": payload["email"]})
-        raise HTTPException(status_code=400, detail="User with that email already exists")
+        logger.warning("user_role.integrity_error.other")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB Integrity error in role linking")
+
+
+async def create_signup(session,payload):
+    email = payload.get("email")
+    name = payload.get("name")
+
+    user_data = await create_n_get_user(session,email,name)
+
+    pwd_hash = hash_password(payload["password"])
+    cred_id = await create_credential(session,user_data["id"],pwd_hash)
+    await link_user_role(session,user_data["id"])
+
+    await session.commit()
+
+    return user_data
+
 
 
 async def save_device_state(session,request,user_id):

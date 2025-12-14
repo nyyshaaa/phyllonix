@@ -3,6 +3,7 @@ import time
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from backend.common.utils import build_error, json_error
 from backend.rate_limiting.constants import DEFAULT_LIMIT, DEFAULT_WINDOW, RATE_LIMIT_PREFIX
 from backend.rate_limiting.rate_limit_fixed_window import redis_allow
 from backend.rate_limiting.rate_limit_sliding_window import redis_allow_sliding
@@ -56,7 +57,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not allowed:
             print("not allowed rate limit reached")
             retry_after = max(0, reset - int(time.time()))
-            return Response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content="Too many requests", headers={"Retry-After": str(retry_after)})
+            payload = build_error(code="INVALID_AUTH", details={"message":"Too many requests"})
+            return json_error(payload, status_code=status.HTTP_429_TOO_MANY_REQUESTS,headers={"Retry-After": str(retry_after)})
+
         response = await call_next(request)
         rl = request.state.rate_limit
         response.headers["X-RateLimit-Limit"] = str(rl["limit"])

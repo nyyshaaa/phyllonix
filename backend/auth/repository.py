@@ -1,11 +1,16 @@
 
-from sqlalchemy import select, text, update
+from typing import Optional
+from sqlalchemy import Tuple, insert, select, text, update
+from uuid6 import uuid7
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
+from backend.common.utils import now
 from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE, hash_token, make_refresh_plain, verify_password
 from backend.auth.constants import logger
+from backend.config.settings import config_settings
+from sqlalchemy.exc import IntegrityError
 
 async def user_by_email(session,email):
     stmt=select(Users.id,Users.public_id,Users.role_version).where(Users.email==email,Users.deleted_at.is_(None))
@@ -35,6 +40,90 @@ async def identify_user(session,email,password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     
     return user
+
+async def create_credential(session,user_id: int,password_hash: str):
+   
+    provider = config_settings.SELF_PROVIDER
+
+    values = {
+        "user_id": user_id,
+        "type": CredentialType.PASSWORD ,
+        "provider": provider,
+        "password_hash": password_hash,
+        "created_at": now(),
+        "updated_at": now(),
+    }
+
+    stmt = (
+        insert(Credential)
+        .values(**values)
+        .on_conflict_do_nothing(index_elements=[Credential.user_id, Credential.provider])
+        .returning(Credential.id)
+    )
+
+    try:
+        result = await session.execute(stmt)
+        cred_id = result.scalar_one_or_none()
+        if cred_id:
+            logger.debug("credential.created", extra={"cred_id": cred_id, "user_id": user_id, "provider": provider})
+            return cred_id
+
+        res = await session.execute(
+            select(Credential.user_id).where(
+                Credential.user_id == user_id,
+                Credential.provider == provider,
+            )
+        )
+        existing = res.scalar_one_or_none()
+        if existing:
+            logger.debug("credential.already_exists", extra={"user_id": user_id, "provider": provider})
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Credentials exist already for the current provider")
+
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Credential conflict — please retry")
+
+    except IntegrityError as exc:
+        await session.rollback()
+        logger.warning("credential.integrity_error.other")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unexpected DB Integrity error")
+
+async def create_n_get_user(session,email,name):
+   
+    user_values = {
+        "public_id": uuid7(),
+        "email": email ,
+        "name": name ,
+        "created_at": now(),
+        "updated_at": now(),
+    }
+
+    user_insert = (
+        insert(Users)
+        .values(**user_values)
+        .on_conflict_do_nothing(index_elements=[Users.email])
+        .returning(Users.id, Users.public_id)
+    )
+
+    try:
+        result = await session.execute(user_insert)
+        row = result.one_or_none()
+        if row:
+            user_pid = row[1]
+            logger.info("user.inserted", extra={"user_id": user_pid, "email": email})
+            return {"id":row[0],"public_id":row[1]}
+        else:
+            res = await session.execute(
+                select(Users.email).where(Users.email == email)
+            )
+            existing = res.scalar_one_or_none()
+            if existing:
+                logger.info("user.duplicate.email", extra={"email": existing})
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"User with email {existing} already exists")
+            
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User creation conflict , unexpected , retry")
+    except IntegrityError as exc:
+        await session.rollback()
+        logger.warning("create_user.integrity_error.other")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Integrity error while creating user")
 
 async def revoke_all_tokens_per_user(session,user_id,revoked_by):
     now = datetime.now(timezone.utc)

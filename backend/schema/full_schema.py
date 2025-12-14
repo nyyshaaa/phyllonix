@@ -78,7 +78,7 @@ class Permission(SQLModel, table=True):
     roles: List["Role"] = Relationship(back_populates="permissions", link_model=RolePermission)
 
 class UserPhone(SQLModel, table=True):
-    """Allow only one phone for now and store verification metadata"""
+  
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False))
     phone: str = Field(sa_column=Column(String(20),nullable=False,unique=True))
@@ -95,12 +95,12 @@ class CredentialType(str, enum.Enum):
 
 
 class Credential(SQLModel, table=True):
-    """Holds password hashes and oauth provider ids. Per-device refresh token hashes live in DeviceSession."""
+   
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=False))
     type: CredentialType = Field(nullable=False) 
-    provider: Optional[str] = Field(sa_column=Column(String(64), default=None, nullable=True))
+    provider: str = Field(sa_column=Column(String(64), default=None, nullable=False))
     provider_user_id: Optional[str] = Field(default=None,sa_column=Column(String(255), nullable=True))
     provider_email: Optional[str] = Field(default=None,sa_column=Column(String(320), nullable=True))
     password_hash: Optional[str] = Field(sa_column=Column(Text(),nullable=True))
@@ -115,18 +115,9 @@ class Credential(SQLModel, table=True):
     user: "Users" = Relationship(back_populates="credentials")  # every credential must be linked to user .
 
     __table_args__ = (
-        # one credential per (user, type, provider)
-        UniqueConstraint(
-            "user_id", "type", "provider",
-            name="uq_credential_user_type_provider",
-        ),
-        # ensure an external account can't map to 2 users
-        UniqueConstraint(
-            "provider", "provider_user_id",
-            name="uq_credential_provider_userid",
-        ),
+        UniqueConstraint("user_id", "provider", name="uq_credential_user_provider"),
+        UniqueConstraint("provider", "provider_user_id", name="uq_credential_provider_userid"),
     )
-
 
 class Address(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
