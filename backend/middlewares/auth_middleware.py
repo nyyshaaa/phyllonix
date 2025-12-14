@@ -3,23 +3,23 @@ from typing import Optional
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from backend.common.retries import retry_transaction
 from backend.user.dependencies import Authentication
 from backend.user.repository import  identify_user_by_pid
 from backend.middlewares.constants import logger
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, session,paths:str,maybe_auth_paths:Optional[str]):
+    def __init__(self, app, *, session_maker,paths:str,maybe_auth_paths:Optional[str]):
         super().__init__(app)
-        self.session = session
+        self.session_maker = session_maker
         self.paths = paths 
 
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication for excluded paths
+        
         if any(request.url.path.startswith(p) for p in self.paths):
-            print("skipping auth for path:",request.url.path)
             return await call_next(request)
-        print(request.url)
+     
         logger.info("auth.middleware.attempt", extra={
             "path": request.url.path,
             "method": request.method
@@ -44,30 +44,27 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         role_version=auth_token.get("role_version")
         session_pid=auth_token.get("session_pid")
 
-        # device_session_plain = request.cookies.get("session_token") or request.headers.get("X-Device-Token") or None
+        async def txn_fn():
+            user_id=await identify_user_by_pid(self.session_maker,user_pid)
+            return user_id
 
-
-        async with self.session() as session:
-
-            user_id=await identify_user_by_pid(session,user_pid)
-
-            user_identifier=user_id
-            if not user_identifier:
-                logger.warning("auth.middleware.user_not_found", extra={
-                    "user_public_id": user_pid,
-                    "path": request.url.path
-                })
-                return JSONResponse(
-                    {"detail": "User unidentified and not authorized"},
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
+        user_identifier = await retry_transaction(txn_fn=txn_fn,async_session_maker=self.session_maker)
+      
+        if not user_identifier:
+            logger.warning("auth.middleware.user_not_found", extra={
+                "user_public_id": user_pid,
+                "path": request.url.path
+            })
+            return JSONResponse(
+                {"detail": "User unidentified and not authorized"},
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
             
-            # Attach the identifier to the request state to use in other middlewares
-            request.state.user_identifier = user_identifier
-            request.state.user_public_id = user_pid  # Store public_id for logging
-            request.state.user_roles=user_roles
-            request.state.role_version=role_version
-            request.state.session_pid=session_pid
+        request.state.user_identifier = user_identifier
+        request.state.user_public_id = user_pid  # Store public_id for logging
+        request.state.user_roles=user_roles
+        request.state.role_version=role_version
+        request.state.session_pid=session_pid
 
         logger.info("auth.middleware.success", extra={
             "user_public_id": user_pid,

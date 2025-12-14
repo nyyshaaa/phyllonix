@@ -43,7 +43,7 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
     return response
 
 
-#* make phone necessary for signup when app grows (not added now because of otp prices)
+#* add phone signup method as well when app grows 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup_user(payload: SignupIn=Depends(signup_validation), session: AsyncSession = Depends(get_session)):
     

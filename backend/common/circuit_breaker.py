@@ -1,4 +1,4 @@
-# utils/circuit.py
+
 import asyncio
 import time
 from typing import Optional
@@ -52,16 +52,11 @@ class CircuitBreaker:
 
 
     async def before_call(self):
-        print("before call ")
+      
         async with self._lock:
             await self._maybe_transition()
             if self._state == "OPEN":
                 raise CircuitOpenError(f"circuit {self.name} is open")
-            if self._state == "HALF_OPEN":
-                if self._half_open_semaphore.locked() and self._half_open_semaphore._value <= 0:
-                    # no more probes allowed; fail-fast
-                    raise CircuitOpenError(f"circuit {self.name} is half-open and probes are saturated")
-        # if closed or half-open and we have capacity, the caller proceeds
 
     async def _record_success(self):
         async with self._lock:
@@ -70,25 +65,16 @@ class CircuitBreaker:
                 if self._state == "HALF_OPEN":
                     self._half_open_success_count += 1
                     if self._half_open_success_count >= self.half_open_success_threshold:
-                        # close circuit
                         self._state = "CLOSED"
                         self._fail_count = 0
                         self._opened_at = None
                         self._half_open_success_count = 0
-                # else:
-                #     # success in OPEN shouldn't normally happen (we shouldn't be calling)
-                #     self._state = "CLOSED"
-                #     self._fail_count = 0
-                #     self._opened_at = None
             else:
-                # CLOSED: reset fail_count on success
                 self._fail_count = 0
-        print(self._state,self._fail_count)
 
     async def _record_failure(self):
         async with self._lock:
             if self._state == "HALF_OPEN":
-                # any failure immediately re-opens
                 self._state = "OPEN"
                 self._opened_at = time.monotonic()
                 self._fail_count = 0
@@ -101,9 +87,6 @@ class CircuitBreaker:
                     self._fail_count = 0
 
     async def acquire_half_open_probe(self, timeout: Optional[float] = None) -> bool:
-        """
-        Acquire permission to run a probe when in HALF_OPEN. Returns True if acquired.
-        """
         try:
             # semaphore acquire blocks asynchronously
             await asyncio.wait_for(self._half_open_semaphore.acquire(), timeout=timeout)

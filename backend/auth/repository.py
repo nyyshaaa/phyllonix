@@ -24,7 +24,6 @@ async def user_id_by_email(session,email):
     user=result.first()
     return user
 
-@retry_read(attempts=3)
 async def identify_user(session,email,password):
     email = email.strip().lower()
     user=await user_by_email(session,email)
@@ -79,7 +78,6 @@ async def save_refresh_token(session,ds_id,user_id,revoked_by):
     
     return refresh_plain
 
-@retry_read()
 async def get_user_role_ids(session,user_id):
     stmt=select(Role.id).join(UserRole,Role.id==UserRole.role_id).where(UserRole.user_id==user_id)
     result = await session.execute(stmt)

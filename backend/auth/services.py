@@ -94,31 +94,27 @@ async def issue_auth_tokens(session,session_maker,payload,device_session):
     user_id=user.id
     user_public_id = user.public_id
     
+    ds=await identify_device_session(session,device_session)
 
-    async def txn_fn():
-        ds=await identify_device_session(session,device_session)
+    if ds["revoked_at"] is not None:
+        logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
 
-        if ds["revoked_at"] is not None:
-            logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
+    session_id = ds["id"]
 
-        session_id = ds["id"]
+    if not ds["user_id"]:
+        await link_user_device(session, session_id, user_id)
+        logger.info("auth.device.linked", extra={"user_public_id": str(user_public_id)})
+        
+        # await merge_guest_cart_into_user(session, user_id, session_id)
 
-        if not ds["user_id"]:
-            await link_user_device(session, session_id, user_id)
-            logger.info("auth.device.linked", extra={"user_public_id": str(user_public_id)})
-            
-            # await merge_guest_cart_into_user(session, user_id, session_id)
-
-        refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
-        return {"refresh_token": refresh_token, "session_pid": ds["public_id"]}
-    res = await retry_transaction(txn_fn=txn_fn,async_session_maker=session_maker)
-
+    refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
+  
     user_roles=await get_user_role_ids(session,user_id)
-    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=res["public_id"])
+    access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=ds["public_id"])
     
     logger.info("auth.tokens.issued", extra={"user_public_id": str(user_public_id)})
-    return access_token,res["refresh_token"]
+    return access_token,refresh_token
 
 
 async def validate_refresh_and_fetch_user(session,plain_token):
