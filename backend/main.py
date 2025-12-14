@@ -63,9 +63,9 @@ def create_app():
     #                                                                         f"{version_prefix}/checkout"])
     # app.add_middleware(RateLimitMiddleware)
     
-    app.add_middleware(AuthorizationMiddleware,session=async_session,paths=[f"{version_prefix}/admin/products"])
+    app.add_middleware(AuthorizationMiddleware,session_maker=async_session,paths=[f"{version_prefix}/admin/products"])
     
-    app.add_middleware(AuthenticationMiddleware,session=async_session,paths=[f"{version_prefix}/auth/",
+    app.add_middleware(AuthenticationMiddleware,session_maker=async_session,paths=[f"{version_prefix}/auth/",
                                                                              f"{version_prefix}/health",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",

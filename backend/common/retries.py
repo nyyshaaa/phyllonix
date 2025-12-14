@@ -33,7 +33,7 @@ async def _sleep_with_jitter(delay: float, jitter: float) -> None:
     await asyncio.sleep(max(0.0, delay + jitter_val))
 
 
-async def retry_with_db_circuit(
+def retry_with_db_circuit(
     *,
     attempts: int = 3,
     base_delay: float = 0.1,

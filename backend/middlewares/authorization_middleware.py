@@ -11,9 +11,9 @@ from backend.middlewares.constants import logger
 
 # for endpoints which require roles verification for optimal security , roles are re-checked in refresh endpoint anyway while providing access tokens.
 class AuthorizationMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, session,paths:str, role_cache_ttl: int = 30):
+    def __init__(self, app, *, session_maker,paths:str, role_cache_ttl: int = 30):
         super().__init__(app)
-        self.session = session
+        self.session = session_maker
         self.paths = paths 
         self.role_cache_ttl = role_cache_ttl
 
