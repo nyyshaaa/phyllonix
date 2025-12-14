@@ -2,7 +2,6 @@
 from sqlalchemy import select, text, update
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
-from backend.common.retries import retry_read
 from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE, hash_token, make_refresh_plain, verify_password

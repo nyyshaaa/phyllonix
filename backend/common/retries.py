@@ -108,6 +108,76 @@ async def retry_with_db_circuit(
     return deco
 
 
+async def retry_transaction_with_db_circuit(
+    txn_fn: Callable[..., Awaitable[Any]],
+    async_session_maker,
+    *,
+    attempts: int = 3,
+    base_delay: float = 0.1,
+    factor: float = 2.0,
+    max_delay: float = 1.0,
+    jitter: float = 0.15,
+    if_retryable: Optional[Callable[[BaseException], bool]] = None,
+    per_attempt_timeout: Optional[float] = None,
+    db_circuit = db_circuit
+):
+   
+    if if_retryable is None:
+        if_retryable = is_recoverable_exception
+
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        
+        try:
+            await db_circuit.before_call()
+        except CircuitOpenError:
+            raise HTTPException(status_code=503, detail="service unavailable (db)")
+        
+        acquired_probe = False
+        if db_circuit._state == "HALF_OPEN":
+            acquired_probe = await db_circuit.acquire_half_open_probe(timeout=0.1)
+            if not acquired_probe:
+                raise HTTPException(status_code=503, detail="service unavailable (db)")
+        
+        async with async_session_maker() as session:
+            try:
+                if per_attempt_timeout:
+                    result = await asyncio.wait_for(txn_fn(session), timeout=per_attempt_timeout)
+                else:
+                    result = await txn_fn(session)
+                await session.commit()
+
+                if acquired_probe:
+                    db_circuit.release_half_open_probe()
+                await db_circuit._record_success()
+
+                return result
+            
+            except asyncio.CancelledError:
+                await session.rollback()
+                raise
+            except Exception as exc:
+                last_exc = exc
+                await session.rollback()
+                try:
+                    retryable = if_retryable(exc)
+                except Exception:
+                    retryable = False
+                if not retryable or attempt == attempts:
+                    raise
+
+                if acquired_probe:
+                    db_circuit.release_half_open_probe()
+                await db_circuit._record_failure()
+
+                delay = min(max_delay, base_delay * (factor ** (attempt - 1)))
+                logger.debug("transaction retry attempt %d failed; retrying in %f: %s", attempt, delay, exc)
+                await _sleep_with_jitter(delay, jitter)
+                continue
+
+    raise last_exc
+
+
 
 
 

@@ -4,7 +4,6 @@ from fastapi import HTTPException,status
 from uuid6 import uuid7
 from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
 from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
-from backend.common.retries import retry_transaction
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings

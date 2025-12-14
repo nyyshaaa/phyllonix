@@ -3,7 +3,6 @@ from typing import Optional
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from backend.common.retries import retry_transaction
 from backend.user.dependencies import Authentication
 from backend.user.repository import  identify_user_by_pid
 from backend.middlewares.constants import logger
@@ -44,12 +43,10 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         role_version=auth_token.get("role_version")
         session_pid=auth_token.get("session_pid")
 
-        async def txn_fn():
-            user_id=await identify_user_by_pid(self.session_maker,user_pid)
-            return user_id
+       
+        async with self.session_maker() as session:
+            user_identifier=await identify_user_by_pid(session,user_pid)
 
-        user_identifier = await retry_transaction(txn_fn=txn_fn,async_session_maker=self.session_maker)
-      
         if not user_identifier:
             logger.warning("auth.middleware.user_not_found", extra={
                 "user_public_id": user_pid,

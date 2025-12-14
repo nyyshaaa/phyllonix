@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.db.dependencies import get_session
 from backend.config.admin_config import admin_config
 from sqlalchemy.exc import InterfaceError,OperationalError
-from backend.common.retries import retry_read
+from backend.common.retries import retry_with_db_circuit
+from backend.common.retries_old import retry_async_old
 
 tests_router = APIRouter()
 
@@ -17,8 +18,8 @@ async def rate_limit_test():
 
 # -------------------------------------------------------------------------------------------------------------
 
+@retry_async_old()
 @tests_router.get("/retries_cb_test")
-@retry_read()
 async def health_check(session:AsyncSession=Depends(get_session)):
     stmt=select(1)
     
