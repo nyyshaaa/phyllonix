@@ -22,7 +22,7 @@ auth_router = APIRouter()
 @auth_router.post("/login")
 @retry_with_db_circuit()
 async def login_user(request:Request,payload:SignIn,device_session_token: Optional[str] = Depends(device_session_plain),
-                     session: AsyncSession = Depends(get_session),session_maker = Depends(get_session_factory)):
+                     session: AsyncSession = Depends(get_session)):
     
     logger.info("login.attempt", extra={"email": payload.email})
     
@@ -30,7 +30,7 @@ async def login_user(request:Request,payload:SignIn,device_session_token: Option
         logger.warning("login.failed", extra={"reason": "missing_device_session_token", "email": payload.email})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Device session token is required for login")
 
-    access,refresh=await issue_auth_tokens(session,session_maker,payload,device_session_token)
+    access,refresh=await issue_auth_tokens(session,payload,device_session_token)
 
     resp = {"message":{"access_token":access}}
     if current_env=="dev":

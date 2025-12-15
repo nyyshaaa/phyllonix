@@ -2,9 +2,11 @@
 from datetime import datetime,timezone
 from typing import Any, Dict, Optional, Union
 from backend.common.constants import request_id_ctx
-
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from backend.config.admin_config import admin_config
+
+ENV = getattr(admin_config, "ENV").lower()
 
 def now() -> datetime:
     return datetime.now(timezone.utc)

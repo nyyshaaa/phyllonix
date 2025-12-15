@@ -4,6 +4,7 @@ from fastapi import HTTPException,status
 from uuid6 import uuid7
 from backend.auth.repository import create_credential, create_n_get_user, fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
 from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
+from backend.common.utils import now
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
@@ -17,8 +18,9 @@ async def link_user_role(session, user_id: int):
     role_id = res.scalar_one_or_none()
 
     if not role_id:
-        logger.critical("role.missing", extra={"role_name": config_settings.DEFAULT_ROLE})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Default role missing (migration required)")
+        raise RuntimeError(
+            f"Invariant violation: default role '{config_settings.DEFAULT_ROLE}' is missing"
+        )
 
     stmt = (
         insert(UserRole)
@@ -27,17 +29,12 @@ async def link_user_role(session, user_id: int):
         .returning(UserRole.id)
     )
 
-    try:
-        result = await session.execute(stmt)
-        user_role_id = result.scalar_one_or_none()
-        if user_role_id:
-            logger.debug("user_role.linked", extra={"user_id": user_id, "role_id": role_id})
-        else:
-            logger.debug("user_role.already_linked", extra={"user_id": user_id, "role_id": role_id})
-    except IntegrityError as exc:
-        await session.rollback()
-        logger.warning("user_role.integrity_error.other")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB Integrity error in role linking")
+    result = await session.execute(stmt)
+    user_role_id = result.scalar_one_or_none()
+    if user_role_id:
+        logger.debug("user_role.linked", extra={"user_id": user_id, "role_id": role_id})
+    else:
+        logger.debug("user_role.already_linked", extra={"user_id": user_id, "role_id": role_id})
 
 
 async def create_signup(session,payload):
@@ -92,17 +89,28 @@ async def save_device_state(session,request,user_id):
     return ds.id,ds.public_id,session_token_plain
         
 
-async def issue_auth_tokens(session,session_maker,payload,device_session):
+async def issue_auth_tokens(session,payload,device_session):
     
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
     user_public_id = user.public_id
     
-    ds=await identify_device_session(session,device_session)
+    ds=await identify_device_session(session,device_session,take_lock=True)
+
+    if ds is None:
+        logger.warning("auth.tokens.issue_failed",
+            extra={"reason": "device_session_mismatch","user_public_id": str(user_public_id),},)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="invalid device session")
 
     if ds["revoked_at"] is not None:
         logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
+    
+    if ds["expires_at"] and ds["expires_at"] <= now():
+        logger.warning("auth.tokens.issue_failed",
+            extra={"reason": "device_session_expired","user_public_id": str(user_public_id),"device_session_pid": str(ds["public_id"])},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session expired")
 
     session_id = ds["id"]
 
@@ -113,6 +121,7 @@ async def issue_auth_tokens(session,session_maker,payload,device_session):
         # await merge_guest_cart_into_user(session, user_id, session_id)
 
     refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
+    await session.commit()
   
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=ds["public_id"])
@@ -174,7 +183,7 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     ds_id = device_auth.device_session_id
     user_id = device_auth.user_id
 
-    ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id)
+    ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id,take_lock=True)
     if not ds_row:
         logger.warning("auth.refresh.validate_failed", extra={"reason": "device_session_invalid"})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session unauthorized or invalid")
@@ -213,8 +222,6 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     if now + timedelta(seconds=40)>= locked_device_auth.expires_at:
         logger.warning("auth.refresh.validate_failed", extra={"reason": "token_near_expiry", "device_public_id": str(ds_row["public_id"])})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
-    
-   
 
     refresh_plain=await save_refresh_token(session,ds_row["id"],user_id,revoked_by="rotation")
     await update_device_session_last_activity(session, ds_row["id"], now)

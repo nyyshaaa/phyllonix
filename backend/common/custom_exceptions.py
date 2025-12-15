@@ -11,15 +11,16 @@ async def fallback_handler(request: Request, exc: Exception):
     rid = request_id_ctx.get(None)
     body = {"message": "Internal Server Error "}
 
-    logger.exception(
-        "unhandled.exception",
+    logger.error(
+        "unexpected.exception",
         extra={
             "path": request.url.path,
             "method": request.method,
             "request_id": rid,
         },
+        exc_info=exc,
     )
-    
+
     status_code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
     code = "SERVER_ERROR"
     

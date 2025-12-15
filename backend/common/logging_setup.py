@@ -152,7 +152,7 @@ def setup_logging():
 
     # silence noisy third-party loggers in prod
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING if ENV != "dev" else logging.INFO)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING if ENV != "dev" else logging.INFO)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
     app_logger = logging.getLogger("chlorophyll.app")
     return app_logger
