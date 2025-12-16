@@ -1,72 +1,108 @@
 
 from datetime import datetime
+from typing import Optional
 from fastapi import HTTPException,status
-from sqlalchemy import and_, desc, or_, select, text, update
+from sqlalchemy import and_, desc, insert, or_, select, text, update
 from sqlalchemy.orm import selectinload , load_only
 from backend.common.utils import now
 from backend.schema.full_schema import Product, ProductCategory, ProductCategoryLink
+from backend.products.constants import logger
 
+async def add_product_categories(session, product_id, product_pid, cat_names):
 
-async def add_product_categories(session,product_id, cat_ids):
-    # Bulk insert product_category_link (single statement)
-    if cat_ids:
-        # Build parameterized VALUES list
-        # e.g. VALUES (:p0_prod, :p0_cat), (:p1_prod, :p1_cat), ...
-        values_parts = []
-        params = {}
-        for i, cid in enumerate(cat_ids):
-            values_parts.append(f"(:p{i}_prod_id, :p{i}_cat_id)")
-            params[f"p{i}_prod_id"] = product_id
-            params[f"p{i}_cat_id"] = cid
+    cat_names = list({name.strip() for name in cat_names})
 
-        values_sql = ", ".join(values_parts)
-        insert_sql = f"""
-            INSERT INTO productcategorylink (product_id, prod_category_id)
-            VALUES {values_sql}
-            ON CONFLICT (product_id, prod_category_id) DO NOTHING
-        """
-        await session.execute(text(insert_sql), params)
+    stmt = (
+        select(ProductCategory.id)
+        .where(ProductCategory.name.in_(cat_names))
+    )
 
+    result = await session.execute(stmt)
+    cat_ids = result.scalars().all()
 
-async def find_product_by_pid(session,product_pid,user_id):
-    stmt=select(Product.id,Product.owner_id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
-    res=await session.execute(stmt)
-    product=res.one_or_none()
+    if len(cat_ids) != len(set(cat_names)):
+        logger.warning(
+            "product.category.invalid_names",
+            extra={
+                "product_pid":product_pid,
+                "provided": cat_names,
+                "resolved_count": len(cat_ids),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="One or more categories do not exist",
+        )
+
+    rows = [
+        {"product_id": product_id, "prod_category_id": cid}
+        for cid in cat_ids
+    ]
+
+    stmt = (
+        insert(ProductCategoryLink)
+        .values(rows)
+        .on_conflict_do_nothing(
+            index_elements=[
+                ProductCategoryLink.product_id,
+                ProductCategoryLink.prod_category_id,
+            ]
+        )
+    )
+
+    await session.execute(stmt)
+
+async def find_product_by_pid(session, product_pid):
+    stmt = select(Product.id, Product.owner_id).where(Product.public_id == product_pid,Product.deleted_at.is_(None),)
+
+    res = await session.execute(stmt)
+    product = res.one_or_none()
+
     if not product:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return {"product_id":product[0],"product_owner_id":product[1]}
+        logger.warning("product.not_found",extra={"product_public_id": product_pid},)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="Product not found")
+
+    return {
+        "product_id": product[0],
+        "product_owner_id": product[1],
+    }
 
 
 #** images not joined for now .
 #** may use postgres specific single query join and aggregate for better perf .
-async def get_prod_details_imgs_ncats(session, product_id: int):
-    q = (
+async def fetch_product_details(session, product_public_id: str):
+    stmt = (
         select(Product)
         .options(
-            # load only these columns for Product (SQLAlchemy will still include PK)
             load_only(
+                Product.id,
                 Product.public_id,
                 Product.stock_qty,
                 Product.name,
                 Product.description,
                 Product.base_price,
                 Product.specs,
-                Product.updated_at
+                Product.updated_at,
             ),
-            # fetch categories in a second query
             selectinload(Product.prod_categories).load_only(
                 ProductCategory.id,
                 ProductCategory.name,
             ),
-            # fetch images in a second query
         )
-        .where(Product.id == product_id)
+        .where(
+            Product.public_id == product_public_id,
+            Product.deleted_at.is_(None),
+        )
     )
 
-    res = await session.execute(q)
+    res = await session.execute(stmt)
     product = res.scalar_one_or_none()
+
     if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found",
+        )
 
     return {
         "public_id": str(product.public_id),
@@ -76,26 +112,12 @@ async def get_prod_details_imgs_ncats(session, product_id: int):
         "base_price": product.base_price,
         "specs": product.specs,
         "updated_at": product.updated_at,
-        "categories": [{"id": c.id, "name": c.name} for c in product.prod_categories],
+        "categories": [
+            {"id": c.id, "name": c.name}
+            for c in product.prod_categories
+        ],
     }
 
-async def get_product_id_by_pid(session,product_pid):
-    stmt = select(Product.id).where(Product.public_id==product_pid,Product.deleted_at.is_(None))
-    res = await session.execute(stmt)
-    res = res.scalar_one_or_none()
-
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-
-    return res
-
-
-async def fetch_prod_details(session, product_public_id):
-    product_id = await get_product_id_by_pid(session,product_public_id)
-
-    product_details = await get_prod_details_imgs_ncats(session,product_id)
-
-    return product_details
 
 async def patch_product(session,updates,user_id,product_id):
     stmt = (
@@ -111,17 +133,60 @@ async def patch_product(session,updates,user_id,product_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return res.public_id
 
-async def validate_catgs(session,category_ids):
-    cat_ids = category_ids or []
-    if cat_ids:
-        q = await session.execute(select(ProductCategory.id).where(ProductCategory.id.in_(cat_ids)))
-        found_ids = {r[0] for r in q.all()}
-        missing = [cid for cid in cat_ids if cid not in found_ids]
-        if missing:
-            raise HTTPException(status_code=404, detail=f"Category ids not found: {missing}")
-        cat_ids = [cid for cid in cat_ids if cid in found_ids]
-    return cat_ids
+async def patch_product(session, updates, user_id, user_pid, product_id):
+    stmt = (
+        update(Product)
+        .where(Product.id == product_id,Product.owner_id == user_id,Product.deleted_at.is_(None),)
+        .values(**updates, updated_at=now())
+        .returning(Product.public_id)
+    )
 
+    res = await session.execute(stmt)
+    product_pid = res.scalar_one_or_none()
+
+    if not product_pid:   # recheck to account for race between deletes and updates etc.
+        logger.warning(
+            "product.update.not_found_or_unauthorized",
+            extra={ "user": user_pid},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found ",
+        )
+
+    return product_pid
+
+
+async def validate_categories_by_names(session,category_names: Optional[list[str]],) -> list[int]:
+  
+    if not category_names:
+        return []
+
+    unique_names = list({name.strip() for name in category_names})
+
+    stmt = (
+        select(ProductCategory.id, ProductCategory.name)
+        .where(ProductCategory.name.in_(unique_names))
+    )
+
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    found_by_name = {name: cid for cid, name in rows}
+
+    missing = [name for name in unique_names if name not in found_by_name]
+
+    if missing:
+        logger.warning(
+            "category.not_found",
+            extra={"missing_cat_names": missing},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Categories not found: {missing}",
+        )
+
+    return list(found_by_name.values())
 
 
 async def replace_catgs(session,product_id,cat_ids):
@@ -138,6 +203,7 @@ def keyset_filter(created_at_val: datetime, last_id: str):
         Product.created_at < created_at_val,
         and_(Product.created_at == created_at_val, Product.id > last_id)
     )
+
     
 
 async def fetch_prods(session,cursor_vals,limit):
@@ -151,3 +217,4 @@ async def fetch_prods(session,cursor_vals,limit):
     result = await session.execute(stmt)
     rows = result.all()
     return rows 
+

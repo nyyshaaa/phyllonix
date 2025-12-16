@@ -57,12 +57,10 @@ async def cache_get_or_set_product_listings(
                     await redis_client.delete(key)
                 
             value = await loader()
-            print("lock loading from db")
+           
             try:
                 await set_bytes(key, serialize(value), ttl)
             except Exception as e:
-                print("set fails", e)
-                # if set fails, still return value
                 pass
             return value
         finally:
