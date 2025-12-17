@@ -180,6 +180,10 @@ async def validate_refresh_and_update_refresh(session,plain_token):
         logger.warning("auth.refresh.validate_failed", extra={"reason": "token_expired", "expires_at": str(device_auth.expires_at)})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
     
+    if device_auth.revoked_at is not None:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "token_revoked"})
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token revoked")
+    
     ds_id = device_auth.device_session_id
     user_id = device_auth.user_id
 
@@ -196,6 +200,10 @@ async def validate_refresh_and_update_refresh(session,plain_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session absolute expiry reached")
     
     locked_device_auth = await get_device_auth(session, hashed_token,take_lock=True)
+
+    if not locked_device_auth:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Invalid refresh token ")
 
     # benign_revoked = False
     if locked_device_auth.revoked_at is not None:

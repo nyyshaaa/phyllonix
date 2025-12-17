@@ -3,7 +3,7 @@ from fastapi import HTTPException , status
 from sqlalchemy import insert, select
 from uuid6 import uuid7
 from backend.common.utils import now
-from backend.products.repository import add_product_categories, validate_catgs
+from backend.products.repository import add_product_categories
 from backend.schema.full_schema import Product
 from sqlalchemy.exc import IntegrityError
 from backend.products.constants import logger

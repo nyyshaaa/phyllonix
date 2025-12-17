@@ -34,15 +34,13 @@ class Users(SQLModel, table=True):
     deleted_at: Optional[datetime] = Field(default=None,
         sa_column=Column(DateTime(timezone=True)))
 
-    
-    # relationships
-    phones: List["UserPhone"] = Relationship(back_populates="user")   # user->userphone (1 to many)
+    phones: List["UserPhone"] = Relationship(back_populates="user")  
     credentials: List["Credential"] = Relationship(back_populates="user")
     addresses: List["Address"] = Relationship(back_populates="user")
     session_tokens: List["DeviceAuthToken"] = Relationship(back_populates="user")
     roles: List["Role"] = Relationship(back_populates="user",link_model=UserRole)
     media:"UserMedia" = Relationship(back_populates="user")
-    cart: "Cart" = Relationship(back_populates="user") # user -> cart (1:1)
+    cart: "Cart" = Relationship(back_populates="user")
     orders: List["Orders"] = Relationship(back_populates="user")   
     device_sessions: List["DeviceSession"] = Relationship(back_populates="user")
 
@@ -50,7 +48,6 @@ class Users(SQLModel, table=True):
 class UserMedia(SQLModel,table=True):
     id:Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(default=None, foreign_key="users.id", unique=True,nullable=False)
-    # Simple profile images (with a single predefined size)
     profile_image_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     profile_image_thumb_url: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
     
@@ -63,7 +60,6 @@ class RolePermission(SQLModel, table=True):
 
     __table_args__ = (UniqueConstraint("role_id", "permission_id", name="uq_role_permission_role_id_permission_id"),)
 
-# Core tables
 class Role(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(sa_column=Column(String(length=200), unique=True, nullable=False,default='buyer'))
@@ -112,7 +108,7 @@ class Credential(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True))
 
 
-    user: "Users" = Relationship(back_populates="credentials")  # every credential must be linked to user .
+    user: "Users" = Relationship(back_populates="credentials")
 
     __table_args__ = (
         UniqueConstraint("user_id", "provider", name="uq_credential_user_provider"),
@@ -141,7 +137,6 @@ class Address(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True))
 
     user: "Users" = Relationship(back_populates="addresses")
-    # phone: Optional["UserPhone"] = Relationship(back_populates="addresses")
 
 class AuthMethod(str, enum.Enum):
     PASSWORD = "password"
@@ -151,7 +146,6 @@ class AuthMethod(str, enum.Enum):
 
 class DeviceSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # hashed session token (e.g., sha256 hex = 64 chars) - unique so no duplicate tokens
     session_token_hash: str = Field(sa_column=Column(String(128), nullable=False, unique=True, index=True))
     user_id: Optional[int] = Field( default=None,sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"),
             index=True,nullable=True))
@@ -161,7 +155,6 @@ class DeviceSession(SQLModel, table=True):
     sa_column=Column("public_id", UUID(as_uuid=True), unique=True, index=True, nullable=False),
     )
 
-    # metadata...
     device_name: Optional[str] = Field(default=None, sa_column=Column(String(128)))
     device_type: Optional[str] = Field(default=None, sa_column=Column(String(64)))
     user_agent_snippet: Optional[str] = Field(default=None, sa_column=Column(String(512)))
@@ -170,19 +163,16 @@ class DeviceSession(SQLModel, table=True):
     ip_first_seen: Optional[str] = Field(default=None, sa_column=Column(INET, nullable=True))
     last_seen_ip: Optional[str] = Field(default=None, sa_column=Column(INET, nullable=True))
 
-    last_activity_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))  #* make it non nullable later 
+    last_activity_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
 
     revoked_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     session_expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True),nullable=False))
 
-    # relationship to tokens (one-to-many)
     tokens: List["DeviceAuthToken"] = Relationship(back_populates="device_session",
                                                   sa_relationship_kwargs={"cascade": "all, delete-orphan"},
                                                   passive_deletes=True)
     user: Optional["Users"] = Relationship(back_populates="device_sessions")
-    # device session can exist on it's own without user (e.g., guest session) hence optional, 
-    # but for a user it must have a device session ( so not optional on user side ) .
 
 
 class DeviceAuthToken(SQLModel, table=True):
@@ -191,18 +181,14 @@ class DeviceAuthToken(SQLModel, table=True):
     device_session_id: int = Field(sa_column=Column(ForeignKey("devicesession.id", ondelete="CASCADE"), index=True, nullable=False))
 
     user_id: int = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False))
-
-    # hashed refresh token
     token_hash: str = Field(sa_column=Column(String(200), nullable=False, unique=True, index=True))
 
     issued_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     revoked_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
-
-    revoked_by: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # 'user'|'system'|'admin'
+    revoked_by: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))
     revoked_reason: Optional[str] = Field(default=None, sa_column=Column(String(256), nullable=True))
 
-    # auth_method stored as an enum column
     auth_method: AuthMethod = Field(sa_column=Column(Enum(AuthMethod, create_type=False), nullable=False))
 
     device_session: "DeviceSession" = Relationship(back_populates="tokens")
@@ -236,7 +222,7 @@ class Product(SQLModel, table=True):
         sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     )
     stock_qty:int=Field(sa_column=Column(Integer(), nullable=False))
-    sku: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True)) # keep nullable for now , later when necessary create index 
+    sku: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     name: str = Field(sa_column=Column(String(255), nullable=False,unique=True))
     description: Optional[str] = Field(default=None, sa_column=Column(Text(), nullable=True))
     base_price: int = Field(default=0,description="Price in paise (int)")
@@ -248,10 +234,6 @@ class Product(SQLModel, table=True):
     )
 
     owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True))
-    # audit fields(in case admin creates  a product on behalf of sa seller)
-    # created_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
-    # updated_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
-
     created_at: datetime = Field(default_factory=now,
         sa_column=Column(DateTime(timezone=True), nullable=False,default=now))
     updated_at: datetime = Field(default_factory=now,
@@ -264,9 +246,9 @@ class Product(SQLModel, table=True):
     images: List["ProductImage"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     prod_categories: List["ProductCategory"] = Relationship(back_populates="products", link_model=ProductCategoryLink)
 
-    # price_options: List["PriceOption"] = Relationship(back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
-# 1 image content id can belong to many product images 
+# 1 image content id can belong to many product images if one image can repeat across products(like brand image), 
+# but to keep it simple and efficent allow prod image to image content 1:1 mapping content is unique in product images table 
 class ProductImage(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -289,18 +271,22 @@ class ProductImage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
 
-    # uploaded_by: Optional[int] = Field(foreign_key="user.id", nullable=True)
+    __table_args__ = (
+        Index(
+            "uq_product_image_content_id",
+            "content_id",
+            unique=True,
+            postgresql_where=text("content_id IS NOT NULL"),
+        ),
+    )
 
     product: "Product" = Relationship(back_populates="images")
     img_content : "ImageContent" = Relationship(back_populates="product_imgs")
-
-    #* add unique constraint on product_id + content_id later if needed
 
 class ImageContent(SQLModel, table=True):
    
     id: Optional[int] = Field(default=None, primary_key=True)
     checksum: str = Field(sa_column=Column(String(128), nullable=False, unique=True), description="sha256 hex")
-    # owner_id: Optional[int] = Field(sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True))
     provider: str = Field(sa_column=Column(String(100), nullable=True)) 
     public_id:uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     provider_public_id: Optional[str] = Field(default=None, sa_column=Column(String(1024), nullable=True))
@@ -324,8 +310,8 @@ class ProductCategory(SQLModel, table=True):
 
 class UploadsWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider_event_id: str = Field(sa_column=Column(String(1000), nullable=False,unique=True))  # provider unique id (asset_id or public_id:version)
-    provider: str = Field(sa_column=Column(String(100), nullable=True))           # e.g. 'cloudinary'
+    provider_event_id: str = Field(sa_column=Column(String(1000), nullable=False,unique=True))  
+    provider: str = Field(sa_column=Column(String(100), nullable=True))         
     payload: dict = Field(sa_column=Column(JSONB, nullable=False))
     received_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     processed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
@@ -347,8 +333,6 @@ class RoleAudit(SQLModel, table=True):
 
 #-----------------------------------------------------------------------------------------------------------
 
-# CARTS — Persist carts server-side (DB/Redis) so they survive page reloads and can merge on login
-# user / userphone to cart (1:1)
 # hard delete cart items after some retention window when not used for a longgg time 
 class Cart(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -371,7 +355,7 @@ class Cart(SQLModel, table=True):
     )
 
 
-    user: Optional["Users"] = Relationship(back_populates="cart")   # (guest cart)a cart may have no user 
+    user: Optional["Users"] = Relationship(back_populates="cart")   
     cart_items: List["CartItem"] = Relationship(back_populates="cart")
 
 # CartItem is like join table as well for product and cart (product <--> cart many to many)
@@ -433,8 +417,8 @@ class Orders(SQLModel, table=True):
     total: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
     shipping_address_json: dict = Field(sa_column=Column(JSON, nullable=False))
     billing_address_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # e.g., "CARD", "UPI", "COD"
-    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))  #snapshot from payment schema 
+    payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True)) 
+    provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True)) 
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
     updated_at: datetime = Field(default_factory=now,sa_column=Column(DateTime(timezone=True), nullable=False,default=now, onupdate=now))
     placed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
@@ -468,9 +452,7 @@ class CheckoutSession(SQLModel, table=True):
     user_id: int = Field(default=None, sa_column=Column(Integer, nullable=False))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     cart_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    # shipping_choice: Optional[str] = Field(default="standard", sa_column=Column(String(32), nullable=True))
-    selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "UPI" / "COD"
-    # status: int = Field(default=CheckoutStatus.PROGRESS.value, sa_column=Column(Integer, nullable=False))
+    selected_payment_method: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True)) 
     is_active: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default=text('true')))
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False, index=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), nullable=False, default=now))
@@ -505,9 +487,9 @@ class IdempotencyKey(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     key: str = Field(sa_column=Column(String(128), unique=True, nullable=False, index=True))
-    created_by: int = Field(sa_column=Column(Integer, nullable=False))  # user id
-    owner_type: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  # "order", "payment", "refund"
-    owner_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))  # local id if created
+    created_by: int = Field(sa_column=Column(Integer, nullable=False))  
+    owner_type: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  
+    owner_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))  
     request_hash: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     response_code: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     response_body: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
@@ -557,7 +539,7 @@ class Payment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
     order_id: int = Field(sa_column=Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, unique=True))
-    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  # e.g., "razorpay", "stripe"
+    provider: Optional[str] = Field(default=None, sa_column=Column(String(64), nullable=True))  
     provider_payment_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     provider_order_id: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
     status: int = Field(default=PaymentStatus.PENDING.value, sa_column=Column(Integer, nullable=False, index=True))
@@ -584,7 +566,7 @@ class PaymentAttempt(SQLModel, table=True):
 class PaymentWebhookEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     provider: str = Field(sa_column=Column(String(64), nullable=False))
-    provider_event_id: Optional[str] = Field(sa_column=Column(String(128), nullable=True))  # unique per provider recommended
+    provider_event_id: Optional[str] = Field(sa_column=Column(String(128), nullable=True))  
     order_id: Optional[int] = Field(sa_column=Column(Integer, nullable=True, index=True))
     payload: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     status: int = Field(default=PaymentEventStatus.RECEIVED.value, sa_column=Column(Integer, nullable=False))
@@ -606,7 +588,7 @@ class PaymentWebhookEvent(SQLModel, table=True):
 
 class OutboxEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    topic: str = Field(sa_column=Column(String(128), nullable=False))  # e.g., "order.paid"
+    topic: str = Field(sa_column=Column(String(128), nullable=False))
     payload: dict = Field(sa_column=Column(JSON, nullable=False))
     aggregate_type: str = Field(sa_column=Column(String(64), nullable=False))
     aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))
@@ -629,11 +611,11 @@ class CommitIntentStatus(enum.IntEnum):
 
 class CommitIntent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    aggregate_type: str = Field(sa_column=Column(String(32), nullable=False))   # e.g. "order", "inventory"
-    aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))        # e.g. order.id
-    reason: str = Field(sa_column=Column(String(128), nullable=False))         # e.g. "payment_succeeded"
+    aggregate_type: str = Field(sa_column=Column(String(32), nullable=False))   
+    aggregate_id: int = Field(sa_column=Column(Integer, nullable=False))     
+    reason: str = Field(sa_column=Column(String(128), nullable=False))       
     status: int = Field(default=CommitIntentStatus.PENDING.value, sa_column=Column(Integer, nullable=False))
-    payload: dict = Field(sa_column=Column(JSONB, nullable=True))              # items, quantities, ledger entries
+    payload: dict = Field(sa_column=Column(JSONB, nullable=True))             
     attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), default=now))

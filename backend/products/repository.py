@@ -118,21 +118,6 @@ async def fetch_product_details(session, product_public_id: str):
         ],
     }
 
-
-async def patch_product(session,updates,user_id,product_id):
-    stmt = (
-    update(Product)
-    .where(Product.id == product_id,Product.owner_id==user_id)
-    .values(**updates, updated_at=now())
-    .returning(Product.public_id)  
-    )
-
-    res = await session.execute(stmt)
-    res = res.one_or_none()
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return res.public_id
-
 async def patch_product(session, updates, user_id, user_pid, product_id):
     stmt = (
         update(Product)
@@ -144,7 +129,7 @@ async def patch_product(session, updates, user_id, user_pid, product_id):
     res = await session.execute(stmt)
     product_pid = res.scalar_one_or_none()
 
-    if not product_pid:   # recheck to account for race between deletes and updates etc.
+    if not product_pid:   # check here to account for race between deletes and updates etc , like if any request deletes after we initially did a select check.
         logger.warning(
             "product.update.not_found_or_unauthorized",
             extra={ "user": user_pid},
