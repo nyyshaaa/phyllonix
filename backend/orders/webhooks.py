@@ -97,54 +97,8 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     except Exception as e:
         rid = request_id_ctx.get(None)
 
-        if is_recoverable_exception(e):
-            logger.error(
-                "razorpay.webhook.transient_failure",
-                exc_info=(type(e), e, e.__traceback__),
-                extra={
-                    "request_id": rid,
-                    "webhook_event_id": ev_id,
-                    "provider_event_id": provider_event_id,
-                    "payment_status": payment_status,
-                    "order_status": final_order_status,
-                },
-            )
-            try:
-                await session.rollback()
-            except Exception as rb_err:
-                logger.error(
-                    "razorpay.webhook.rollback_failed",
-                    exc_info=(type(rb_err), rb_err, rb_err.__traceback__),
-                    extra={"request_id": rid, "webhook_event_id": ev_id},
-                )
-            # psp retries non 200's so psp will retry even without reraise , if we just swallow error and don't retry
-            # but to get error trackebacks in logs reraise so logs show generic fallback's code and error traceback
-            raise
-        
-        # non recoverable
-        logger.error(
-            "razorpay.webhook.permanent_failure",
-            exc_info=(type(e), e, e.__traceback__),
-            extra={
-                "request_id": rid,
-                "webhook_event_id": ev_id,
-                "provider_event_id": provider_event_id,
-                "payment_status": payment_status,
-                "order_status": final_order_status,
-            },
-        )
-
         try:
             await session.rollback()
-        except Exception as rb_err:
-            logger.error(
-                "razorpay.webhook.rollback_failed",
-                exc_info=(type(rb_err), rb_err, rb_err.__traceback__),
-                extra={"request_id": rid, "webhook_event_id": ev_id},
-            )
-   
-        recorded = False
-        try:
             await webhook_error_recorded(
                 session,
                 ev_id,
@@ -154,24 +108,15 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
                 ),
             )
             await session.commit()
-            recorded = True
-        except Exception as rec_err:
+        except Exception as rb_err:
             logger.error(
-                "razorpay.webhook.error_record_failed",
-                exc_info=(type(rec_err), rec_err, rec_err.__traceback__),
+                "razorpay.webhook.record_error_failure",
+                exc_info=(type(rb_err), rb_err, rb_err.__traceback__),
                 extra={"request_id": rid, "webhook_event_id": ev_id},
             )
-        
-        if recorded:
-            return JSONResponse(
-                {"status": "ok", "note": "recorded for reconciliation"},
-                status_code=200,
-            )
-        else:
-            # couldn't record – better let PSP retry than silently drop the event
-            raise
-
-
+        # psp retries non 200's so psp will retry even without reraise , like if we just swallow error and don't retry
+        # but to get error trackebacks in logs reraise 
+        raise
 
     if event!="payment.authorized" and event!="order.paid" :
         print("commit id",commit_int_id) 

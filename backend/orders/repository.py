@@ -234,14 +234,14 @@ async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
     await session.execute(stmt)
 
 async def spc_by_ikey(session,i_key,user_id):
-    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at,IdempotencyKey.id
+    stmt = select(IdempotencyKey.id,IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res and res[2] < now( ) + timedelta(seconds=40):
         raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout and order idempotency already expired")
     if res:
-        order_data = {"response_body":res[0],"response_code":res[1],"ik_id":res[3]}
+        order_data = {"response_body":res[1],"response_code":res[2],"ik_id":res[0]}
         return order_data
     return res
 
@@ -328,12 +328,13 @@ def compute_final_total(items,payment_method):
         "total": total,
     }
 
+# fully idempotent at each level
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
-    # Create Order
+    # Create Order 
     order = Orders(
         user_id=user_id,
-        # session_id=session_id,
+        ik_id=i_key,
         status=OrderStatus.PENDING_PAYMENT.value if payment_method == "UPI" else OrderStatus.CONFIRMED.value,
         subtotal=order_totals["subtotal"],
         tax=order_totals["tax"],
@@ -568,11 +569,8 @@ async def update_pay_completion_get_orderid(session,pay_id:int,provider_payment_
         paid_at=now(),
         provider_payment_id=provider_payment_id
     ).returning(Payment.order_id))
-    try:
-        result=await session.execute(stmt)
-    except IntegrityError as e:
-        await session.rollback()
-        raise
+    
+    result=await session.execute(stmt)
     order_id = result.scalar_one_or_none()
     return order_id
 
@@ -610,11 +608,9 @@ async def update_order_status(session,order_id,order_status):
         )
         .returning(Orders.id)
     )
-    try:
-        result=await session.execute(stmt)
-    except IntegrityError as e:
-        await session.rollback()
-        raise
+    
+    result=await session.execute(stmt)
+    return result.scalar_one_or_none()
     
 
 async def emit_outbox_event(session, topic: str, payload: dict,

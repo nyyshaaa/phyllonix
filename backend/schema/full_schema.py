@@ -406,6 +406,7 @@ class Orders(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     public_id: uuid7 = Field(default_factory=uuid7, sa_column=Column(UUID(as_uuid=True), unique=True, index=True, nullable=False))
+    ik_id: int = Field(sa_column=Column(Integer, index=True, unique=True, nullable=False))
     user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True))
     session_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("devicesession.id", ondelete="SET NULL")))
     status: int = Field(default=OrderStatus.CONFIRMED.value, sa_column=Column(Integer, nullable=False, index=True))
