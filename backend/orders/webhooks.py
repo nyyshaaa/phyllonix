@@ -35,9 +35,6 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     provider = "razorpay"
 
-    if await webhook_event_already_processed(session, provider_event_id,provider):
-        return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
-
     # process the event
     payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {}) or {}
     provider_payment_id = payment_entity.get("id") or payment_entity.get("payment_id")
@@ -60,8 +57,10 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
     payment_status,final_order_status,note = pay_order_status_util(psp_pay_status,event)
-    ev_id = await mark_webhook_received(session, provider_event_id, provider, payload,order_id=order_id,pay_status=payment_status)
-    
+    ev = await mark_webhook_received(session, provider_event_id, provider, payload,order_id=order_id,pay_status=payment_status)
+    if ev is not None and ev["processed_at"] is not None:
+        return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
+    ev_id=ev["id"]
     # critical section , record/update errors safely for easiest reconcilation .
     try:
         

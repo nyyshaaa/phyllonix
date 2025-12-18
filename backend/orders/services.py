@@ -237,42 +237,26 @@ async def webhook_event_already_processed(session, provider_event_id: str , prov
 async def mark_webhook_received(session,provider_event_id: Optional[str], provider: str, payload: dict ,
                                     order_id:Optional[int]=None,last_error: Optional[str] = None, pay_status:Optional[str]=None ) -> Optional[int]:
     
-    try:
-        stmt = pg_insert(PaymentWebhookEvent).values(
-            provider=provider,
-            provider_event_id=provider_event_id,
-            order_id=order_id,
-            payload=payload,
-            attempts=1,
-            status= pay_status or PaymentEventStatus.RECEIVED.value,
-            last_error=last_error,
-            created_at=now()
-        ).on_conflict_do_nothing(
-            index_elements=["provider", "provider_event_id"],
-            index_where=text("provider_event_id IS NOT NULL"),
-        ).returning(PaymentWebhookEvent.id)
-        result = await session.execute(stmt)
-    except IntegrityError as e:
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Failed to record webhook event: {str(e)}"
-        )
+   
+    stmt = pg_insert(PaymentWebhookEvent).values(
+        provider=provider,
+        provider_event_id=provider_event_id,
+        order_id=order_id,
+        payload=payload,
+        attempts=1,
+        status= pay_status or PaymentEventStatus.RECEIVED.value,
+        last_error=last_error,
+        created_at=now()
+    ).on_conflict_do_nothing(
+        index_elements=["provider", "provider_event_id"],
+        index_where=text("provider_event_id IS NOT NULL"),
+    ).returning(PaymentWebhookEvent.id,PaymentWebhookEvent.processed_at)
+    result = await session.execute(stmt)
+    ev = result.one_or_none()
+    if ev is None:
+        return None
+    return {"id":ev[0],"processed_at":ev[1]}
 
-    ev_id = result.scalar_one_or_none()
-
-    if ev_id is not None:
-        await session.commit()
-        return ev_id
-    else:
-        stmt = update(PaymentWebhookEvent
-                       ).where(PaymentWebhookEvent.provider==provider,PaymentWebhookEvent.provider_event_id == provider_event_id,
-                       PaymentWebhookEvent.processed_at.is_(None)).values(
-                       attempts=PaymentWebhookEvent.attempts + 1
-                       ).returning(PaymentWebhookEvent.id)
-        res = await session.execute(stmt)
-        ev_id = res.scalar_one_or_none()
-        return ev_id
 
 async def mark_webhook_processed(session, ev_id,last_error: Optional[str] = None):
    
