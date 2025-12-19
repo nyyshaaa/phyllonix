@@ -8,7 +8,7 @@ from backend.config.settings import config_settings
 from backend.orders.repository import create_commit_intent, emit_outbox_event, get_pay_record_by_provider_orderid, update_order_status, update_pay_completion_get_orderid, webhook_error_recorded
 from backend.orders.services import  load_order_items_pid_qty, mark_webhook_processed, mark_webhook_received, verify_razorpay_signature, webhook_event_already_processed
 from backend.orders.utils import pay_order_status_util
-from backend.schema.full_schema import OrderStatus, PaymentEventStatus
+from backend.schema.full_schema import OrderStatus, PaymentEventStatus, PaymentStatus
 from backend.config.admin_config import admin_config
 from backend.common.constants import request_id_ctx
 from backend.common.retries import is_recoverable_exception
@@ -66,24 +66,27 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         
         order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,provider,payment_status)
         await update_order_status(session,order_id,final_order_status)
-       
-        #** fix it to check based on including failed event and remove order.paid as captured works fine  -- for deployed app
-        if event != "payment.authorized" and event!="order.paid":
+
+        if payment_status in (
+            PaymentStatus.CAPTURED.value,
+            PaymentStatus.FAILED.value,
+        ):
             outbox_payload = {
             "order_id": order_id,
             "payment_provider_id": provider_payment_id,
             "provider_order_id": provider_order_id
             }
-            topic="order.paid" if final_order_status == OrderStatus.CONFIRMED.value else "order.pending_payment" 
+
+            topic="order.paid" if payment_status == PaymentStatus.CAPTURED.value else "order.pending_payment" 
             
             commit_int_id =None
-            if final_order_status == OrderStatus.CONFIRMED.value:
+            if payment_status == PaymentStatus.CAPTURED.value:
                     # build commit payload: items & quantities from order_items
                     items = await load_order_items_pid_qty(session, order_id)  # returns list of {product_id, qty}
                     commit_payload = {"order_id": order_id, "items": items}
                     # create commit intent (idempotent: do not duplicate if exists)
                     commit_int_id = await create_commit_intent(session, order_id, "payment_succeeded", aggr_type = "order",payload = commit_payload)
-                    print("commit id",commit_int_id) 
+
             outbox_event_id = await emit_outbox_event(session, 
                                     topic=topic, 
                                     payload=outbox_payload,
@@ -117,14 +120,12 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         # but to get error trackebacks in logs reraise 
         raise
 
-    if event!="payment.authorized" and event!="order.paid" :
-        print("commit id",commit_int_id) 
-        print("published outbox")
+    if event == "payment.captured" or event=="payment.failed":
+     
         app.state.pubsub_pub(topic, {"outbox_event_id": outbox_event_id, "topic": topic, "payload": outbox_payload})
 
         if commit_int_id:
-            print("commit id",commit_int_id) 
-            print("published commitintent")
+          
             # lightweight payload: commit intent id (worker will re-load intent from DB and lock it)
             app.state.pubsub_pub("order_confirm_intent.created", {"commit_intent_id": commit_int_id, "order_id": order_id})
 
