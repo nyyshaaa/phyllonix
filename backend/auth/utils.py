@@ -70,10 +70,10 @@ def hash_token(plain:str)->str:
     return hash_func(plain.encode()).hexdigest()
 
 def decode_token(token:str):
-    """To verify the signature , expiration and user claims of token"""
+       
     try:
         token_data=jwt.decode(
-        jwt=token,
+        token,
         key=config_settings.JWT_SECRET,
         algorithms=config_settings.JWT_ALGO
         )

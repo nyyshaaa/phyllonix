@@ -12,6 +12,8 @@ from backend.__init__ import logger
 DEFAULT_MAX_ATTEMPTS = 5
 
 async def order_confirm_commitintent_handler(task_data: Dict[str, Any], worker_name: str):
+
+    print("commit intent worker------------------------------------------------------------------------------")
     
     ci_id = task_data.get("commit_intent_id")
     if not ci_id:
@@ -20,14 +22,15 @@ async def order_confirm_commitintent_handler(task_data: Dict[str, Any], worker_n
 
     async with async_session() as session:
         try:
-            # acquire and mark PROCESSING (short transaction)
+            # acquire and mark PROCESSING (short transaction) so all workers don't pick same pending events
             async with session.begin():
                 stmt = select(CommitIntent.status).where(CommitIntent.id == ci_id,
                                                          CommitIntent.status==CommitIntentStatus.PENDING.value).with_for_update(skip_locked=True)
                 res = await session.execute(stmt)
                 ci_status = res.scalar_one_or_none()
-                if not ci_status:
+                if ci_status is None:
                     logger.info("commit_intent_handler: no CI row for id=%s", ci_id)
+                    print(type(ci_id))
                     return
 
                 if ci_status == CommitIntentStatus.DONE.value:
@@ -54,6 +57,7 @@ async def order_confirm_commitintent_handler(task_data: Dict[str, Any], worker_n
                 items = payload.get("items") or []
 
                 # validate reservation sums and lock product rows then decrement
+                errors = []
                 for it in items:
                     pid = int(it["product_id"])
                     qty = int(it["quantity"])
@@ -66,15 +70,22 @@ async def order_confirm_commitintent_handler(task_data: Dict[str, Any], worker_n
                         raise RuntimeError(f"product not found {pid}")
 
                     if prod.stock_qty < qty:
-                        raise RuntimeError(f"insufficient stock for product {pid}: stock={prod.stock_qty} need={qty}")
+                        errors.append(f"insufficient stock for product {pid}: stock={prod.stock_qty} need={qty}")
+                        continue
 
                     new_stock = prod.stock_qty - qty
                     await session.execute(
                         update(Product).where(Product.id == pid).values(stock_qty=new_stock, updated_at=now())
                     )
+                if errors:
+                    raise RuntimeError(f"errors:{errors}")
 
-                # mark reservations COMMITTED
+                # mark reservations RELEASED
                 # or leave for now anyway they will get expired in some time 
+                # await session.execute(
+                #         update(InventoryReservation).where(InventoryReservation.order_id == order_id
+                #                                            ).values(status=InventoryReserveStatus.RELEASED)
+                # )
 
                 # mark commit intent DONE
                 await session.execute(
@@ -84,26 +95,24 @@ async def order_confirm_commitintent_handler(task_data: Dict[str, Any], worker_n
                 # emit outbox events inside same tx
                 inv_payload = {"order_id": order_id, "items": items}
                 await sim_emit_outbox_event(session, topic="inventory.committed", payload=inv_payload,
-                                           aggregate_type="order", aggregate_id=order_id,
-                                           dedupe_key=f"inventory.committed:{order_id}")
+                                           agg_type="order", agg_id=order_id)
                 await sim_emit_outbox_event(session, topic="order.confirmed", payload={"order_id": order_id},
-                                           aggregate_type="order", aggregate_id=order_id,
-                                           dedupe_key=f"order.confirmed:{order_id}")
+                                           agg_type="order", agg_id=order_id)
 
             logger.info("commit_intent_handler: processed CI id=%s order=%s", ci_id, order_id)
 
         except Exception as exc:
             # schedule retry/backoff or mark failed after N attempts
             logger.exception("commit_intent_handler: failure processing CI %s: %s", ci_id, exc)
-            async with async_session() as s2:
+            async with async_session() as session:
                 # bump attempts and set next_retry_at (exponential backoff)
                 stmt = select(CommitIntent.attempts).where(CommitIntent.id == ci_id)
-                r = await s2.execute(stmt)
+                r = await session.execute(stmt)
                 attempts = r.scalar_one_or_none() or 0
                 if attempts + 1 >= DEFAULT_MAX_ATTEMPTS:
-                    await s2.execute(update(CommitIntent).where(CommitIntent.id == ci_id).values(status=CommitIntentStatus.FAILED.value, updated_at=now()))
+                    await session.execute(update(CommitIntent).where(CommitIntent.id == ci_id).values(status=CommitIntentStatus.FAILED.value, updated_at=now()))
                 else:
                     next_try = now() + timedelta(seconds=min(60 * (2 ** attempts), 3600))
-                    await s2.execute(update(CommitIntent).where(CommitIntent.id == ci_id).values(status=CommitIntentStatus.PENDING.value, next_retry_at=next_try, attempts=CommitIntent.attempts + 1))
-                await s2.commit()
+                    await session.execute(update(CommitIntent).where(CommitIntent.id == ci_id).values(status=CommitIntentStatus.PENDING.value, next_retry_at=next_try, attempts=CommitIntent.attempts + 1))
+                await session.commit()
             return

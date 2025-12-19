@@ -14,6 +14,7 @@ class OutboxHandler:
         self.async_session = async_session
     
     async def outbox_handler(self,task_data,w_name):
+        print("outbox handler worker------------------------------------------------------------------------------")
 
         payload = task_data.get("payload")
         outbox_event_id = task_data.get("outbox_event_id")
@@ -26,31 +27,33 @@ class OutboxHandler:
            
             if topic == "order.paid":
 
-                async with session.begin():
-                    # record a received-for-fulfillment outbox event (durable) — optional but useful
-                    await sim_emit_outbox_event(session,
-                                            topic="order.received_for_fulfillment",
-                                            payload={"order_id": order_id},
-                                            agg_type="order",
-                                            agg_id=order_id,)
-                    
-                    await session.execute(
-                        update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value)
-                    )
+               
+                # record a received-for-fulfillment outbox event (durable) — optional but useful
+                await sim_emit_outbox_event(session,
+                                        topic="order.received_for_fulfillment",
+                                        payload={"order_id": order_id},
+                                        agg_type="order",
+                                        agg_id=order_id,)
+                
+                await session.execute(
+                    update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value)
+                )
+                await session.commit()
                
 
-            elif topic == "order.payment_failed":
-                async with session.begin():
-                    # inventory will automatically expire in some time so no need to chnage that and since order is not placed so no need to decrease stock 
-                    await sim_emit_outbox_event(session,
-                                            topic="order.payment_failed.notify",
-                                            payload={"order_id": order_id, "reason": payload.get("reason")},
-                                            aggregate_type="order",
-                                            aggregate_id=order_id,)
-                    
-                    await session.execute(
-                        update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value)
-                    )
+            elif topic == "order.payment_pending":
+                
+                # inventory will automatically expire in some time so no need to chnage that and since order is not placed so no need to decrease stock 
+                await sim_emit_outbox_event(session,
+                                        topic="order.payment_pending.notify",
+                                        payload={"order_id": order_id, "reason": payload.get("reason")},
+                                        aggregate_type="order",
+                                        aggregate_id=order_id,)
+                
+                await session.execute(
+                    update(OutboxEvent).where(OutboxEvent.id == outbox_event_id).values(status=OutboxEventStatus.DONE.value)
+                )
+                await session.commit()
 
 
    

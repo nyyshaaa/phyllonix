@@ -1,86 +1,105 @@
+
 import asyncio
-import functools
-from fastapi import HTTPException
 import time
-from typing import Callable, Optional
+from typing import Optional
 
 class CircuitOpenError(RuntimeError):
     pass
 
-#** make it less overprotective for half open state by allowing all concurrent calls to probe thes service in case of multiple server instances or high concurrency 
 class CircuitBreaker:
     """
-    Simple async circuit breaker (in-memory). 
-    - failure_threshold: # consecutive failures before opening.
-    - recovery_timeout: seconds to wait before allowing a trial (half-open).
-    """
-     
-    def __init__(self, name: str, failure_threshold: int = 3, recovery_timeout: float = 10.0):
-        self.name = name
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self._fail_count = 0
-        self._state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
-        self._opened_at: Optional[float] = None
-        self._lock = asyncio.Lock()
+    Simple async in-memory circuit breaker.
 
+    Usage:
+      cb = CircuitBreaker(name="postgres", failure_threshold=3, recovery_timeout=30, half_open_success_threshold=1)
+
+    Behavior:
+      - CLOSED: normal operation; failures increment fail_count.
+      - OPEN: immediately raise CircuitOpenError from before_call().
+      - HALF_OPEN: allows `max_concurrent_half_open_probes` probes to check service; if a probe succeeds,
+        we count it towards `half_open_success_threshold` and may close the circuit; if a probe fails, reopen.
+    """
+    def __init__(
+        self,
+        name: str,
+        failure_threshold: int = 2,
+        recovery_timeout: float = 30.0,
+        half_open_success_threshold: int = 1,
+        max_concurrent_half_open_probes: int = 1,
+    ):
+        self.name = name
+        self.failure_threshold = max(1, int(failure_threshold))
+        self.recovery_timeout = float(recovery_timeout)
+        self.half_open_success_threshold = max(1, int(half_open_success_threshold))
+        self.max_concurrent_half_open_probes = max_concurrent_half_open_probes
+
+        # state
+        self._state = "CLOSED"  # CLOSED | OPEN | HALF_OPEN
+        self._fail_count = 0
+        self._opened_at: Optional[float] = None
+        self._half_open_success_count = 0
+
+        # concurrency control for probes and state transitions
+        self._lock = asyncio.Lock()
+        self._half_open_semaphore = asyncio.Semaphore(self.max_concurrent_half_open_probes)
 
     async def _maybe_transition(self):
-        if self._state == "OPEN" and self._opened_at is not None:
+        # called under lock before allowing calls
+        if self._state == "OPEN" and self._opened_at is not None :
             if time.monotonic() - self._opened_at >= self.recovery_timeout:
                 self._state = "HALF_OPEN"
+                self._half_open_success_count = 0
+
 
     async def before_call(self):
+      
         async with self._lock:
             await self._maybe_transition()
-
             if self._state == "OPEN":
-                    raise HTTPException(status_code=500, detail=f"circuit {self.name} is open")
-            
-            # if HALF_OPEN or CLOSED we allow the call to proceed
-            
+                raise CircuitOpenError(f"circuit {self.name} is open")
 
-    async def after_call(self,success:bool):
+    async def _record_success(self):
         async with self._lock:
-
-            # if success make it closed
-            if success:
-                self._fail_count=0
-                self._state="CLOSED"
-                self._opened_at=None
-                return 
-            
-            # failure path 
-            self._fail_count+=1
-            # if we're in HALF_OPEN, a single failing probe re-opens immediately
-            if self._fail_count>=self.failure_threshold or self._state == "HALF_OPEN":
-                self._state="OPEN"
-                self._opened_at=time.monotonic()
-                self._fail_count = 0
-            
-
-
-def guard_with_circuit(circuit: CircuitBreaker):
-    """Decorator that checks circuit before call and updates state after."""
-    def deco(fn: Callable):
-        @functools.wraps(fn)
-        async def wrapper(*args, **kwargs):
-            await circuit.before_call()
-            try:
-                result = await fn(*args, **kwargs)
-            except Exception:
-                await circuit.after_call(False)
-                raise
+            if self._state in ("OPEN", "HALF_OPEN"):
+                # a success in HALF_OPEN counts towards closing
+                if self._state == "HALF_OPEN":
+                    self._half_open_success_count += 1
+                    if self._half_open_success_count >= self.half_open_success_threshold:
+                        self._state = "CLOSED"
+                        self._fail_count = 0
+                        self._opened_at = None
+                        self._half_open_success_count = 0
             else:
-                await circuit.after_call(True)
-                return result
-        return wrapper
-    return deco
+                self._fail_count = 0
+
+    async def _record_failure(self):
+        async with self._lock:
+            if self._state == "HALF_OPEN":
+                self._state = "OPEN"
+                self._opened_at = time.monotonic()
+                self._fail_count = 0
+                self._half_open_success_count = 0
+            elif self._state == "CLOSED":
+                self._fail_count += 1
+                if self._fail_count >= self.failure_threshold:
+                    self._state = "OPEN"
+                    self._opened_at = time.monotonic()
+                    self._fail_count = 0
+
+    async def acquire_half_open_probe(self, timeout: Optional[float] = None) -> bool:
+        try:
+            # semaphore acquire blocks asynchronously
+            await asyncio.wait_for(self._half_open_semaphore.acquire(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    def release_half_open_probe(self):
+        try:
+            self._half_open_semaphore.release()
+        except ValueError:
+            # don't crash
+            pass
 
 
-db_circuit = CircuitBreaker(name="postgres", failure_threshold=3, recovery_timeout=10.0)
-
-    
-    
-
-     
+db_circuit = CircuitBreaker(name="postgres", failure_threshold=3, recovery_timeout=20.0, half_open_success_threshold=1, max_concurrent_half_open_probes=1)

@@ -6,11 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import  AsyncSession
 from backend.auth.services import save_device_state
 from backend.common.constants import SESSION_TOKEN_COOKIE_MAX_AGE
-from backend.common.retries import retry_async
 from backend.common.utils import build_success, json_ok, success_response
 from backend.db.dependencies import get_session
 from fastapi.responses import JSONResponse
 from backend.config.admin_config import admin_config
+from backend.schema.full_schema import CommitIntent, CommitIntentStatus
 
 current_env = admin_config.ENV
 secure_flag = False if current_env == "dev" else True
@@ -68,3 +68,4 @@ async def health_check(session:AsyncSession=Depends(get_session)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database connection error")
     
     return {"status": "healthy"}
+

@@ -1,54 +1,56 @@
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from fastapi import HTTPException,status
 from uuid6 import uuid7
-from backend.auth.repository import fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
+from backend.auth.repository import create_credential, create_n_get_user, fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email
 from backend.auth.utils import create_access_token, hash_password, hash_token, make_session_token_plain
+from backend.common.utils import now
 from backend.schema.full_schema import Users,Role, UserRole,Credential,CredentialType, DeviceSession,DeviceAuthToken
 from sqlalchemy.exc import IntegrityError
 from backend.config.settings import config_settings
 from backend.auth.constants import logger
 
-async def link_user_role(session,user_id):
-    q = select(Role).where(Role.name == config_settings.DEFAULT_ROLE)
-    role = (await session.execute(q)).scalar_one_or_none()
-    if not role:
-        role = Role(name=config_settings.DEFAULT_ROLE)
-        session.add(role)
-        await session.flush()
+async def link_user_role(session, user_id: int):
 
-    ur = UserRole(user_id=user_id, role_id=role.id)
-    session.add(ur)
+    res = await session.execute(
+        select(Role.id).where(Role.name == config_settings.DEFAULT_ROLE)
+    )
+    role_id = res.scalar_one_or_none()
+
+    if not role_id:
+        raise RuntimeError(
+            f"Invariant violation: default role '{config_settings.DEFAULT_ROLE}' is missing"
+        )
+
+    stmt = (
+        insert(UserRole)
+        .values(user_id=user_id, role_id=role_id)
+        .on_conflict_do_nothing(index_elements=[UserRole.user_id, UserRole.role_id])
+        .returning(UserRole.id)
+    )
+
+    result = await session.execute(stmt)
+    user_role_id = result.scalar_one_or_none()
+    if user_role_id:
+        logger.debug("user_role.linked", extra={"user_id": user_id, "role_id": role_id})
+    else:
+        logger.debug("user_role.already_linked", extra={"user_id": user_id, "role_id": role_id})
 
 
+async def create_signup(session,payload):
+    email = payload.get("email")
+    name = payload.get("name")
 
-async def create_user(session,payload):
+    user_data = await create_n_get_user(session,email,name)
 
-    user_id = await user_id_by_email(session,payload["email"])
-    if user_id:
-        logger.warning("user.duplicate", extra={"email": payload["email"]})
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with email already exists")
+    pwd_hash = hash_password(payload["password"])
+    cred_id = await create_credential(session,user_data["id"],pwd_hash)
+    await link_user_role(session,user_data["id"])
 
-    try:
-        user = Users(email=payload["email"], name=payload.get("name"))
-        session.add(user)
-        await session.flush() 
-        user_id=user.id
+    await session.commit()
 
-        pwd_hash = hash_password(payload["password"])
-        cred = Credential(user_id=user_id, type=CredentialType.PASSWORD, provider=config_settings.SELF_PROVIDER, password_hash=pwd_hash)
-        session.add(cred)
-        
-        await link_user_role(session,user_id)
-        
-        await session.commit()
-        await session.refresh(user)
-        logger.info("user.created", extra={"user_public_id": str(user.public_id), "email": payload["email"]})
-        return user.id
-    except IntegrityError:
-        await session.rollback()
-        logger.warning("user.create.integrity_error", extra={"email": payload["email"]})
-        raise HTTPException(status_code=400, detail="User with that email already exists")
+    return user_data
+
 
 
 async def save_device_state(session,request,user_id):
@@ -88,15 +90,27 @@ async def save_device_state(session,request,user_id):
         
 
 async def issue_auth_tokens(session,payload,device_session):
+    
     user=await identify_user(session,payload.email,payload.password)
     user_id=user.id
     user_public_id = user.public_id
     
-    ds=await identify_device_session(session,device_session)
+    ds=await identify_device_session(session,device_session,take_lock=True)
+
+    if ds is None:
+        logger.warning("auth.tokens.issue_failed",
+            extra={"reason": "device_session_mismatch","user_public_id": str(user_public_id),},)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="invalid device session")
 
     if ds["revoked_at"] is not None:
         logger.warning("auth.tokens.issue_failed", extra={"reason": "device_session_revoked", "user_public_id": str(user_public_id)})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session is already revoked")
+    
+    if ds["expires_at"] and ds["expires_at"] <= now():
+        logger.warning("auth.tokens.issue_failed",
+            extra={"reason": "device_session_expired","user_public_id": str(user_public_id),"device_session_pid": str(ds["public_id"])},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="device session expired")
 
     session_id = ds["id"]
 
@@ -108,7 +122,7 @@ async def issue_auth_tokens(session,payload,device_session):
 
     refresh_token=await save_refresh_token(session,session_id,user_id,revoked_by="new_login")
     await session.commit()
-
+  
     user_roles=await get_user_role_ids(session,user_id)
     access_token = create_access_token(user_id=user.public_id,user_roles=user_roles,role_version=user.role_version,session_pid=ds["public_id"])
     
@@ -166,10 +180,14 @@ async def validate_refresh_and_update_refresh(session,plain_token):
         logger.warning("auth.refresh.validate_failed", extra={"reason": "token_expired", "expires_at": str(device_auth.expires_at)})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token expired")
     
+    if device_auth.revoked_at is not None:
+        logger.warning("auth.refresh.validate_failed", extra={"reason": "token_revoked"})
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Refresh token revoked")
+    
     ds_id = device_auth.device_session_id
     user_id = device_auth.user_id
 
-    ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id)
+    ds_row = await get_device_session_fields(session, user_id,ds_id=ds_id,take_lock=True)
     if not ds_row:
         logger.warning("auth.refresh.validate_failed", extra={"reason": "device_session_invalid"})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device session unauthorized or invalid")
@@ -182,6 +200,10 @@ async def validate_refresh_and_update_refresh(session,plain_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session absolute expiry reached")
     
     locked_device_auth = await get_device_auth(session, hashed_token,take_lock=True)
+
+    if not locked_device_auth:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Invalid refresh token ")
 
     # benign_revoked = False
     if locked_device_auth.revoked_at is not None:
@@ -208,8 +230,6 @@ async def validate_refresh_and_update_refresh(session,plain_token):
     if now + timedelta(seconds=40)>= locked_device_auth.expires_at:
         logger.warning("auth.refresh.validate_failed", extra={"reason": "token_near_expiry", "device_public_id": str(ds_row["public_id"])})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
-    
-   
 
     refresh_plain=await save_refresh_token(session,ds_row["id"],user_id,revoked_by="rotation")
     await update_device_session_last_activity(session, ds_row["id"], now)

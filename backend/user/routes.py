@@ -30,8 +30,6 @@ FILE_SECRET_KEY=media_settings.FILE_SECRET_KEY
 file_upload=FileUpload()
 
 
-#* only admin can see other user's public details
-# accessible only to same user 
 @user_router.get("/me")
 async def get_user_profile(request:Request, session: AsyncSession = Depends(get_session)):
     return {"message":request.state.user_identifier}
@@ -70,8 +68,6 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
     user_identifier = request.state.user_identifier
     app=request.app
 
-    #** add more robust checks
-    # cheap header check
     if not file.content_type or file.content_type.split("/")[0] != "image":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image uploads allowed")
     
@@ -90,7 +86,6 @@ async def upload_profile_image(request:Request,file: UploadFile = File(), sessio
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save upload") from e
     finally:
-        # close starlette UploadFile internals
         await file.close()
 
     # verify image
@@ -142,17 +137,9 @@ async def change_user_role(
     payload: PromoteIn,
     session: AsyncSession = Depends(get_session)
 ):
-    """
-    Change user roles (admin only).
-    Requires 'user:manage_roles' permission.
-    """
+   
     actor_user_id = request.state.user_identifier
     cur_roles = request.state.user_roles  # verified by authorization middleware
-
-    role_names = await get_rolenames_by_ids(session,cur_roles)
-    if "admin" in role_names and "admin" not in payload.role_names:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="An admin cannot downgrade their role")
-
 
     target_user_id = await userid_by_public_id(session, user_public_id)
     if not target_user_id:
@@ -160,6 +147,11 @@ async def change_user_role(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+    role_names = await get_rolenames_by_ids(session,cur_roles)
+   
+    if actor_user_id == target_user_id and "admin" in role_names and "admin" not in payload.role_names:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="An admin cannot downgrade their role")
 
     role_version = await change_user_roles(
         session=session,

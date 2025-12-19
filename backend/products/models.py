@@ -12,7 +12,7 @@ class ProductCreateIn(BaseModel):
     stock_qty: int = Field(0, ge=0)
     sku: Optional[str] = None
     specs: Optional[Dict[str, Any]] = None
-    category_ids: Optional[List[int]] = None  # attach categories by id (optional)
+    category_names: Optional[List[str]] = None 
 
 
 class ProductUpdateIn(BaseModel):
@@ -22,7 +22,7 @@ class ProductUpdateIn(BaseModel):
     stock_qty: Optional[int] = Field(None, ge=0)
     sku: Optional[str] = None
     specs: Optional[Dict[str, Any]] = None
-    category_ids: Optional[List[int]] = None  
+    category_names: Optional[List[str]] = None  
 
-    model_config = {"extra": "forbid"} # disallow extra fields
+    model_config = {"extra": "forbid"}   # for any extra input fields in model raise 422 at pydantic level
 

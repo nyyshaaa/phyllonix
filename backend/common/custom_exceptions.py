@@ -7,21 +7,39 @@ from backend.common.constants import request_id_ctx
 
 
 async def fallback_handler(request: Request, exc: Exception):
-    
-    body = {"detail": "Internal Server Error "}
-    logger.error(f"{type(exc).__name__} fallback handler error occured ")
-    
+
+    rid = request_id_ctx.get(None)
+    body = {"message": "Internal Server Error "}
+
+    logger.error(
+        "unexpected.exception",
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+            "request_id": rid,
+        },
+        exc_info=exc,
+    )
+
     status_code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
     code = "SERVER_ERROR"
-    rid = request_id_ctx.get(None)
+    
     payload = build_error(code=code, details=body, request_id=rid)
     return json_error(payload, status_code=status_code)
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"{exc} validation exception error ")
     rid = request_id_ctx.get(None)
-    payload = build_error(code="UNPROCESSABLE_ENTITY", details=str(exc.errors()), request_id=rid)
+    logger.warning(
+        "request.validation_failed",
+        extra={
+            "errors": exc.errors(),
+            "path": request.url.path,
+            "request_id": rid,
+        },
+    )
+    
+    payload = build_error(code="UNPROCESSABLE_ENTITY", details={"message":"invalid request"}, request_id=rid)
     return json_error(payload, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
@@ -29,15 +47,13 @@ async def http_exception_handler(request: Request, exc: HTTPException):
    
     rid = request_id_ctx.get(None)
 
-    if isinstance(exc.detail, dict) and "code" in exc.detail:
-        app_code = exc.detail.get("code")
-        app_details = exc.detail.get("details", exc.detail.get("message"))
-    else:
-        app_code = f"HTTP_{exc.status_code}"
-        app_details = exc.detail
+    error_code = f"HTTP_{exc.status_code}"
+    status_code = exc.status_code
+    message = exc.detail
 
-    payload = build_error(code=app_code, details=app_details, request_id=rid)
-    return json_error(payload, status_code=exc.status_code)
+
+    payload = build_error(code=error_code, details={"message":message}, request_id=rid)
+    return json_error(payload, status_code=status_code)
 
 
 def register_all_exceptions(app: FastAPI):

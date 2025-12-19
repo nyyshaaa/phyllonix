@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import time
 from fastapi import HTTPException , status
+from pydantic import ValidationError
 from sqlalchemy import select,  update
 from backend.schema.full_schema import ImageContent, ImageUploadStatus, ProductImage
 from sqlalchemy.exc import IntegrityError
@@ -10,7 +11,6 @@ from cloudinary.utils import api_sign_request
 from backend.__init__ import logger
 
 CLOUDINARY_UPLOAD_URL = f"https://api.cloudinary.com/v1_1/{media_settings.CLOUDINARY_CLOUD_NAME}/image/upload"
-
 
 class ImageUpload:
     MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -28,10 +28,15 @@ class ImageUpload:
         self._validate_file()
 
     def _validate_file(self):
+        if not self.orig_filename:
+            raise ValidationError("filename is required")
+        if self.filesize <= 0:
+            raise ValidationError("filesize must be positive")
         if self.content_type not in ImageUpload.ALLOWED_CONTENT_TYPES:
-            raise HTTPException(400, detail=f"content_type {self.content_type} not allowed")
+            raise ValidationError(f"content_type {self.content_type} not allowed")
         if self.filesize > ImageUpload.MAX_UPLOAD_BYTES:
-            raise HTTPException(413, detail=f"file too large (max {ImageUpload.MAX_UPLOAD_BYTES})")
+            raise ValidationError(f"file too large (max {ImageUpload.MAX_UPLOAD_BYTES})")
+        
         
     async def if_image_content_exists(self,session,checksum):
         stmt=select(ImageContent).where(ImageContent.checksum==checksum)
@@ -52,41 +57,29 @@ class ImageUpload:
         except IntegrityError:
             await session.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Please retry") # integrity error can happen for same user or different user 
-        
-    
-    async def create_prod_image_link(self,session,product_id):
 
-        stmt = select(ProductImage).where(
-            ProductImage.product_id == product_id,
-            ProductImage.orig_filename == self.orig_filename,
-            ProductImage.file_size == self.filesize
-        ).limit(1)
-        res = await session.execute(stmt)
-        existing = res.scalar_one_or_none()
-        if existing:
-            return existing
-        
+    async def create_product_image_intent(self,session,product_id) -> ProductImage:
         image = ProductImage(
             product_id=product_id,
-            storage_key="",
             storage_provider="cloudinary",
             mime_type=self.content_type,
             file_size=self.filesize,
-            checksum=None,
-            status=ImageUploadStatus.PENDING_UPLOADED,
             orig_filename=self.orig_filename,
-            sort_order=self.sort_order
+            sort_order=self.sort_order,
+            status=ImageUploadStatus.PENDING_UPLOADED,
         )
-        
+
         session.add(image)
-        await session.flush()
+        await session.flush()   
         await session.refresh(image)
+
         return image
 
 
-    def uniq_prod_image_identifier_name(self,prod_image_public_id: str) -> str:
+
+    def build_unq_img_key(self,prod_image_public_id) -> str:
         """
-        Deterministic, unguessable storage key
+        Deterministic, unguessable storage key suffix
         """
         msg = f"{prod_image_public_id}".encode()
         secret=ImageUpload.FILE_SECRET_KEY
@@ -95,29 +88,33 @@ class ImageUpload:
         # take first 24 hex characters (12 bytes) to keep path shorter but collision-safe
         suffix = h[:24]
         return suffix
+
     
-    async def update_prod_img_storage_key(self,session,prod_image,uniq_img_key):
-        storage_key=f"{self.FOLDER_PREFIX}/{prod_image.public_id}/{uniq_img_key}"
-        if prod_image.storage_key == storage_key:
-            return True
-        
+    async def update_prod_image_storage_key(self,session,prod_image_id,prod_image_pid,uniq_img_key) -> None:
+        storage_key=f"{self.FOLDER_PREFIX}/{prod_image_pid}_{uniq_img_key}"
         stmt = (
             update(ProductImage)
-            .where(ProductImage.id == prod_image.id)
+            .where(ProductImage.id == prod_image_id)
             .values(storage_key=storage_key)
             .returning(ProductImage.id)
         )
-        res=await session.execute(stmt)
-        await session.commit()
-        return res.scalar_one_or_none()
-     
 
-    async def cloudinary_upload_params(self,prod_image_public_id: str,unq_img_key:str,expires_in: int = 300):
+        res = await session.execute(stmt)
+        updated = res.scalar_one_or_none()
+        if not updated:
+            raise RuntimeError(
+                "Invariant violated: ProductImage disappeared during init"
+            )
+        return updated
+
+     
+    def build_cloudinary_upload_params(self,prod_image_public_id,unq_img_key:str,expires_in: int = 300):
         timestamp = int(time.time())
-        params_to_sign = {"public_id": unq_img_key, "timestamp": str(timestamp),"unique_filename": "false",
-        "overwrite": "false",}
-        folder=f"{ImageUpload.FOLDER_PREFIX}/{prod_image_public_id}"
+        folder=f"{ImageUpload.FOLDER_PREFIX}"
+        params_to_sign = {"public_id": f"{prod_image_public_id}_{unq_img_key}", "timestamp": str(timestamp),"unique_filename": "false","overwrite": "false",}
+        
         params_to_sign["folder"] = folder
+
         signature = api_sign_request(params_to_sign, media_settings.CLOUDINARY_API_SECRET)
         response_params = {
             "provider": "cloudinary",
@@ -126,15 +123,13 @@ class ImageUpload:
                 "api_key": media_settings.CLOUDINARY_API_KEY,
                 "timestamp": timestamp,
                 "signature": signature,
-                "public_id": unq_img_key,
+                "public_id": f"{prod_image_public_id}_{unq_img_key}",
                 "folder": folder,
                 # optional: tell Cloudinary not to create unique filename (we use deterministic public_id)
                 "unique_filename": False,
-                # # optional: prevent accidental overwrite (set to True or False depending on workflow)
                 "overwrite": False,
             },
             "expires_in": expires_in
         }
         return response_params
     
-

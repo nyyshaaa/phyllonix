@@ -3,6 +3,7 @@ from fastapi import Request, status
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from backend.common.utils import build_error, json_error
 from backend.schema.full_schema import Users
 from backend.user.dependencies import Authentication
 from backend.user.repository import check_user_roles_version, userid_by_public_id
@@ -11,9 +12,9 @@ from backend.middlewares.constants import logger
 
 # for endpoints which require roles verification for optimal security , roles are re-checked in refresh endpoint anyway while providing access tokens.
 class AuthorizationMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, session,paths:str, role_cache_ttl: int = 30):
+    def __init__(self, app, *, session_maker,paths:str, role_cache_ttl: int = 30):
         super().__init__(app)
-        self.session = session
+        self.session = session_maker
         self.paths = paths 
         self.role_cache_ttl = role_cache_ttl
 
@@ -31,10 +32,9 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
             logger.warning("auth.authorization.missing_user", extra={
                 "path": request.url.path
             })
-            return JSONResponse(
-                {"detail": "User not authenticated"},
-                status_code=status.HTTP_401_UNAUTHORIZED
-            )
+            payload = build_error(code="INVALID_AUTH", details={"message":"User not authenticated"})
+            return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
+            
         
         logger.debug("auth.authorization.check", extra={
             "path": request.url.path,
@@ -45,27 +45,13 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
         async with self.session() as session:
             current_role_version=await check_user_roles_version(session,identifier,role_version)
         
-        if not current_role_version:
+        if current_role_version is None:
             logger.warning("auth.authorization.user_not_found", extra={
                 "path": request.url.path,
                 "user_public_id": user_public_id
             })
-            return JSONResponse(
-                    {"detail": "No user found or access revoked"},   # should not happen as auth middleware passed
-                    status_code=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        if int(current_role_version) != int(role_version):
-            logger.warning("auth.authorization.role_version_mismatch", extra={
-                "path": request.url.path,
-                "token_role_version": role_version,
-                "current_role_version": current_role_version,
-                "user_public_id": user_public_id
-            })
-            return JSONResponse(
-                {"detail": "Trigger re-login , role_version mismatch"},
-                status_code=status.HTTP_401_UNAUTHORIZED,
-            )
+            payload = build_error(code="INVALID_AUTH", details={"message":"Role version mismatch, trigger re login"})
+            return json_error(payload, status_code=status.HTTP_403_FORBIDDEN)
         
         logger.debug("auth.authorization.success", extra={
             "path": request.url.path,

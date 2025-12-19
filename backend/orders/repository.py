@@ -12,7 +12,7 @@ from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, up
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
-from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, OrderIdempotencyStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, Product
+from backend.schema.full_schema import Cart, CartItem, CheckoutSession, CheckoutStatus, CommitIntent, CommitIntentStatus, IdempotencyKey, InventoryReservation, InventoryReserveStatus, OrderIdempotencyStatus, Orders, OrderItem, OrderStatus, OutboxEvent, OutboxEventStatus, Payment, PaymentAttempt, PaymentStatus, PaymentWebhookEvent, Product
 
 
 async def capture_cart_snapshot(session, user_id: int) -> List[Dict[str, Any]]:
@@ -234,14 +234,14 @@ async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
     await session.execute(stmt)
 
 async def spc_by_ikey(session,i_key,user_id):
-    stmt = select(IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at,IdempotencyKey.id
+    stmt = select(IdempotencyKey.id,IdempotencyKey.response_body,IdempotencyKey.response_code,IdempotencyKey.expires_at
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
     if res and res[2] < now( ) + timedelta(seconds=40):
         raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout and order idempotency already expired")
     if res:
-        order_data = {"response_body":res[0],"response_code":res[1],"ik_id":res[3]}
+        order_data = {"response_body":res[1],"response_code":res[2],"ik_id":res[0]}
         return order_data
     return res
 
@@ -258,11 +258,13 @@ async def validate_checkout_get_items_paymethod(session,checkout_id,user_id):
                       CheckoutSession.public_id == checkout_id).with_for_update()
     res = await session.execute(stmt)
     cs = res.one_or_none()
+    
+    if not cs:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
+
     print(cs)
     print("cs[3]",cs[3])
     cs_id=cs[0]
-    if not cs:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Checkout session not found or unauthorized")
     
     # by default concurrent requests must not be allowed for this endpoint from frontend side
     if cs[1] and cs[1] < now()+timedelta(seconds=40):
@@ -326,12 +328,13 @@ def compute_final_total(items,payment_method):
         "total": total,
     }
 
+# fully idempotent at each level
 async def place_order_with_items(session,user_id,payment_method,order_totals,i_key):
 
-    # Create Order
+    # Create Order 
     order = Orders(
         user_id=user_id,
-        # session_id=session_id,
+        ik_id=i_key,
         status=OrderStatus.PENDING_PAYMENT.value if payment_method == "UPI" else OrderStatus.CONFIRMED.value,
         subtotal=order_totals["subtotal"],
         tax=order_totals["tax"],
@@ -556,20 +559,42 @@ async def get_payment_order_id(session,provider_payment_id):
     payment_order_id = res.scalar_one_or_none()
     return payment_order_id
 
-async def update_pay_completion_get_orderid(session,provider_order_id,provider_payment_id,provider,payment_status):
+async def update_pay_completion_get_orderid(session,pay_id:int,provider_payment_id:str,payment_status:int):
 
     stmt = (
     update(Payment)
-    .where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
+    .where(Payment.id==pay_id,Payment.status < payment_status) 
     .values(
         status=payment_status,
         paid_at=now(),
         provider_payment_id=provider_payment_id
     ).returning(Payment.order_id))
+    
     result=await session.execute(stmt)
     order_id = result.scalar_one_or_none()
-    print("order ",order_id)
     return order_id
+
+async def webhook_error_recorded(session, ev_id,last_error: Optional[str] = None):
+   
+    stmt = (
+        update(PaymentWebhookEvent)
+        .where(PaymentWebhookEvent.id == ev_id)
+        .values(
+                last_error=last_error)
+    )
+    await session.execute(stmt)
+
+async def get_pay_record_by_provider_orderid(session,provider_order_id,provider):
+
+    stmt = select(Payment.id,Payment.order_id).where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
+   
+    try:
+        result=await session.execute(stmt)
+    except IntegrityError as e:
+        await session.rollback()
+        return None
+    res = result.one_or_none()
+    return {"id":res[0],"order_id":res[1]}
 
 async def update_order_status(session,order_id,order_status):
   
@@ -583,7 +608,10 @@ async def update_order_status(session,order_id,order_status):
         )
         .returning(Orders.id)
     )
-    await session.execute(stmt)
+    
+    result=await session.execute(stmt)
+    return result.scalar_one_or_none()
+    
 
 async def emit_outbox_event(session, topic: str, payload: dict,
                             aggregate_type: Optional[str] = None,
@@ -618,6 +646,7 @@ async def emit_outbox_event(session, topic: str, payload: dict,
     )
         res = await session.execute(stmt2)
         ev_id =  res.scalar_one_or_none()
+    return ev_id
 
 
 async def load_order_items_for_commit(session, order_id: int):
@@ -649,6 +678,7 @@ async def create_commit_intent(session, order_id: int, reason: str, aggr_type : 
                                           CommitIntent.aggregate_type==aggr_type, CommitIntent.reason==reason)
         res3 = await session.execute(stmt)
         return res3.scalar_one_or_none()
+    return commit_intent_id
 
         
    

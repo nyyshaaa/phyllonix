@@ -1,11 +1,15 @@
 
-from sqlalchemy import select, text, update
+from typing import Optional
+from sqlalchemy import Tuple, insert, select, text, update
+from uuid6 import uuid7
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
+from backend.common.utils import now
 from backend.schema.full_schema import Credential,CredentialType,Role, UserRole,Users,DeviceAuthToken,AuthMethod,DeviceSession
 from datetime import datetime, timedelta, timezone
 from backend.auth.utils import REFRESH_TOKEN_EXPIRE, hash_token, make_refresh_plain, verify_password
 from backend.auth.constants import logger
+from backend.config.settings import config_settings
 
 async def user_by_email(session,email):
     stmt=select(Users.id,Users.public_id,Users.role_version).where(Users.email==email,Users.deleted_at.is_(None))
@@ -36,6 +40,95 @@ async def identify_user(session,email,password):
     
     return user
 
+async def create_credential(session,user_id: int,password_hash: str):
+   
+    provider = config_settings.SELF_PROVIDER
+
+    values = {
+        "user_id": user_id,
+        "type": CredentialType.PASSWORD ,
+        "provider": provider,
+        "password_hash": password_hash,
+        "created_at": now(),
+        "updated_at": now(),
+    }
+
+    stmt = (
+        insert(Credential)
+        .values(**values)
+        .on_conflict_do_nothing(index_elements=[Credential.user_id, Credential.provider])
+        .returning(Credential.id)
+    )
+
+    result = await session.execute(stmt)
+    cred_id = result.scalar_one_or_none()
+    if cred_id:
+        logger.debug(
+            "credential.created",
+            extra={"cred_id": cred_id, "user_id": user_id, "provider": provider},
+        )
+        return cred_id
+
+    res = await session.execute(
+        select(Credential.user_id).where(
+            Credential.user_id == user_id,
+            Credential.provider == provider,
+        )
+    )
+    existing = res.scalar_one_or_none()
+    if existing:
+        
+        logger.warning(
+            "auth.credential.already_exists",
+            extra={"user_id": user_id, "provider": provider},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Credentials exist already for the current provider",
+        )
+
+    # Invariant: ON CONFLICT DO NOTHING without an existing row should be impossible
+    # Treat as a bug and let the fallback handler log and render a 500
+    raise RuntimeError(
+        "Invariant violation: credential insert resulted in no row and no existing credential row"
+    )
+
+   
+async def create_n_get_user(session,email,name):
+   
+    user_values = {
+        "public_id": uuid7(),
+        "email": email ,
+        "name": name ,
+        "created_at": now(),
+        "updated_at": now(),
+    }
+
+    user_insert = (
+        insert(Users)
+        .values(**user_values)
+        .on_conflict_do_nothing(index_elements=[Users.email])
+        .returning(Users.id, Users.public_id)
+    )
+  
+    result = await session.execute(user_insert)
+    row = result.one_or_none()
+    if row:
+        user_pid = row[1]
+        logger.info("user.inserted", extra={"user_id": user_pid, "email": email})
+        return {"id":row[0],"public_id":row[1]}
+    else:
+        res = await session.execute(
+            select(Users.email).where(Users.email == email)
+        )
+        existing = res.scalar_one_or_none()
+        if existing:
+            logger.info("user.duplicate.email", extra={"email": existing})
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"User with email {existing} already exists")
+        
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User creation conflict , unexpected , retry")
+    
+
 async def revoke_all_tokens_per_user(session,user_id,revoked_by):
     now = datetime.now(timezone.utc)
     await session.execute(
@@ -60,7 +153,6 @@ async def save_refresh_token(session,ds_id,user_id,revoked_by):
         .values(revoked_at = now, revoked_by = revoked_by)
     )
 
-    # create hashed refresh token , Insert new refresh token
     refresh_plain = make_refresh_plain()
     refresh_hash = hash_token(refresh_plain)
     
@@ -78,17 +170,22 @@ async def save_refresh_token(session,ds_id,user_id,revoked_by):
     return refresh_plain
 
 async def get_user_role_ids(session,user_id):
-    stmt=select(Role.id).join(UserRole,Role.id==UserRole.role_id).where(UserRole.user_id==user_id)
+    stmt=select(UserRole.role_id).where(UserRole.user_id == user_id)
     result = await session.execute(stmt)
     return result.scalars().all()
 
-async def identify_device_session(session,device_session):
+async def identify_device_session(session,device_session,take_lock=False):
     device_session_hash=hash_token(device_session)
-    stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.user_id,DeviceSession.public_id
-                ).where(DeviceSession.session_token_hash==device_session_hash).with_for_update()
+    stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.user_id,DeviceSession.public_id,DeviceSession.session_expires_at
+                ).where(DeviceSession.session_token_hash==device_session_hash)
+    if take_lock:
+        stmt = stmt.with_for_update()
+
     res= await session.execute(stmt)
     res = res.one_or_none()
-    return {"id":res[0],"revoked_at":res[1],"user_id":res[2],"public_id":res[3]}
+    if res is None:
+        return None
+    return {"id":res[0],"revoked_at":res[1],"user_id":res[2],"public_id":res[3],"expires_at":res[4]}
 
 async def get_device_session_by_pid(session,session_pid,user_id):
     stmt=select(DeviceSession.id,DeviceSession.revoked_at,DeviceSession.session_expires_at
@@ -99,7 +196,7 @@ async def get_device_session_by_pid(session,session_pid,user_id):
 
 async def link_user_device(session,ds_id,user_id):
     stmt = update(DeviceSession).where(DeviceSession.id==ds_id
-                                       ).values(user_id=user_id,last_activity_at=datetime.now(timezone.utc))
+                                       ).values(user_id=user_id,last_activity_at=now())
     res= await session.execute(stmt)
 
 async def get_device_auth(session, token_hash,take_lock: bool = False):
@@ -116,20 +213,16 @@ async def get_device_auth(session, token_hash,take_lock: bool = False):
 
     return row
 
-async def get_device_session_fields(session, user_id, ds_id):
+async def get_device_session_fields(session, user_id, ds_id,take_lock=False):
 
     stmt = (
         select(
-            DeviceSession.id,
-            DeviceSession.public_id,
-            DeviceSession.user_id,
-            DeviceSession.revoked_at,
-            DeviceSession.session_expires_at,
-            DeviceSession.last_activity_at,
+            DeviceSession.id,DeviceSession.public_id,DeviceSession.user_id,
+            DeviceSession.revoked_at,DeviceSession.session_expires_at,DeviceSession.last_activity_at,
         )
-        .where(DeviceSession.id == ds_id,DeviceSession.user_id==user_id)
-        .with_for_update()
-    )
+        .where(DeviceSession.id == ds_id,DeviceSession.user_id==user_id))
+    if take_lock:
+        stmt = stmt.with_for_update()
     res = await session.execute(stmt)
     row = res.first()
     if not row:
