@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 import uuid
 from backend.cache._cache import REDIS_LOCK_TIMEOUT, redis_client
 from backend.cache.utils import build_key, deserialize, release_lock, serialize
+from backend.common.utils import build_success
 
 CATALOG_VERSION_KEY = "phyl:catalog:version"
 
@@ -57,12 +58,16 @@ async def cache_get_or_set_product_listings(
                     await redis_client.delete(key)
                 
             value = await loader()
+            success_payload = build_success(
+                value,
+                request_id=None,
+            )
            
             try:
-                await set_bytes(key, serialize(value), ttl)
+                await set_bytes(key, serialize(success_payload), ttl)
             except Exception as e:
                 pass
-            return value
+            return success_payload
         finally:
             await release_lock(redis_client, lock_key, token)
     else:
@@ -84,11 +89,15 @@ async def cache_get_or_set_product_listings(
                         break
             # fallback to compute ourselves
             val = await loader()
+            success_payload = build_success(
+                value,
+                request_id=None,
+            )
             try:
-                await redis_client.set(key, serialize(val), ex=ttl)
+                await redis_client.set(key, serialize(success_payload), ex=ttl)
             except Exception:
                 pass
-            return val
+            return success_payload
         else:
             # mode == "stale": short wait then fallback to compute
             await asyncio.sleep(0.15)
@@ -100,8 +109,12 @@ async def cache_get_or_set_product_listings(
                     await redis_client.delete(key)
             # fallback to compute (do NOT take lock here to avoid heavy thundering)
             val = await loader()
+            success_payload = build_success(
+                value,
+                request_id=None,
+            )
             try:
-                await redis_client.set(key, serialize(val), ex=ttl)
+                await redis_client.set(key, serialize(success_payload), ex=ttl)
             except Exception:
                 pass
-            return val
+            return success_payload

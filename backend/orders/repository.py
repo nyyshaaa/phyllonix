@@ -89,10 +89,6 @@ async def items_avblty(session,product_ids,product_data) -> int:
 
 
 async def get_or_create_checkout_session(session,user_id,reserved_until):
-    """
-    On conflcit integrity don't raise get valid checkout if avbl .
-    Catch other integrity issues and rollback .
-    """
 
     values = {
         "public_id": uuid7(),
@@ -114,30 +110,24 @@ async def get_or_create_checkout_session(session,user_id,reserved_until):
         .returning(CheckoutSession.public_id)
     )
 
-    try:
-        result = await session.execute(insert_stmt)
-        checkout_pid = result.scalar_one_or_none()
-        
-        if checkout_pid:
-            await session.commit()
-            return checkout_pid
-        
-        # conflict happened , return existing checkout is active 
-        checkout_pid = await get_checkout_session(session,user_id)
-        print(checkout_pid)
+    
+    result = await session.execute(insert_stmt)
+    checkout_pid = result.scalar_one_or_none()
+    
+    if checkout_pid:
+        return checkout_pid
+    
+    # conflict happened , return existing checkout is active 
+    checkout_pid = await get_checkout_session(session,user_id)
 
-        if checkout_pid:
-            return checkout_pid
-        
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Could not create checkout session please retry",   # if other txn marked checkout inactive after processing and we returned no chekout_pid via get 
-        )
-    except IntegrityError as e:
-        print(e)
-        await session.rollback()
-        #* log the error for debug and audit 
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f"Integrity Error other than unique violation occured in db")
+    if checkout_pid:
+        return checkout_pid
+    
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Could not create checkout session please retry",   # if other txn marked checkout inactive after processing and we returned no chekout_pid via get 
+    )
+   
     
 
 async def reserve_inventory(session,cart_items,cs_id,reserved_until):
@@ -160,11 +150,8 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
     insert_stmt = pg_insert(InventoryReservation).values(to_insert)
     insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["product_id","checkout_id"])
 
-    try:
-        await session.execute(insert_stmt)
-    except IntegrityError as bulk_exc:
-        await session.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"{bulk_exc} exception occured while reserving inventory")
+    await session.execute(insert_stmt)
+  
 
 
 async def get_checkout_session(session,user_id):
@@ -227,7 +214,6 @@ async def update_checkout_activeness(session,cs_id,is_active:bool = False):
 
 
 async def update_checkout_cart_n_paymethod(session,cs_id,payment_method,items):
-    print("in update checkout part ", cs_id)
     stmt=update(CheckoutSession).where(CheckoutSession.id==cs_id
                                        ).values(selected_payment_method=payment_method,
                                                 cart_snapshot={"items":items})

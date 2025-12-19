@@ -34,6 +34,7 @@ async def initiate_buy_now(request:Request,
     await if_cart_exists(session,user_identifier)
 
     checkout_public_id = await get_or_create_checkout_session(session, user_identifier, reserved_until)
+    await session.commit()
     data = {
         "checkout_id": str(checkout_public_id),
         "reserved_until": str(reserved_until),
@@ -51,12 +52,7 @@ async def initiate_buy_now(request:Request,
 async def get_order_summary(request:Request,checkout_id: str,
     payload: Dict[str, Any],
     session: AsyncSession = Depends(get_session)):
-    """
-    POST /checkout/{checkout_id}/select-method
-    Body: { "payment_method": "UPI"|"COD" }
-    Holds reservations and computes totals with payment-method adjustments.
-    Returns server-validated order summary. Does NOT create final Order.
-    """
+   
     user_identifier=request.state.user_identifier
 
     payment_method = payload.get("payment_method")
@@ -84,7 +80,7 @@ async def get_order_summary(request:Request,checkout_id: str,
     await reserve_inventory(session,cart_items,cs["cs_id"],cs["cs_expires_at"])
     await update_checkout_cart_n_paymethod(session,cs["cs_id"],payment_method,cart_items)
     await session.commit()  
-    print(f"req {user_identifier} reserved items for checkout {checkout_id} with payment method {payment_method}")
+   
     res=compute_order_totals(cart_items,payment_method,checkout_id,cs["cs_expires_at"])
 
     payload = build_success(res, trace_id=None)
@@ -158,7 +154,6 @@ async def place_order(request:Request,checkout_id: str,
     await session.commit()  # commit order ,orderitems ,record payment init pending state for pay now and idempotency record atomically 
 
     pay_public_id=order_resp_data.get("pay_public_id",None)
-    print("pay_public_id",pay_public_id)
 
     if pay_public_id:
         order_pay_res=await create_payment_intent(session,idempotency_key,order_totals,order_resp_data)
