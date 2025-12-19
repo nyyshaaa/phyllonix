@@ -3,6 +3,7 @@ import time
 import uuid
 from backend.cache._cache import redis_client
 from backend.cache.utils import deserialize, release_lock, serialize
+from backend.common.utils import build_success
 
 PRODUCT_DETAIL_TTL = 15 * 60  # 15 min
 REDIS_LOCK_TIMEOUT = 5  # seconds
@@ -88,8 +89,9 @@ async def set_product_cache_if_newer(redis_client, public_id: str, payload: dict
     value_key = f"product:{public_id}"
     ver_key = value_key + ":ver"
     data = serialize(payload)
+    success_payload = build_success(data,request_id=None)
     try:
-        res = await redis_client.eval(_SET_IF_NEWER_LUA, 2, value_key, ver_key, data, str(new_ts), str(ttl))
+        res = await redis_client.eval(_SET_IF_NEWER_LUA, 2, value_key, ver_key, success_payload, str(new_ts), str(ttl))
         return bool(res)
     except Exception:
         pass

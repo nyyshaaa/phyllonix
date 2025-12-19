@@ -1,6 +1,6 @@
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request,status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response,status
 from fastapi.params import Query
 from backend.cache.cache_get_n_set import cache_get_or_set_product_listings
 from backend.cache.cache_prod_details import cache_get_n_set_product_details
@@ -109,7 +109,10 @@ async def get_products(
         return response
     
     results = await cache_get_or_set_product_listings("products_listing", key_suffix, PRODUCT_LIST_TTL, loader)
-    return success_response(results, status_code=status.HTTP_200_OK)
+    return Response(
+        content=results,
+        media_type="application/json",
+    )
 
 
 @prods_public_router.get("/{product_public_id}")
@@ -120,7 +123,58 @@ async def get_product_details(
    
 
     product_details = await cache_get_n_set_product_details(session, product_public_id,fetch_product_details)
-    return success_response(product_details, status_code=status.HTTP_200_OK)
+    return Response(
+        content=product_details,
+        media_type="application/json",
+    )
+
+
+@prods_public_router.get("/without_cache/")
+async def get_products_without_cache(
+    limit: int = Query(20, ge=1, le=100),
+    cursor: Optional[str] = Query(None, description="Opaque signed cursor token"),
+    q: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session)):
+    
+    canonical_cursor_key: str = "start"  # first page
+   
+    cursor_vals = None
+    if cursor:
+        prod_created_at, last_prod_id = decode_cursor(cursor, max_age=24*3600)  # optional max_age
+        cursor_vals = (prod_created_at, int(last_prod_id))
+        canonical_cursor_key = f"{prod_created_at.isoformat()}_{int(last_prod_id)}"
+
+    key_suffix = make_params_key(limit, canonical_cursor_key, q, category)
+
+        
+    async def loader():
+        rows = await fetch_prods(session,cursor_vals,limit)
+
+        has_more = len(rows) > limit
+        page_rows = rows[:limit]
+
+        items_out = []
+        for p in page_rows:
+            m = p._mapping  # SQLAlchemy Row -> mapping of selected columns
+            items_out.append({
+                "id": str(m["id"]),
+                "public_id": str(m["public_id"]),
+                "name": m["name"],
+                "price": int(m["base_price"] or 0),
+                "created_at": m["created_at"].isoformat()
+            })
+
+        next_cursor = None
+        if has_more:
+            last = page_rows[-1]._mapping
+            next_cursor = encode_cursor(last.created_at, last.id, ttl_seconds=3600)
+
+        response = {"items": items_out, "next_cursor": next_cursor, "has_more": has_more}
+        return response
+    
+    results = await loader()
+    return success_response(results, status_code=status.HTTP_200_OK)
      
 
     

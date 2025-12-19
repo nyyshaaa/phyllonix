@@ -13,7 +13,7 @@ from fastapi import HTTPException,status
 from backend.config.settings import config_settings
 from backend.products.constants import logger
 
-CURSOR_SECRET = config_settings.PHYL_CURSOR_SECRET
+CURSOR_SECRET = config_settings.PHYL_CURSOR_SECRET.encode("utf-8")
 
 def _sign(payload_bytes: bytes) -> str:
     sig = hmac.new(CURSOR_SECRET, payload_bytes, hashlib.sha256).digest()

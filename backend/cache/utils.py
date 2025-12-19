@@ -1,10 +1,13 @@
 
 
 import hashlib
+from fastapi import Response
+import orjson
 import uuid
 import msgpack
 from typing import Any
-
+from backend.common.constants import request_id_ctx
+from backend.common.utils import build_success
 
 def build_key(*parts: str) -> str:
     joined = ":".join(p for p in parts if p is not None and p != "")
@@ -12,13 +15,12 @@ def build_key(*parts: str) -> str:
         return hashlib.sha256(joined.encode()).hexdigest()
     return joined
 
+def serialize(value: Any) -> bytes:
+ 
+    return orjson.dumps(value)
 
-def serialize(obj: Any) -> bytes:
-    # msgpack is compact & fast; choose json if you prefer readability
-    return msgpack.packb(obj, use_bin_type=True)
-
-def deserialize(b: bytes) -> Any:
-    return msgpack.unpackb(b, raw=False)
+def deserialize(b: bytes) -> Response:
+    return b 
 
 
 _RELEASE_LOCK_LUA = """
