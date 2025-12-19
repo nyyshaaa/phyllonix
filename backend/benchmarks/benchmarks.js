@@ -24,7 +24,9 @@ export const options = {
   },
 };
 
-const BASE_URL = 'http://127.0.0.1:8000/api/v1';
+const BASE_URL =
+  __ENV.BASE_URL ??
+  'http://127.0.0.1:8000/api/v1';
 
 export function cachedProducts() {
   const res = http.get(`${BASE_URL}/products?limit=20`);
