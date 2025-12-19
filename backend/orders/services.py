@@ -101,15 +101,12 @@ async def create_payment_intent(session,idempotency_key,order_totals,order_data,
                                         receipt=receipt, notes=notes,idempotency_key=idempotency_key)
     
     if psp_non_retryable_exc:
-        print("psp_exc",psp_non_retryable_exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Payment attempts failed due to {psp_non_retryable_exc}")  
    
     if psp_retryable_exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Payment failed due to {psp_retryable_exc}")  
 
-    print(psp_resp)
     provider_order_id = psp_resp.get("id") 
-    print(provider_order_id)
     if provider_order_id is None:
         pay_status=PaymentAttemptStatus.UNKNOWN.value
         # never got definitive provider response
@@ -172,7 +169,6 @@ def retry_payments(func,payment_id,session,max_retries: int = DEFAULT_RETRIES,ba
                 
                 return resp,None,None,attempt_idx
             except TRANSIENT_EXCEPTIONS as ex:
-                print("transient ex",ex)
                 # transient network error — mark attempt as retrying, retry
                 retryable_exc = ex
                 await update_payment_attempt_resp(
