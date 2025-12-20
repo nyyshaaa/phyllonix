@@ -19,6 +19,7 @@ webhooks_router=APIRouter()
 EXPECTED_ENV = admin_config.ENV
 
 async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session)):
+    print("In razorpay webhook handler")
     body = await request.body()
     app=request.app
     # verify signature ,(save , respond 200 ok to psp and reconcile for errored cases after few retries)
@@ -43,8 +44,8 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     # to confirm we have a matching payment record(pending state) for provider order id in our system , like to verify that the webhook status is received for a valid payment record .
     pay_record = await get_pay_record_by_provider_orderid(session,provider_order_id,provider)
-    order_id = pay_record["order_id"]
-    if not order_id:
+    order_id = pay_record["order_id"] if pay_record else None
+    if not pay_record or not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
         # mark event error for reconcile and return 200 to provider
         await mark_webhook_received(session, provider_event_id, "razorpay", payload, last_error="no pay record found for provider_order_id",status = PaymentEventStatus.INCONSISTENT.value)
@@ -56,8 +57,11 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         # send ok to stop retries and reconcile later
         return JSONResponse({"status": "ok", "note": "ignored: no payment entity"}, status_code=200)
     
-    payment_status,final_order_status,note = pay_order_status_util(psp_pay_status,event)
+    payment_status,final_order_status,is_valid_event,note = pay_order_status_util(psp_pay_status,event)
     ev = await mark_webhook_received(session, provider_event_id, provider, payload,order_id=order_id,pay_status=payment_status)
+    if not is_valid_event:
+        return JSONResponse({"status": "ok", "note": "ignored: no valid event"}, status_code=200)
+    
     if ev is not None and ev["processed_at"] is not None:
         return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
     ev_id=ev["id"]
@@ -65,6 +69,9 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     try:
         
         order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,provider,payment_status)
+        if not order_id:
+            return JSONResponse({"status": "ok", "note": "event not in order"}, status_code=200)
+
         await update_order_status(session,order_id,final_order_status)
 
         if payment_status in (
@@ -118,7 +125,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
             )
         # psp retries non 200's so psp will retry even without reraise , like if we just swallow error and don't retry
         # but to get error trackebacks in logs reraise 
-        raise
+        # raise
 
     if event == "payment.captured" or event=="payment.failed":
      

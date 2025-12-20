@@ -69,6 +69,7 @@ def pay_order_status_util(psp_pay_status,event):
     payment_status = PaymentStatus.PENDING.value  
     order_status = OrderStatus.PENDING_PAYMENT.value 
     note = "processed order and pay failure"
+    is_valid_event  = True
 
     # keep order status pending payment for failed pay status as user will be given option to retry in case of failed attempts 
    
@@ -88,12 +89,14 @@ def pay_order_status_util(psp_pay_status,event):
             payment_status = PaymentStatus.CAPTURED.value
             order_status = OrderStatus.CONFIRMED.value 
             note = "order paid"
+            is_valid_event = False #** just for testing , remove order.paid event altogether , we will do by captured only
     
     if psp_pay_status not in ("captured", "authorized", "failed" , "success"):
         payment_status = PaymentStatus.FAILED.value   #** maybe handle unkown psp status differently as unkown , for now just set to failed
         note = "unknown payment status"
+        is_valid_event = False
 
-    return payment_status,order_status,note
+    return payment_status,order_status,is_valid_event,note
 
 
     
