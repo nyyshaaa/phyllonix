@@ -503,6 +503,7 @@ class IdempotencyKey(SQLModel, table=True):
 
 class PaymentStatus(enum.IntEnum):
     PENDING = 0
+    ACCEPTED = 5
     AUTHORIZED = 10
     FAILED = 20
     CAPTURED = 30
