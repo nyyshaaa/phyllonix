@@ -56,8 +56,7 @@ def create_app():
         # if admin_config.ENV == "prod" and not admin_config.ADMIN_SECRET:
         #     raise RuntimeError("Unsafe configuration: ENABLE_ADMIN=true in PROD requires ADMIN_SECRET")
         app.include_router(admin_routers)      # mounts /api/v1/admin
-        #** optional middleware guard (adds header/ip check)
-        # app.add_middleware(AdminGuardMiddleware)
+        
     
     # app.add_middleware(DeviceSessionMiddleware,session=async_session,paths=[f"{version_prefix}/cart/items",
     #                                                                         f"{version_prefix}/checkout"])

@@ -580,6 +580,8 @@ async def get_pay_record_by_provider_orderid(session,provider_order_id,provider)
         await session.rollback()
         return None
     res = result.one_or_none()
+    if not res:
+        return None
     return {"id":res[0],"order_id":res[1]}
 
 async def update_order_status(session,order_id,order_status):
