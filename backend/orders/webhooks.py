@@ -68,7 +68,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     # critical section , record/update errors safely for easiest reconcilation .
     try:
         
-        order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,provider,payment_status)
+        order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,payment_status)
         if not order_id:
             return JSONResponse({"status": "ok", "note": "event not in order"}, status_code=200)
 
