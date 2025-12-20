@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import insert, select
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from fastapi import HTTPException,status
 from uuid6 import uuid7
 from backend.auth.repository import create_credential, create_n_get_user, fetch_user_claims, get_device_auth, get_device_session_fields, get_user_role_ids, identify_device_session, identify_user, link_user_device, revoke_device_and_tokens, revoke_device_nget_id, revoke_device_ref_tokens, rotate_refresh_token_value, save_refresh_token, update_device_session_last_activity, user_id_by_email

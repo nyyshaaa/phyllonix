@@ -1,8 +1,7 @@
 
-
-
 from fastapi import HTTPException,status
-from sqlalchemy import insert, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select, update
 from backend.schema.full_schema import Cart, CartItem, Product
 from sqlalchemy.exc import IntegrityError
 

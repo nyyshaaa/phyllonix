@@ -1,6 +1,7 @@
 
 from fastapi import HTTPException , status
-from sqlalchemy import insert, select
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from uuid6 import uuid7
 from backend.common.utils import now
 from backend.products.repository import add_product_categories
