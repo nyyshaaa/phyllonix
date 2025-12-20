@@ -44,6 +44,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
 
     # to confirm we have a matching payment record(pending state) for provider order id in our system , like to verify that the webhook status is received for a valid payment record .
     pay_record = await get_pay_record_by_provider_orderid(session,provider_order_id,provider)
+    print(pay_record)
     order_id = pay_record["order_id"] if pay_record else None
     if not pay_record or not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
@@ -66,11 +67,16 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
         return JSONResponse({"status": "ok", "note": "already processed"}, status_code=200)
     ev_id=ev["id"]
     # critical section , record/update errors safely for easiest reconcilation .
+    topic = None
+    outbox_event_id = None 
+    commit_int_id = None
+    
     try:
         
         order_id = await update_pay_completion_get_orderid(session,pay_record["id"],provider_payment_id,payment_status)
-        if not order_id:
-            return JSONResponse({"status": "ok", "note": "event not in order"}, status_code=200)
+        print("Updated payment record , got order id:", order_id)
+        # if not order_id:
+        #     return JSONResponse({"status": "ok", "note": "event not in order"}, status_code=200)
 
         await update_order_status(session,order_id,final_order_status)
 

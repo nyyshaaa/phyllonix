@@ -498,7 +498,7 @@ async def commit_idempotent_order_place(session,user_id,idempotency_key,owner_id
 
 async def update_payment_status_nprovider(session,pay_id,provider_order_id):
     stmt = update(Payment).where(Payment.id==pay_id).values(provider_order_id=provider_order_id,
-                                                           status=PaymentStatus.CAPTURED).returning(Payment.id)
+                                                           status=PaymentStatus.ACCEPTED.value).returning(Payment.id)
     res=await session.execute(stmt)
     res= res.scalar_one_or_none()
 
