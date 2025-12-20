@@ -68,7 +68,7 @@ def create_app():
                                                                              f"{version_prefix}/health",
                                                                              f"{version_prefix}/session/init",
                                                                              f"{version_prefix}/admin/uploads",f"{version_prefix}/webhooks",
-                                                                             f"webhooks",
+                                                                             f"/webhooks",
                                                                              f"{version_prefix}/products",                         # for non admin public product routes 
                                                                              f"{version_prefix}/checkout/test",
                                                                              f"{version_prefix}/admin/tests",],
