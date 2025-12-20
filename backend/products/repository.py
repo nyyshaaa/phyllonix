@@ -2,7 +2,8 @@
 from datetime import datetime
 from typing import Optional
 from fastapi import HTTPException,status
-from sqlalchemy import and_, desc, insert, or_, select, text, update
+from sqlalchemy import and_, desc, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload , load_only
 from backend.common.utils import now
 from backend.schema.full_schema import Product, ProductCategory, ProductCategoryLink

@@ -15,7 +15,7 @@ from backend.common.utils import now
 from backend.orders.repository import items_avblty, record_payment_attempt, update_idempotent_response, update_payment_attempt_resp, update_payment_status_nprovider
 from backend.config.settings import config_settings
 from backend.schema.full_schema import OrderItem, Orders, OrderStatus, Payment, PaymentAttempt, PaymentAttemptStatus, PaymentEventStatus, PaymentStatus, PaymentWebhookEvent
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.postgresql import insert 
 from backend.config.admin_config import admin_config
 from backend.orders.constants import logger
 
@@ -234,7 +234,7 @@ async def mark_webhook_received(session,provider_event_id: Optional[str], provid
                                     order_id:Optional[int]=None,last_error: Optional[str] = None, pay_status:Optional[str]=None ) -> Optional[int]:
     
    
-    stmt = pg_insert(PaymentWebhookEvent).values(
+    stmt = insert(PaymentWebhookEvent).values(
         provider=provider,
         provider_event_id=provider_event_id,
         order_id=order_id,

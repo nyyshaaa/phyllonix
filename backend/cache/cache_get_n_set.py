@@ -88,7 +88,7 @@ async def cache_get_or_set_product_listings(
                         await redis_client.delete(key)
                         break
             # fallback to compute ourselves
-            val = await loader()
+            value = await loader()
             success_payload = build_success(
                 value,
                 request_id=None,
@@ -108,7 +108,7 @@ async def cache_get_or_set_product_listings(
                 except Exception:
                     await redis_client.delete(key)
             # fallback to compute (do NOT take lock here to avoid heavy thundering)
-            val = await loader()
+            value = await loader()
             success_payload = build_success(
                 value,
                 request_id=None,

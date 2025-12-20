@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.postgresql import insert 
 from fastapi import HTTPException,status
-from sqlalchemy import Tuple, and_, case, delete, func, insert, select, text, update
+from sqlalchemy import Tuple, and_, case, delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from backend.common.utils import build_success, json_ok, now
 from backend.orders.constants import RESERVATION_TTL_MINUTES, UPI_RESERVATION_TTL_MINUTES
@@ -101,7 +101,7 @@ async def get_or_create_checkout_session(session,user_id,reserved_until):
     }
 
     insert_stmt = (
-        pg_insert(CheckoutSession)
+        insert(CheckoutSession)
         .values(**values)
         .on_conflict_do_nothing(
             index_elements=["user_id"],
@@ -147,7 +147,7 @@ async def reserve_inventory(session,cart_items,cs_id,reserved_until):
         }
         to_insert.append(row)
 
-    insert_stmt = pg_insert(InventoryReservation).values(to_insert)
+    insert_stmt = insert(InventoryReservation).values(to_insert)
     insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["product_id","checkout_id"])
 
     await session.execute(insert_stmt)
@@ -390,7 +390,7 @@ async def bulk_insert_order_items(session,order,order_totals):
         })
 
     if item_rows:
-        insert_stmt = pg_insert(OrderItem).values(item_rows)
+        insert_stmt = insert(OrderItem).values(item_rows)
         insert_stmt = insert_stmt.on_conflict_do_nothing()
         await session.execute(insert_stmt)
 
@@ -434,7 +434,7 @@ async def record_order_idempotency(session, idempotency_key, user_identifier):
         "status" : OrderIdempotencyStatus.PENDING.value
     }
 
-    insert_stmt = pg_insert(IdempotencyKey).values(insert_values).on_conflict_do_nothing().returning(IdempotencyKey.id)
+    insert_stmt = insert(IdempotencyKey).values(insert_values).on_conflict_do_nothing().returning(IdempotencyKey.id)
     res = await session.execute(insert_stmt)
     ik_id = res.scalar_one_or_none()
 
@@ -616,7 +616,7 @@ async def emit_outbox_event(session, topic: str, payload: dict,
     }
 
     
-    stmt = pg_insert(OutboxEvent).values(**values).on_conflict_do_nothing(
+    stmt = insert(OutboxEvent).values(**values).on_conflict_do_nothing(
         constraint = "uq_outboxevent_topic_agtype_agid"
     ).returning(OutboxEvent.id)
     res = await session.execute(stmt)
@@ -645,7 +645,7 @@ async def load_order_items_for_commit(session, order_id: int):
 
 async def create_commit_intent(session, order_id: int, reason: str, aggr_type : str , payload: dict):
    
-    stmt = pg_insert(CommitIntent).values(
+    stmt = insert(CommitIntent).values(
         aggregate_id=order_id,
         aggregate_type=aggr_type,
         reason=reason,

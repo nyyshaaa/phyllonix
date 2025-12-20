@@ -1,6 +1,7 @@
 
 from typing import Optional
-from sqlalchemy import Tuple, insert, select, text, update
+from sqlalchemy import Tuple, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from uuid6 import uuid7
 from backend.auth.utils import verify_password
 from fastapi import HTTPException,status
