@@ -573,12 +573,8 @@ async def webhook_error_recorded(session, ev_id,last_error: Optional[str] = None
 async def get_pay_record_by_provider_orderid(session,provider_order_id,provider):
 
     stmt = select(Payment.id,Payment.order_id).where(Payment.provider == provider,Payment.provider_order_id == provider_order_id) 
-   
-    try:
-        result=await session.execute(stmt)
-    except IntegrityError as e:
-        await session.rollback()
-        return None
+    result=await session.execute(stmt)
+  
     res = result.one_or_none()
     if not res:
         return None

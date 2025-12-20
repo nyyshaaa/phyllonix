@@ -48,7 +48,7 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
     if not pay_record or not order_id:
         # If provider_payment exists but we don't have it, store for reconciliation and return 200
         # mark event error for reconcile and return 200 to provider
-        await mark_webhook_received(session, provider_event_id, "razorpay", payload, last_error="no pay record found for provider_order_id",status = PaymentEventStatus.INCONSISTENT.value)
+        await mark_webhook_received(session, provider_event_id, "razorpay", payload, last_error="no pay record found for provider_order_id",pay_status = PaymentEventStatus.INCONSISTENT.value)
         return JSONResponse({"status": "ok", "note": "ignored: payment not found"}, status_code=200)
 
     # If it's not a payment event, can ignore
@@ -125,9 +125,9 @@ async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get
             )
         # psp retries non 200's so psp will retry even without reraise , like if we just swallow error and don't retry
         # but to get error trackebacks in logs reraise 
-        # raise
+        raise
 
-    if event == "payment.captured" or event=="payment.failed":
+    if topic and outbox_event_id:
      
         app.state.pubsub_pub(topic, {"outbox_event_id": outbox_event_id, "topic": topic, "payload": outbox_payload})
 
