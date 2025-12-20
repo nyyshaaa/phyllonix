@@ -224,7 +224,7 @@ async def spc_by_ikey(session,i_key,user_id):
                   ).where(IdempotencyKey.key == i_key,IdempotencyKey.created_by == user_id)
     res = await session.execute(stmt)
     res = res.one_or_none()
-    if res and res[2] < now( ) + timedelta(seconds=40):
+    if res and res[3] < now( ) + timedelta(seconds=40):
         raise HTTPException(status_code=status.HTTP_410_GONE,detail="Checkout and order idempotency already expired")
     if res:
         order_data = {"response_body":res[1],"response_code":res[2],"ik_id":res[0]}
