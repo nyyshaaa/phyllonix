@@ -6,18 +6,30 @@ The project is inspired by two goals:
 
    Total Work hours on project(including rechecks and renalyzations and notes etc.)
    september 1 -- september 30 (~130 hours)  October 1 - December 21 (~439 hours)  ~~569 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
-   
-
-> DB Design Plan --
-https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
-
-> Image uploads plan and notes --
-https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083a016fdd43bdcd15d
 
 
-Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete/blob/dev/src/via_server/uploads.md)
-Almost always images won't be sent over backend server but directly to cloud for upload hence avoiding heavy data transfer over 2 networks .
-[image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+
+High level architecture summary --
+
+>Idempotency is applied differently based on domain requirements.
+Critical workflows (payments, order creation, inventory updates) are protected using explicit ephemeral(24 hours) idempotency key states, while being idempotent at each sub-level, 
+Other operations rely on database constraints or eventual consistency.
+
+>Concurrency safety for payments --
+Designed for multiple application servers with a single primary database for writes, relying on database-level guarantees (conditional updates, unique constraints, transactional boundaries) to maintain high concurrency and do safe updates for concurrent requests and retries.
+
+>State transitions use explicit transactional boundaries with careful commit placement to avoid inconsistent updates.
+
+>Schema designed to minimize state ambiguity, higher future scalability(in terms of requiring minimal migrations) , support safe concurrent updates with minimal locking , and efficient indexing.
+
+>API queries are designed with minimal data access per request and avoidance of unnecessary joins. 
+
+>Redis caching is implemented for read-heavy endpoints (product listings & product details).
+
+>JWT-based authentication with refresh-token rotation and revocation to limit token replay.
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------
 
 > Payments Plan & Payment testing ----
 
@@ -48,24 +60,16 @@ as we cannot really make insertion inv reserve idempotent .
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
->Idempotency is applied differently based on domain requirements.
-Critical workflows (payments, order creation, inventory updates) are protected using explicit ephemeral(24 hours) idempotency key states, while being idempotent at each sub-level, 
-Other operations rely on database constraints or eventual consistency.
+> DB Design Plan --
+https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
 
->Concurrency safety for payments --
-Designed for multiple application servers with a single primary database for writes, relying on database-level guarantees (conditional updates, unique constraints, transactional boundaries) to maintain high concurrency and do safe updates for concurrent requests and retries.
+> Image uploads plan and notes --
+https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083a016fdd43bdcd15d
 
->State transitions use explicit transactional boundaries with careful commit placement to avoid inconsistent updates.
 
->Schema designed to minimize state ambiguity, higher future scalability(in terms of requiring minimal migrations) , support safe concurrent updates with minimal locking , and efficient indexing.
-
->API queries are designed with minimal data access per request and avoidance of unnecessary joins. 
-
->Redis caching is implemented for read-heavy endpoints (product listings & product details).
-
->JWT-based authentication with refresh-token rotation and revocation to limit token replay.
-
--------------------------------------------------------------------------------------------------------------------------------------------------------
+Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete/blob/dev/src/via_server/uploads.md)
+Almost always images won't be sent over backend server but directly to cloud for upload hence avoiding heavy data transfer over 2 networks .
+[image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
 
 
