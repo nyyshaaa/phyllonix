@@ -16,8 +16,18 @@ Image upload benchmark results experimented on this repo using two approaches --
 Almost always images won't be sent over backend server but directly to cloud for upload hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
-> Payments Current Plan & Payment testing(needs further refinements and additions) ----
-https://www.notion.so/place-order-full-recheck-28914b400ea7801885cfeaf6704e61d8
+> Payments Current Plan & Payment testing ----
+
+
+<img width="1540" height="132" alt="image" src="https://github.com/user-attachments/assets/620c228d-4b47-4628-b0bb-1c235ba6cf11" />
+
+<img width="1827" height="94" alt="image" src="https://github.com/user-attachments/assets/142bd81a-aeb2-4bba-bafc-19e08b8d8068" />
+
+
+
+
+
+
 
 concurrency tests for inventory reservation without direct xclusive locks and with xclusive locks 
 
@@ -29,6 +39,7 @@ test_two_users_concurrent_order_summary_reservation
 
 with xclusive locks only 1 checkout request succeeds other informs about not available qty for the product .
 <img width="1440" height="307" alt="image" src="https://github.com/user-attachments/assets/d035bd90-0b29-490a-8400-1bb2a8d5be75" />
+
 
 
 
