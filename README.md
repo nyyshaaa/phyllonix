@@ -48,24 +48,25 @@ as we cannot really make insertion inv reserve idempotent .
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Idempotency is applied differently based on domain requirements.
+>Idempotency is applied differently based on domain requirements.
 Critical workflows (payments, order creation, inventory updates) are protected using explicit ephemeral(24 hours) idempotency key states, while being idempotent at each sub-level, 
 Other operations rely on database constraints or eventual consistency.
 
-Concurrency safety for payments --
+>Concurrency safety for payments --
 Designed for multiple application servers with a single primary database for writes, relying on database-level guarantees (conditional updates, unique constraints, transactional boundaries) to maintain high concurrency and do safe updates for concurrent requests and retries.
 
-State transitions use explicit transactional boundaries with careful commit placement to avoid inconsistent updates.
+>State transitions use explicit transactional boundaries with careful commit placement to avoid inconsistent updates.
 
-Schema designed to minimize state ambiguity, higher future scalability(in terms of requiring minimal migrations) , support safe concurrent updates with minimal locking , and efficient indexing.
+>Schema designed to minimize state ambiguity, higher future scalability(in terms of requiring minimal migrations) , support safe concurrent updates with minimal locking , and efficient indexing.
 
-API queries are designed with minimal data access per request and avoidance of unnecessary joins. 
+>API queries are designed with minimal data access per request and avoidance of unnecessary joins. 
 
-Redis caching is implemented for read-heavy endpoints (product listings & product details).
+>Redis caching is implemented for read-heavy endpoints (product listings & product details).
 
-JWT-based authentication with refresh-token rotation and revocation to limit token replay.
+>JWT-based authentication with refresh-token rotation and revocation to limit token replay.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 
 
