@@ -1,9 +1,10 @@
 ## 🌱 Inspiration
 The project is inspired by two goals:  
-1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,arts stuff...  
+1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,icecreams,arts stuff...  
 2. **Engineering practice:** building a full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design.
 
-   Total Work hours on project september 1 -- september 30 (~130 hours)  October 1 - November 21 (~245 hours)
+   Total Work hours on project(including rechecks and renalyzations and notes etc.)
+   september 1 -- september 30 (~130 hours)  October 1 - December 21 (~439 hours)  ~~569 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
 
 > DB Design Plan --
 https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
@@ -26,8 +27,6 @@ Almost always images won't be sent over backend server but directly to cloud for
 
 
 
-
-
 concurrency tests for inventory reservation without direct xclusive locks and with xclusive locks 
 
 test_two_users_concurrent_order_summary_reservation
@@ -38,6 +37,10 @@ test_two_users_concurrent_order_summary_reservation
 
 with xclusive locks only 1 checkout request succeeds other informs about not available qty for the product .
 <img width="1440" height="307" alt="image" src="https://github.com/user-attachments/assets/d035bd90-0b29-490a-8400-1bb2a8d5be75" />
+
+Also locks are fine here at this level for inventory but for later work to release inv it may cause locks to be held for somewhat longer transactions .
+--> So we do a mini time hack(schema and data mig. if they already exist) -- create inv reserve row(with reserved qty as 0 and include the stock qty ) along with product creation so that we do a condition based update instead of insert
+as we cannot really make insertion inv reserve idempotent .
 
 
 
