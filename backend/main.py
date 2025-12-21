@@ -17,7 +17,6 @@ from backend.db.connection import async_engine,async_session
 from backend.api.__init__ import version_prefix,cur_version
 from backend.background_workers.base_pubsub_interface import BasePubSubWorker
 from backend.config.admin_config import admin_config
-from metrics.custom_instrumentator import instrumentator
 from backend.config.settings import config_settings
 
 rzpay_webhook_path = config_settings.RZPAY_WEBHOOK_PATH
@@ -75,7 +74,6 @@ def create_app():
                                                                              maybe_auth_paths=[f"{version_prefix}/cart/items"])
     app.add_middleware(RequestIdMiddleware)
     register_all_exceptions(app)
-    # instrumentator.instrument(app).expose(app, endpoint="/metrics")
     
     return app
  
