@@ -2,9 +2,11 @@
 The project is inspired by two goals:  
 1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,icecreams,arts stuff...  
 2. **Engineering practice:** building a full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design.
+   A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design an e-commerce system, focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
 
    Total Work hours on project(including rechecks and renalyzations and notes etc.)
    september 1 -- september 30 (~130 hours)  October 1 - December 21 (~439 hours)  ~~569 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
+   
 
 > DB Design Plan --
 https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
@@ -46,7 +48,24 @@ as we cannot really make insertion inv reserve idempotent .
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Idempotency is applied differently based on domain requirements.
+Critical workflows (payments, order creation, inventory updates) are protected using explicit ephemeral(24 hours) idempotency key states, while being idempotent at each sub-level, 
+Other operations rely on database constraints or eventual consistency.
 
+Concurrency safety for payments --
+Designed for multiple application servers with a single primary database for writes, relying on database-level guarantees (conditional updates, unique constraints, transactional boundaries) to maintain high concurrency and do safe updates for concurrent requests and retries.
+
+State transitions use explicit transactional boundaries with careful commit placement to avoid inconsistent updates.
+
+Schema designed to minimize state ambiguity, higher future scalability(in terms of requiring minimal migrations) , support safe concurrent updates with minimal locking , and efficient indexing.
+
+API queries are designed with minimal data access per request and avoidance of unnecessary joins. 
+
+Redis caching is implemented for read-heavy endpoints (product listings & product details).
+
+JWT-based authentication with refresh-token rotation and revocation to limit token replay.
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 
