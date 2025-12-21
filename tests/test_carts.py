@@ -13,7 +13,7 @@ from backend.schema.full_schema import CartItem, Product
 from test_tokens import plain_device_session_admin
 from tests.save_tokens import token_store
 from test_tokens import current_user_payload , current_user2_payload
-
+ 
 @pytest.fixture
 async def ac_client():
     async with LifespanManager(app):
