@@ -18,12 +18,11 @@ Almost always images won't be sent over backend server but directly to cloud for
 
 > Payments Current Plan & Payment testing ----
 
+[payment_test.webm](https://github.com/user-attachments/assets/6367461f-7dc9-4687-9f1b-426a24d731d8)
 
 <img width="1540" height="132" alt="image" src="https://github.com/user-attachments/assets/620c228d-4b47-4628-b0bb-1c235ba6cf11" />
 
 <img width="1827" height="94" alt="image" src="https://github.com/user-attachments/assets/142bd81a-aeb2-4bba-bafc-19e08b8d8068" />
-
-
 
 
 
@@ -39,6 +38,7 @@ test_two_users_concurrent_order_summary_reservation
 
 with xclusive locks only 1 checkout request succeeds other informs about not available qty for the product .
 <img width="1440" height="307" alt="image" src="https://github.com/user-attachments/assets/d035bd90-0b29-490a-8400-1bb2a8d5be75" />
+
 
 
 
