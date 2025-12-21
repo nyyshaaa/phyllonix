@@ -131,7 +131,7 @@ async def place_order(request:Request,checkout_id: str,
             return json_ok(payload)
     
     if not ik_id: 
-        ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)
+        ik_id=await record_order_idempotency(session,idempotency_key,user_identifier,cs_id)
 
         # code path may happen in case of concurrent requests, if somehow lock wasn't acquired by any request
         #** better to short circuit here and send status url direction to client 
