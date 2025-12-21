@@ -5,8 +5,7 @@ The project is inspired by two goals:
    A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design an e-commerce system, focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
 
    Total Work hours on project(including rechecks and renalyzations and notes etc.)
-   september 1 -- september 30 (~130 hours)  October 1 - December 21 (~439 hours)  ~~569 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
-
+   september 1 -- December 21 ~~555 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -70,6 +69,7 @@ https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083
 Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete/blob/dev/src/via_server/uploads.md)
 Almost always images won't be sent over backend server but directly to cloud for upload hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
+
 
 
 
