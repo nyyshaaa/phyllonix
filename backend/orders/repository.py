@@ -420,12 +420,13 @@ async def update_order_idempotency_record(session, user_id, ik_id, owner_id,
     await session.flush()
 
 
-async def record_order_idempotency(session, idempotency_key, user_identifier):
+async def record_order_idempotency(session, idempotency_key, user_identifier,cs_id):
   
     now_ts = now()
     insert_values = {
         "key": idempotency_key,
         "owner_id": None,
+        "cs_id": cs_id,
         "response_code": None,
         "response_body": None,
         "created_by": user_identifier,
