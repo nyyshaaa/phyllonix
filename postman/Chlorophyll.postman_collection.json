@@ -1,0 +1,1282 @@
+{
+	"info": {
+		"_postman_id": "c9904cfd-c888-4a78-85cc-98aca7581194",
+		"name": "Chlorophyll",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "21201926"
+	},
+	"item": [
+		{
+			"name": "normal_user2_signup",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Populate generic login placeholders from the selected prefix",
+							"const prefix = \"user2\";",
+							"pm.environment.set(\"login_identifier\", pm.environment.get(prefix + \"_email\"));",
+							"pm.environment.set(\"login_password\", pm.environment.get(prefix + \"_password\"));",
+							"// pm.environment.set(\"login_device_name\", pm.environment.get(prefix + \"_device_name\") || \"postman-device\");"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\":\"{{login_identifier}}\",\n    \"password\":\"{{login_password}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/signup",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"signup"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "normal_user2_signin",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Populate generic login placeholders from the selected prefix",
+							"const prefix = \"user2\";",
+							"console.log(\"user2_email raw ->\", pm.environment.get(\"user2_email\"));",
+							"console.log(\"user2_password raw ->\", pm.environment.get(\"user2_password\"));",
+							"pm.environment.set(\"login_identifier\", pm.environment.get(\"user2_email\"));",
+							"pm.environment.set(\"login_password\", pm.environment.get(\"user2_password\"));",
+							"",
+							"",
+							"",
+							"",
+							"const deviceToken = pm.environment.get(prefix + \"_device_token\");",
+							"",
+							"if (deviceToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"X-Device-Token\",",
+							"        value: deviceToken",
+							"    });",
+							"    console.log(\"Device token header set:\", deviceToken);",
+							"} else {",
+							"    console.warn(\"No device token found for\", prefix);",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const prefix = \"user2\";",
+							"",
+							"let json;",
+							"try {",
+							"    json = pm.response.json();",
+							"} catch (e) {",
+							"    console.log(\"Response is not JSON\");",
+							"}",
+							"",
+							"if (json && json.data && json.data.message && json.data.message.access_token) {",
+							"    const accessToken = json.data.message.access_token;",
+							"    pm.environment.set(prefix + \"_access_token\", accessToken);",
+							"    console.log(\"Saved access token to\", prefix + \"_access_token\");",
+							"} else {",
+							"    console.log(\"access_token not found in response JSON\");",
+							"}",
+							"",
+							"const setCookieHeaders = pm.response.headers",
+							"  .all()",
+							"  .filter(h => h.key.toLowerCase() === \"set-cookie\");",
+							"",
+							"if (!setCookieHeaders.length) {",
+							"    console.log(\"No Set-Cookie headers found\");",
+							"} else {",
+							"    // Find the refresh cookie among all Set-Cookie headers",
+							"    const refreshHeader = setCookieHeaders.find(h =>",
+							"        h.value.toLowerCase().startsWith(\"__Secure-refresh_token\") ",
+							"    );",
+							"",
+							"    if (!refreshHeader) {",
+							"        console.log(\"Refresh cookie not found in Set-Cookie\");",
+							"    } else {",
+							"        // \"phy_refresh_token=ABCDEF...; Path=/; HttpOnly; ...\"",
+							"        const cookiePair = refreshHeader.value.split(\";\")[0]; // \"phy_refresh_token=ABCDEF...\"",
+							"        const refreshToken = cookiePair.split(\"=\")[1];        // \"ABCDEF...\"",
+							"",
+							"        pm.environment.set(prefix + \"_refresh_token\", refreshToken);",
+							"        console.log(\"Saved refresh token to\", prefix + \"_refresh_token\");",
+							"    }",
+							"}",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\":\"{{login_identifier}}\",\n    \"password\":\"{{login_password}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/login",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "normal_user1_signin",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Populate generic login placeholders from the selected prefix",
+							"const prefix = \"user1\";",
+							"pm.environment.set(\"login_identifier\", pm.environment.get(prefix + \"_email\"));",
+							"pm.environment.set(\"login_password\", pm.environment.get(prefix + \"_password\"));",
+							"// Get device token from env (already stored from previous steps)",
+							"const deviceToken = pm.environment.get(prefix + \"_device_token\");",
+							"",
+							"if (deviceToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"X-Device-Token\",",
+							"        value: deviceToken",
+							"    });",
+							"    console.log(\"Device token header set:\", deviceToken);",
+							"} else {",
+							"    console.warn(\"No device token found for\", prefix);",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Tests - run after successful login",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\":\"{{login_identifier}}\",\n    \"password\":\"{{login_password}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/login",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "normal_user1_signup",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Populate generic login placeholders from the selected prefix",
+							"const prefix = \"user1\";",
+							"pm.environment.set(\"login_identifier\", pm.environment.get(prefix + \"_email\"));",
+							"pm.environment.set(\"login_password\", pm.environment.get(prefix + \"_password\"));",
+							"// pm.environment.set(\"login_device_name\", pm.environment.get(prefix + \"_device_name\") || \"postman-device\");"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\":\"{{login_identifier}}\",\n    \"password\":\"{{login_password}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/signup",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"signup"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_user1_signup",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Populate generic login placeholders from the selected prefix",
+							"const prefix = \"admin_user1\";",
+							"pm.environment.set(\"login_identifier\", pm.environment.get(prefix + \"_email\"));",
+							"pm.environment.set(\"login_password\", pm.environment.get(prefix + \"_pass\"));",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\":\"{{login_identifier}}\",\n    \"password\":\"{{login_password}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/signup",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"signup"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_user1_login",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Populate generic login placeholders from the selected prefix",
+							"const prefix = \"admin_user1\";",
+							"pm.environment.set(\"login_identifier\", pm.environment.get(prefix + \"_email\"));",
+							"pm.environment.set(\"login_password\", pm.environment.get(prefix + \"_pass\"));",
+							"",
+							"const deviceToken = pm.environment.get(prefix + \"_device_token\") || ",
+							"pm.environment.get(\"cur_device_token\") ;",
+							"",
+							"if (deviceToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"X-Device-Token\",",
+							"        value: deviceToken",
+							"    });",
+							"    pm.environment.set(prefix + \"_device_token\",deviceToken);",
+							"    console.log(\"Device token header set:\", deviceToken);",
+							"} else {",
+							"    console.warn(\"No device token found for\", prefix);",
+							"}",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const json = pm.response.json();",
+							"const prefix = \"admin_user1\" ;",
+							"",
+							"const accessToken = json?.data?.message?.access_token;",
+							"",
+							"if (accessToken) {",
+							"    pm.environment.set(prefix + \"_access_token\", accessToken);",
+							"    console.log(\"Saved access token for\", prefix);",
+							"} else {",
+							"    console.log(\"No access_token found in response\");",
+							"}",
+							"",
+							"",
+							"const setCookieHeaders = pm.response.headers",
+							"  .all()",
+							"  .filter(h => h.key.toLowerCase() === \"set-cookie\");",
+							"",
+							"if (setCookieHeaders.length === 0) {",
+							"    console.warn(\"No Set-Cookie headers found\");",
+							"} else {",
+							"    // find the cookie that starts with our refresh cookie name",
+							"    const refreshHeader = setCookieHeaders.find(h =>",
+							"        h.value.startsWith(\"__Secure-refresh_token\")",
+							"    );",
+							"",
+							"    if (refreshHeader) {",
+							"        // \"refresh_token=xyz; Path=/; HttpOnly...\"",
+							"        const pair = refreshHeader.value.split(\";\")[0];      // \"refresh_token=xyz\"",
+							"        const value = pair.split(\"=\")[1];                    // \"xyz\"",
+							"",
+							"        pm.environment.set(`${prefix}_refresh_token`, value);",
+							"        console.log(`Saved ${prefix}_refresh_token:`, value);",
+							"    } else {",
+							"        console.warn(\"No refresh_token cookie found in Set-Cookie headers\");",
+							"    }",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\":\"{{login_identifier}}\",\n    \"password\":\"{{login_password}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/login",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "profile_upload_user1",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5MDY3Yy00YmZmLTczZjEtYWY5OC05YmZmMThlOGE5YmYiLCJpYXQiOjE3NTc4NDMzMzYsImV4cCI6MTc1Nzg0NjkzNiwianRpIjoiZDVhZjBlYjFlZjVhMmQzZjE2M2U5OTAzNzZmOGM2YTUyZjFlZDVjMGIwZWY3NzQxNTYxNjcwNDYwOWY4OWU5YiIsInJvbGVzIjpbImJ1eWVyIl19.h1cUjdoO4V11IS14Tv1Ulw3p9uzh_Sld4CPtcuvVDEA",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/home/nisha/Downloads/anime_night.jpg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/users/me/upload-profile-img",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"users",
+						"me",
+						"upload-profile-img"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "upload_user2",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5MjU5YS1jMGI1LTdiMTctOWJkZC0xZTg2YTRiZmIyNDEiLCJzaWQiOiIxNyIsImlhdCI6MTc1NzMwNDQ3OCwiZXhwIjoxNzU3MzA5ODc4LCJqdGkiOiI3OGY4ZGZhODBkNDRlMDYzNTMxMWQ0NDQ2OWFkMjMxNmU1MDFhMjYwZDY1N2FhOGQ5Y2FmOTQ2MGFhNjNjMzE1Iiwicm9sZXMiOlsiYnV5ZXIiXX0.mk8z6f7KNsaX2iCD5irJX_5CHfLS-ViNYiKp8HmyG6E",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/home/nisha/Downloads/anime-girl-looking-out-window-sunset_1282444-129331.jpg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/users/me/upload-profile-img",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"users",
+						"me",
+						"upload-profile-img"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_user1_refresh",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = \"admin_user1\";",
+							"const ref = pm.environment.get(prefix + \"_refresh_token\");",
+							"if (ref) {",
+							"  pm.request.headers.upsert({ key: \"X-Refresh-Token\", value: ref });",
+							"} else {",
+							"  pm.request.headers.remove(\"X-Refresh-Token\");",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const json = pm.response.json();",
+							"const prefix = \"admin_user1\" ;",
+							"",
+							"const accessToken = json?.data?.message?.access_token;",
+							"",
+							"if (accessToken) {",
+							"    pm.environment.set(prefix + \"_access_token\", accessToken);",
+							"    console.log(\"Saved access token for\", prefix);",
+							"} else {",
+							"    console.log(\"No access_token found in response\");",
+							"}",
+							"",
+							"",
+							"const setCookieHeaders = pm.response.headers",
+							"  .all()",
+							"  .filter(h => h.key.toLowerCase() === \"set-cookie\");",
+							"",
+							"if (setCookieHeaders.length === 0) {",
+							"    console.warn(\"No Set-Cookie headers found\");",
+							"} else {",
+							"    // find the cookie that starts with our refresh cookie name",
+							"    const refreshHeader = setCookieHeaders.find(h =>",
+							"        h.value.startsWith(\"__Secure-refresh_token\")",
+							"    );",
+							"",
+							"    if (refreshHeader) {",
+							"        // \"refresh_token=xyz; Path=/; HttpOnly...\"",
+							"        const pair = refreshHeader.value.split(\";\")[0];      // \"refresh_token=xyz\"",
+							"        const value = pair.split(\"=\")[1];                    // \"xyz\"",
+							"",
+							"        pm.environment.set(`${prefix}_refresh_token`, value);",
+							"        console.log(`Saved ${prefix}_refresh_token:`, value);",
+							"    } else {",
+							"        console.warn(\"No refresh_token cookie found in Set-Cookie headers\");",
+							"    }",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/auth/refresh",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"refresh"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "retries_cb_test",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/auth/retries_cb_test",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"retries_cb_test"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "product_race_with_moon_image_upload_init",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NTkxNDQ2MjgsImV4cCI6MTc1OTE0ODIyOCwianRpIjoiNDMzM2RkZGYwOTY1ZmU0MDg0NGMxNmQ4YzI4ZDQyMzQzOTBlNjllODc3YzNjN2UwM2ZjNzQzNDg0YjIyMTdjMSIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.q4-SGslnOpNYRS4UBLtlRC3FaxI-8HGd6sZ3muF56zI",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n   \"images\":[{\n            \"filename\":\"/home/nisha/Downloads/to_moon_1.jpeg\",\n            \"filesize\":\"395522\",\n            \"content_type\":\"image/jpeg\",\n            \"sort_order\":1},\n            {\n            \"filename\":\"/home/nisha/Downloads/to_moon.jpg\",\n            \"filesize\":\"1517742\",\n            \"content_type\":\"image/jpg\",\n            \"sort_order\":0}\n        ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/admin/products/01999496-1c8c-7ada-96ea-80748c54a63f/images/init-batch",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"admin",
+						"products",
+						"01999496-1c8c-7ada-96ea-80748c54a63f",
+						"images",
+						"init-batch"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_products_create_invalid_user",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = \"user1\";",
+							"const accessToken = pm.environment.get(prefix + \"_access_token\");",
+							"",
+							"if (accessToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"Authorization\",",
+							"        value: `Bearer ${accessToken}`",
+							"    });",
+							"}",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Catching Moon\",\n  \"description\": \"Racing with moon\",\n  \"base_price\": 500, \n  \"stock_qty\": 50,\n  \"specs\": {\n    \"artwork_details\": {\n                \"subject\": \"Girl racing with moon\",\n                \"style\": \"Contemporary art\",\n                \"medium\": \"Acrylic on canvas\",\n                \"theme\": \"Celestial, movement, dreams\"\n            },\n    \"physical_specs\": {\n        \"dimensions\": {\n            \"width\": \"24 inches\",\n            \"height\": \"18 inches\",\n            \"depth\": \"0.5 inches\"\n        },\n        \"weight\": \"2.5 kg\",\n        \"frame\": \"Included - wooden frame\",\n        \"canvas_type\": \"Stretched canvas\"\n    }\n  },\n  \"category_ids\": [5]\n}\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/admin/products/",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"admin",
+						"products",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_cart_add_product1",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = \"admin_user1\";",
+							"const accessToken = pm.environment.get(prefix + \"_access_token\");",
+							"",
+							"if (accessToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"Authorization\",",
+							"        value: `Bearer ${accessToken}`",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMTk5NTIzYS02NDc5LTdkZWUtOTRkNy02NjdjZTU1Yjg1MmUiLCJpYXQiOjE3NjAyMDM3MTQsImV4cCI6MTc2MDIwNzMxNCwianRpIjoiYWU3MjlmYjBjNmEwOTgyNWE5ODNmOGFjMzY3OGY4ZTVkYzUzOTk1Mjc1NWRiODZkNzQ4N2ZlOTdiMDNjYzkwOCIsInJvbGVzIjpbNF0sInJvbGVfdmVyc2lvbiI6MH0.NfhiAk95XoahZBdBrlFn1erSkVRzmHLvLsy1GgEso10",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/cart/items/019b3af4-9cae-7356-bb88-d7dc391abf3a",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"cart",
+						"items",
+						"019b3af4-9cae-7356-bb88-d7dc391abf3a"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_user1_checkout_init",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = \"admin_user1\";",
+							"const accessToken = pm.environment.get(prefix + \"_access_token\");",
+							"",
+							"if (accessToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"Authorization\",",
+							"        value: `Bearer ${accessToken}`",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/checkout/initiate",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"checkout",
+						"initiate"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_user1_checkout_get_summary",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = pm.environment.get(\"user_prefix\") || \"admin\";",
+							"const ref = pm.environment.get(prefix + \"_access_token\");",
+							"if (ref) {",
+							"  pm.request.headers.upsert({ key: \"Authorization\", value: ref });",
+							"} else {",
+							"  pm.request.headers.remove(\"Authorization\");",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"payment_method\" : \"UPI\"\n}\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/checkout/0199e215-133f-7014-b7a9-600386ca34a3/order-summary",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"checkout",
+						"0199e215-133f-7014-b7a9-600386ca34a3",
+						"order-summary"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_user1_secure_confirm",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = pm.environment.get(\"user_prefix\") || \"admin\";",
+							"const ref = pm.environment.get(prefix + \"_access_token\");",
+							"if (ref) {",
+							"  pm.request.headers.upsert({ key: \"Authorization\", value: ref });",
+							"} else {",
+							"  pm.request.headers.remove(\"Authorization\");",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "idempotency-key",
+						"value": "dec762d9-4197-42f5-bef6-a228439aec25",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/checkout/0199e215-133f-7014-b7a9-600386ca34a3/secure-confirm",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"checkout",
+						"0199e215-133f-7014-b7a9-600386ca34a3",
+						"secure-confirm"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "upi_app_sim_structure_endpoint_open_directly_in_browser",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = pm.environment.get(\"user_prefix\") || \"admin\";",
+							"const ref = pm.environment.get(prefix + \"_access_token\");",
+							"if (ref) {",
+							"  pm.request.headers.upsert({ key: \"Authorization\", value: ref });",
+							"} else {",
+							"  pm.request.headers.remove(\"Authorization\");",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/test/checkout/order_provider_id?auth_token=",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"test",
+						"checkout",
+						"order_provider_id"
+					],
+					"query": [
+						{
+							"key": "auth_token",
+							"value": ""
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get_products_pages",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/v1/products",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"products"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "chloro_health",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/health",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "device_init",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Read cookies from the response cookie jar",
+							"const sessionToken = pm.cookies.get(\"session_token\");",
+							"const devicePublicId = pm.cookies.get(\"device_public_id\");",
+							"",
+							"if (sessionToken) {",
+							"    pm.environment.set(\"cur_device_token\", sessionToken);",
+							"    console.log(\"Saved cur_device_session_token:\", sessionToken);",
+							"} else {",
+							"    console.log(\"session_token cookie not found\");",
+							"}",
+							"",
+							"if (devicePublicId) {",
+							"    pm.environment.set(\"cur_device_pid\", devicePublicId);",
+							"    console.log(\"Saved cur_device_public_id:\", devicePublicId);",
+							"} else {",
+							"    console.log(\"device_public_id cookie not found\");",
+							"}",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/session/init",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"session",
+						"init"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_product_create_valid_user",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = \"admin_user1\";",
+							"const accessToken = pm.environment.get(prefix + \"_access_token\");",
+							"",
+							"if (accessToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"Authorization\",",
+							"        value: `Bearer ${accessToken}`",
+							"    });",
+							"}",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Catching Moon\",\n  \"description\": \"Racing with moon\",\n  \"base_price\": 500, \n  \"stock_qty\": 50,\n  \"specs\": {\n    \"artwork_details\": {\n                \"subject\": \"Girl racing with moon\",\n                \"style\": \"Contemporary art\",\n                \"medium\": \"Acrylic on canvas\",\n                \"theme\": \"Celestial, movement, dreams\"\n            },\n    \"physical_specs\": {\n        \"dimensions\": {\n            \"width\": \"24 inches\",\n            \"height\": \"18 inches\",\n            \"depth\": \"0.5 inches\"\n        },\n        \"weight\": \"2.5 kg\",\n        \"frame\": \"Included - wooden frame\",\n        \"canvas_type\": \"Stretched canvas\"\n    }\n  },\n  \"category_ids\": [5]\n}\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/admin/products/",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"admin",
+						"products",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "admin_cart_add_product_2",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const prefix = \"admin_user1\";",
+							"const accessToken = pm.environment.get(prefix + \"_access_token\");",
+							"",
+							"if (accessToken) {",
+							"    pm.request.headers.upsert({",
+							"        key: \"Authorization\",",
+							"        value: `Bearer ${accessToken}`",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://chlorophyll-vtkq.onrender.com/api/v1/cart/items/019af8f5-245f-7886-8aa1-cfbcb72a9fd0",
+					"protocol": "https",
+					"host": [
+						"chlorophyll-vtkq",
+						"onrender",
+						"com"
+					],
+					"path": [
+						"api",
+						"v1",
+						"cart",
+						"items",
+						"019af8f5-245f-7886-8aa1-cfbcb72a9fd0"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					"",
+					"",
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "user_prefix",
+			"value": "",
+			"type": "default"
+		}
+	]
+}
