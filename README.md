@@ -17,7 +17,7 @@ Image upload benchmark results experimented on this repo using two approaches --
 Almost always images won't be sent over backend server but directly to cloud for upload hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
-> Payments Current Plan & Payment testing ----
+> Payments Plan & Payment testing ----
 
 [payment_test.webm](https://github.com/user-attachments/assets/6367461f-7dc9-4687-9f1b-426a24d731d8)
 
@@ -25,7 +25,9 @@ Almost always images won't be sent over backend server but directly to cloud for
 
 <img width="1827" height="94" alt="image" src="https://github.com/user-attachments/assets/142bd81a-aeb2-4bba-bafc-19e08b8d8068" />
 
+https://www.notion.so/Orders-and-Pays-28214b400ea780ed8c39c7a451e0eeff
 
+-------------------------------------------------------------------------------------------------------------------------------------------------------
 
 concurrency tests for inventory reservation without direct xclusive locks and with xclusive locks 
 
@@ -41,6 +43,9 @@ with xclusive locks only 1 checkout request succeeds other informs about not ava
 Also locks are fine here at this level for inventory but for later work to release inv it may cause locks to be held for somewhat longer transactions .
 --> So we do a mini time hack(schema and data mig. if they already exist) -- create inv reserve row(with reserved qty as 0 and include the stock qty ) along with product creation so that we do a condition based update instead of insert
 as we cannot really make insertion inv reserve idempotent .
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 
 
