@@ -120,11 +120,15 @@ async def place_order(request:Request,checkout_id: str,
     order_data_by_ik = await spc_by_ikey(session,idempotency_key,user_identifier)
 
     ik_id = None
+
+    if order_data_by_ik is not None:
+        if order_data_by_ik["cs_id"] != cs_id:
+            raise HTTPException(status_code=400, detail="Unauthorized checkout session for provided idempotency key")
     
-    if order_data_by_ik and order_data_by_ik["response_body"] is not None:
-        ik_id = order_data_by_ik["ik_id"]
-        payload = build_success(order_data_by_ik, trace_id=None)
-        return json_ok(payload)
+        if order_data_by_ik["response_body"] is not None:
+            ik_id = order_data_by_ik["ik_id"]
+            payload = build_success(order_data_by_ik, trace_id=None)
+            return json_ok(payload)
     
     if not ik_id: 
         ik_id=await record_order_idempotency(session,idempotency_key,user_identifier)

@@ -488,6 +488,7 @@ class IdempotencyKey(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     key: str = Field(sa_column=Column(String(128), unique=True, nullable=False, index=True))
+    cs_id: int = Field(sa_column=Column(Integer, ForeignKey("checkoutsession.id"), nullable=False))
     created_by: int = Field(sa_column=Column(Integer, nullable=False))  
     owner_type: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))  
     owner_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))  
