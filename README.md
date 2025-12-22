@@ -1,8 +1,7 @@
 ## 🌱 Inspiration
 The project is inspired by two goals:  
 1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,icecreams,arts stuff...  
-2. **Engineering practice:** building a full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design.
-   A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design an e-commerce system, focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
+2. **Engineering practice:** A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design an e-commerce system, focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
 
    Total Work hours on project(including rechecks and renalyzations and notes etc.)
    september 1 -- December 21 ~~555 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
@@ -69,6 +68,7 @@ https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083
 Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete/blob/dev/src/via_server/uploads.md)
 Images will be sent directly to cloud for upload after getting signed url in init stage hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
+
 
 
 
