@@ -15,11 +15,7 @@ const BASE_URL =
   'http://127.0.0.1:8000/api/v1';
 
 export default function cachedProducts() {
-  const res = http.get(`${BASE_URL}/products?limit=10`);
+  const res = http.get(`${BASE_URL}/products?limit=20`);
   check(res, { 'cached 200': r => r.status === 200 });
 }
 
-// export default function nonCachedProducts() {
-//   const res = http.get(`${BASE_URL}/products/without_cache/?limit=20`);
-//   check(res, { 'non-cached 200': r => r.status === 200 });
-// }
