@@ -29,6 +29,9 @@ JWT-based authentication(along with authorization and permissions check) with re
 >Asynchronous Processing
 An eventually consistent queue and worker system (currently in-memory) handles downstream events, with a clean abstraction layer to allow future integration with durable pub/sub systems with minimal refactoring.
 
+>Webhook Handling
+Secure webhook consumers are implemented for payment state transitions and image upload workflows, with signature verification, idempotent processing, and retry-safe handling.
+
 >Error Handling & Observability
 Consistent error handling, structured logging, and clear failure boundaries are implemented to support debugging and future observability integration.
 
@@ -62,6 +65,7 @@ Also locks are fine here at this level for inventory but for later work to relea
 as we cannot really make insertion inv reserve idempotent .
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
+
 CACHED VERSION Product -pages
 <img width="1735" height="813" alt="image" src="https://github.com/user-attachments/assets/bc0b0f9d-56d3-487f-a35f-593f16aad320" />
 
@@ -70,8 +74,10 @@ NON CACHED VERSION Product -pages
 
 Cached version improves the throughput by ~195 reqs/sec and avg latency by ~222 ms 
 
-
-> DB Design Plan --
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+> DB design abstractions --
+https://www.notion.so/db-design-abstractions-2d314b400ea78071ad97fe0f5fce3df9
+> DB Design initial Plan --
 https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
 
 > Image uploads plan and notes --
@@ -82,11 +88,14 @@ Image upload benchmark results experimented on this repo using two approaches --
 Images will be sent directly to cloud for upload after getting signed url in init stage hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
+-------------------------------------------------------------------------------------------------------------------------------------------------------
 
----Few Clarifications 
+--- Few Clarifications(Known Trade-offs & Planned Refactors)
 
 > Core logic is stable and correct, with known areas identified for future deeper refactoring and to add more optimisations incrmentally.
 > The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
+> Logging needs full hardening to fully redact or omit emitted sql values and to make it fully production safe.
+
 
 
 
