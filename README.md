@@ -1,10 +1,7 @@
 ## 🌱 Inspiration
 The project is inspired by two goals:  
 1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,icecreams,arts stuff...  
-2. **Engineering practice:** A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design an e-commerce system, focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
-
-   Total Work hours on project(including rechecks and renalyzations and notes etc.)
-   september 1 -- December 21 ~~555 hours (~ 2 months at rate of 9 hours/day) would have done faster with higher focus .
+2. **Engineering practice:** A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design , focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -17,15 +14,23 @@ Other operations rely on database constraints or eventual consistency.
 >Concurrency safety for payments --
 Designed for multiple application servers with a single primary database for writes, relying on database-level guarantees (conditional updates, unique constraints, transactional boundaries) to maintain high concurrency and do safe updates for concurrent requests and retries.
 
->State transitions use explicit transactional boundaries with careful commit placement to avoid inconsistent updates.
+>API Design & Performance
+APIs are designed to be concurrent- and retry-safe, with minimal data access per request, efficient query patterns, and clearly defined state transitions plus business invariants .
 
->Schema designed to minimize state ambiguity, higher future scalability(in terms of requiring minimal migrations) , support safe concurrent updates with minimal locking , and efficient indexing.
+>State Modeling & Transitions
+Domain schemas are designed to minimize state ambiguity, support safe concurrent transitions with minimal locking, and reduce the need for future migrations while remaining index-efficient.
 
->API queries are designed with minimal data access per request and avoidance of unnecessary joins. 
+>Caching Strategy
+Redis caching is implemented for read-heavy endpoints (product listings and product details) to reduce database load and improve response latency.
 
->Redis caching is implemented for read-heavy endpoints (product listings & product details).
+>Authentication & Rate Limiting
+JWT-based authentication(along with authorization and permissions check) with refresh-token rotation and revocation is implemented to limit token replay. Rate limiting is supported via two strategies, along with graceful retries for retryable endpoints and a database circuit-breaker pattern for db transient failures.
 
->JWT-based authentication with refresh-token rotation and revocation to limit token replay. Rate limiting implemented using two techniques along with graceful retries for retryable endpoints using db circuit breaker for db network fluctuations .
+>Asynchronous Processing
+An eventually consistent queue and worker system (currently in-memory) handles downstream events, with a clean abstraction layer to allow future integration with durable pub/sub systems with minimal refactoring.
+
+>Error Handling & Observability
+Consistent error handling, structured logging, and clear failure boundaries are implemented to support debugging and future observability integration.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -78,9 +83,10 @@ Images will be sent directly to cloud for upload after getting signed url in ini
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
 
+---Few Clarifications 
 
-
-
+> Core logic is stable and correct, with known areas identified for future deeper refactoring and to add more optimisations incrmentally.
+> The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
 
 
 
