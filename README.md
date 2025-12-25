@@ -57,6 +57,14 @@ Also locks are fine here at this level for inventory but for later work to relea
 as we cannot really make insertion inv reserve idempotent .
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
+CACHED VERSION Product -pages
+<img width="1735" height="813" alt="image" src="https://github.com/user-attachments/assets/bc0b0f9d-56d3-487f-a35f-593f16aad320" />
+
+NON CACHED VERSION Product -pages
+<img width="1756" height="743" alt="image" src="https://github.com/user-attachments/assets/23460e13-7bdd-4fa3-8a06-dd7601d76e81" />
+
+Cached version improves the throughput by ~195 reqs/sec and avg latency by ~222 ms 
+
 
 > DB Design Plan --
 https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
@@ -68,6 +76,7 @@ https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083
 Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete/blob/dev/src/via_server/uploads.md)
 Images will be sent directly to cloud for upload after getting signed url in init stage hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
+
 
 
 
