@@ -84,7 +84,7 @@ https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
 https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083a016fdd43bdcd15d
 
 
-Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete/blob/dev/src/via_server/uploads.md)
+Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete)
 Images will be sent directly to cloud for upload after getting signed url in init stage hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
 
@@ -93,8 +93,11 @@ Images will be sent directly to cloud for upload after getting signed url in ini
 --- Few Clarifications(Known Trade-offs & Planned Refactors)
 
 > Core logic is stable and correct, with known areas identified for future deeper refactoring and to add more optimisations incrmentally.
+
 > The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
-> Logging needs full hardening to fully redact or omit emitted sql values and to make it fully production safe.
+
+> Logging will be further hardened to fully redact sensitive fields (including SQL parameters) and fully align with production-grade security standards.
+
 
 
 
