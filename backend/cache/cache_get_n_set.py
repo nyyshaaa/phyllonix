@@ -62,12 +62,13 @@ async def cache_get_or_set_product_listings(
                 value,
                 request_id=None,
             )
+            payload_bytes=serialize(success_payload)
            
             try:
-                await set_bytes(key, serialize(success_payload), ttl)
+                await set_bytes(key, payload_bytes, ttl)
             except Exception as e:
                 pass
-            return success_payload
+            return payload_bytes
         finally:
             await release_lock(redis_client, lock_key, token)
     else:
@@ -93,11 +94,12 @@ async def cache_get_or_set_product_listings(
                 value,
                 request_id=None,
             )
+            payload_bytes=serialize(success_payload)
             try:
-                await redis_client.set(key, serialize(success_payload), ex=ttl)
+                await redis_client.set(key, payload_bytes, ex=ttl)
             except Exception:
                 pass
-            return success_payload
+            return payload_bytes
         else:
             # mode == "stale": short wait then fallback to compute
             await asyncio.sleep(0.15)
@@ -113,8 +115,9 @@ async def cache_get_or_set_product_listings(
                 value,
                 request_id=None,
             )
+            payload_bytes=serialize(success_payload)
             try:
-                await redis_client.set(key, serialize(success_payload), ex=ttl)
+                await redis_client.set(key, payload_bytes, ex=ttl)
             except Exception:
                 pass
-            return success_payload
+            return payload_bytes
