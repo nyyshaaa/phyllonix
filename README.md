@@ -36,6 +36,7 @@ Secure webhook consumers are implemented for payment state transitions and image
 >Error Handling & Observability
 Consistent error handling, structured logging, and clear failure boundaries are implemented to support debugging and future observability integration.
 
+> The backend APIs are designed with frontend integration in mind, including clear request/response contracts, retry-safe operations, and predictable state transitions .
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
 > Payments Plan & Payment testing ----
@@ -93,6 +94,7 @@ Images will be sent directly to cloud for upload after getting signed url in ini
 > The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
 
 > Logging will be further hardened to fully redact sensitive fields (including SQL parameters) and fully align with production-grade security standards.
+
 
 
 
