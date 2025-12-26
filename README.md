@@ -18,6 +18,7 @@ Designed for multiple application servers with a single primary database for wri
 APIs are designed to be concurrent- and retry-safe, with minimal data access per request, efficient query patterns, and clearly defined state transitions plus business invariants .
 
 >State Modeling & Transitions
+Modeled data schemas intentionally around access patterns and invariants, improving query efficiency and data integrity.
 Domain schemas are designed to minimize state ambiguity, support safe concurrent transitions with minimal locking, and reduce the need for future migrations while remaining index-efficient.
 
 >Caching Strategy
@@ -75,13 +76,8 @@ NON CACHED VERSION Product -pages
 Cached version improves the throughput by ~195 reqs/sec and avg latency by ~222 ms 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
-> DB design abstractions --
+> DB design abstractions notes--
 https://www.notion.so/db-design-abstractions-2d314b400ea78071ad97fe0f5fce3df9
-> DB Design initial Plan --
-https://www.notion.so/Project-DB-Design-Flow-25b14b400ea7803bb6faf782b43b1776
-
-> Image uploads plan and notes --
-https://www.notion.so/image-uploads-highly-scalable-apps-styles-27614b400ea78083a016fdd43bdcd15d
 
 
 Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete)
@@ -97,6 +93,7 @@ Images will be sent directly to cloud for upload after getting signed url in ini
 > The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
 
 > Logging will be further hardened to fully redact sensitive fields (including SQL parameters) and fully align with production-grade security standards.
+
 
 
 
