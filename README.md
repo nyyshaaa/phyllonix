@@ -80,10 +80,12 @@ Cached version improves the throughput by ~195 reqs/sec and avg latency by ~222 
 > DB design abstractions notes--
 https://www.notion.so/db-design-abstractions-2d314b400ea78071ad97fe0f5fce3df9
 
-
 Image upload benchmark results experimented on this repo using two approaches --(https://github.com/nyyshaaa/backend-app-complete)
 Images will be sent directly to cloud for upload after getting signed url in init stage hence avoiding heavy data transfer over 2 networks .
 [image_upload_comps.webm](https://github.com/user-attachments/assets/a1828584-de68-4bb0-9383-3b357659fc02)
+
+> chlorophyll-design-decisions-II (design decisions & notes for some part of project)
+> https://ionian-feeling-129.notion.site/chlorophyll-design-decisions-II-2d714b400ea780929f7dc9f7e2ce0aa9
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -94,6 +96,7 @@ Images will be sent directly to cloud for upload after getting signed url in ini
 > The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
 
 > Logging will be further hardened to fully redact sensitive fields (including SQL parameters) and fully align with production-grade security standards.
+
 
 
 
