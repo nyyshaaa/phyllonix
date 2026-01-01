@@ -1,6 +1,6 @@
 ## 🌱 Inspiration
 The project is inspired by two goals:  
-1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks,icecreams,arts stuff...  
+1. **Real-world use case:** starting a small e-commerce platform in local area for healthy snacks, arts stuff...  
 2. **Engineering practice:** A full end-to-end system with clean architecture, strong security, and performance optimizations, scalabale design , focused on correctness under concurrency/retries, idempotent workflows, and clean state transitions.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -96,6 +96,7 @@ Images will be sent directly to cloud for upload after getting signed url in ini
 > The final UPI app simulation endpoint is implemented in test mode; for ease of local and browser-based testing without adding frontend, auth tokens are passed via query params. In production, this would be done cleanly.
 
 > Logging will be further hardened to fully redact sensitive fields (including SQL parameters) and fully align with production-grade security standards.
+
 
 
 
